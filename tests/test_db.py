@@ -5,7 +5,8 @@ def test_init_db_creates_all_tables(db):
     cursor = db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     tables = {row["name"] for row in cursor.fetchall()}
     expected = {"sources", "raw_items", "clusters", "cluster_items",
-                "signals", "cross_links", "trends", "briefings", "job_runs", "item_search"}
+                "signals", "cross_links", "trends", "briefings", "job_runs",
+                "item_search", "signal_search"}
     assert expected.issubset(tables)
 
 
