@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns="http://purl.org/rss/1.0/"
+         xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>cs.LG updates on arXiv.org</title>
+  </channel>
+  <item rdf:about="http://arxiv.org/abs/2603.12345">
+    <title>A New LLM Architecture for Efficient Reasoning</title>
+    <link>http://arxiv.org/abs/2603.12345</link>
+    <description>We propose a novel architecture that improves LLM reasoning efficiency by 40% through a modified attention mechanism with mixture of experts.</description>
+    <dc:creator>John Doe, Jane Smith (Google DeepMind)</dc:creator>
+  </item>
+  <item rdf:about="http://arxiv.org/abs/2603.12346">
+    <title>Optimal Transport Methods for Protein Folding</title>
+    <link>http://arxiv.org/abs/2603.12346</link>
+    <description>We apply optimal transport theory to protein structure prediction, achieving state-of-the-art results on CASP15.</description>
+    <dc:creator>Alice Bob (MIT)</dc:creator>
+  </item>
+  <item rdf:about="http://arxiv.org/abs/2603.12347">
+    <title>Scaling RLHF with Synthetic Preferences</title>
+    <link>http://arxiv.org/abs/2603.12347</link>
+    <description>We demonstrate that synthetic preference data can replace human annotations for RLHF at scale, reducing alignment cost by 10x.</description>
+    <dc:creator>Charlie Delta (Anthropic)</dc:creator>
+  </item>
+</rdf:RDF>
