@@ -101,7 +101,7 @@ def reconcile_sources(conn: sqlite3.Connection, yaml_path: Path) -> None:
             # Only mark as disabled if not already auto-disabled
             if row["disabled_reason"] != "auto":
                 conn.execute(
-                    "UPDATE sources SET enabled=0, disabled_reason='manual' WHERE source_key=?",
+                    "UPDATE sources SET enabled=0, origin='yaml_removed', disabled_reason='yaml_removed' WHERE source_key=?",
                     (key,),
                 )
 
