@@ -91,13 +91,20 @@ Pipeline 架构（两阶段分析）:
 
 #### 源管理
 
-- **源唯一标识**：`(type, handle)` 二元组为 source identity，全局唯一。DB 中同时有自增 `id` 用于 FK。
+- **源唯一标识**：每个源有显式 `source_key` 作为跨 adapter 的稳定业务主键。DB 中同时有自增 `id` 用于 FK。
+  - X 源：`source_key = "x:{handle}"`，如 `x:karpathy`
+  - arXiv 源：v1 为单例，`source_key = "arxiv:daily"`
+  - GitHub Trending 源：v1 为单例，`source_key = "github:trending"`
+  - CLI/API 统一用 source_key 操作：`prism source enable x:karpathy`、`prism source remove github:trending`
+  - YAML 配置中可显式指定 `key`，未指定时按上述规则自动生成
 - **YAML 是声明式配置**（what should exist），**SQLite sources 表是运行时状态**（last_synced_at, consecutive_failures 等）
 - **YAML 是最终权威**。冲突仲裁规则：
   - 启动 reconcile：YAML 新增 → DB 插入；YAML 删除 → DB 标记 `origin=yaml_removed`, `enabled=false`；DB 运行时字段（last_synced_at, consecutive_failures）永不被 YAML 覆盖
   - CLI/API 新增：写入 DB（`origin=cli`）**并同时回写 YAML**，保证 YAML 始终是完整 source of truth
   - CLI/API 删除：从 DB 标记 disabled **并同时从 YAML 移除**
-  - 自动禁用（连续失败）：仅改 DB `enabled=false`，不改 YAML。下次手动 `prism source enable` 可恢复
+  - 自动禁用（连续失败）：仅改 DB `enabled=false, disabled_reason=auto`，不改 YAML
+  - **reconcile 与 disabled 的交互**：启动 reconcile 时，若 YAML 中存在该源但 DB `disabled_reason=auto`，**尊重 DB 的 disabled 状态**，不因 YAML 存在而恢复。恢复路径只有两条：(1) `prism source enable <key>` 手动恢复 (2) `auto_retry_at` 触发且成功
+  - 这避免了"禁用→重启→恢复→再失败→再禁用"的抖动循环
   - 避免 YAML 和 DB 漂移的核心原则：**任何变更都同时更新两处**
 - CLI 动态增删：
   ```bash
@@ -121,7 +128,11 @@ Pipeline 架构（两阶段分析）:
      3. 标题相似度：normalized Jaccard on bigrams > 0.5 → 同簇
      4. 实体共现：两条 item 共享 2+ 个已知实体 → 同簇
    - **增量策略**：hourly `prism cluster` 只将新 raw_items 匹配到当天已有 clusters，不重新聚类历史数据。无匹配则创建新 cluster。
-   - **评估闭环**：上线第 1 周每日人工抽样 20 个 clusters，标注误合并/漏合并。目标：precision ≥80%, recall ≥60%。若不达标，优先调阈值；若规则法天花板不够，再引入 embedding 或 reranker。`prism cluster --eval` 命令输出当日聚类统计（簇数、平均簇大小、最大簇、单条簇占比）辅助判断。
+   - **评估闭环**：
+     - **Precision（误合并）**：上线第 1 周每日人工抽样 20 个 clusters，标注是否存在不相关 item 被错误合并。目标：precision ≥80%。
+     - **Recall 代理指标（漏合并）**：由于直接测量 recall 需要 item-pair 级标注成本过高，v1 用代理指标 — "单条簇占比"（singleton ratio）。若当日 >70% 的 clusters 只含 1 条 item，且人工抽查发现其中有明显应合并的情况，则判定 recall 不足。
+     - 若不达标，优先调阈值；若规则法天花板不够，再引入 embedding 或 reranker。
+     - `prism cluster --eval` 命令输出当日聚类统计（簇数、平均簇大小、最大簇、单条簇占比）辅助判断。
    - **merged_context 构建**：cluster 内所有 item 的 body 按 published_at 降序（最新优先）拼接，截断到 4000 tokens。超长时按以下优先级保留：(1) 源优先级（X 原创 > arXiv > GitHub）、(2) 新鲜度（published_at 降序）、(3) 内容长度（更长的 item 信息量更大）。注意：signal_strength 此时尚未产出，不可用于预处理阶段排序。
 2. **富化**：补全上下文
    - X：thread 展开全文（见 4.1 thread 采集机制）
@@ -223,8 +234,8 @@ SQLite + WAL + FTS5，表结构：
 | `clusters` | 信号簇 | date, topic_label, item_count, merged_context |
 | `cluster_items` | 簇↔原始项 | cluster_id, raw_item_id（多对多） |
 | `signals` | LLM 分析结果 | cluster_id, summary, signal_layer, signal_strength, why_it_matters, action, tl_perspective, tags_json, analysis_type(incremental/daily), model_id, prompt_version, job_run_id, created_at, is_current(bool) |
-| `cross_links` | 簇间关联 | cluster_a_id, cluster_b_id, relation_type(same_topic/builds_on/contradicts/same_project/converging_trend), reason |
-| `trends` | 趋势追踪 | topic_label, date, heat_score, delta_vs_yesterday |
+| `cross_links` | 簇间关联 | cluster_a_id, cluster_b_id, relation_type(same_topic/builds_on/contradicts/same_project/converging_trend), reason, job_run_id, is_current |
+| `trends` | 趋势追踪 | topic_label, date, heat_score, delta_vs_yesterday, job_run_id, is_current |
 | `briefings` | 每日日报 | date, html, markdown, generated_at |
 
 | `job_runs` | pipeline 执行记录 | job_type(sync/cluster/analyze_incremental/analyze_daily/briefing), started_at, finished_at, status(ok/partial/failed), stats_json |
