@@ -6,10 +6,10 @@
 
 现有系统 shu 本质是 ML 圈新闻聚合器：38 个 X 账号 + 8 个 YouTube + GitHub trending，逐条 LLM 摘要。核心缺陷：
 
-- **无时间差**：追的都是公开热门账号，无法比公众更早看到信号
+- **信噪比低**：38 个 X 源中大量转发党，产出噪声
 - **无深度**：只抓推文/标题，不展开 thread、不追 repo 活跃度、不看论文
 - **无关联**：逐条分析，无法发现跨源趋势和隐性连接
-- **信噪比低**：38 个 X 源中大量转发党，产出噪声
+- **可行动性弱**：摘要告诉你"发生了什么"，但不告诉你"该做什么"
 
 ## 2. Design Goals
 
@@ -49,6 +49,11 @@ Pipeline 架构（两阶段分析）:
   - Fallback：playwright 失败时退化为仅保留首条推文，标记 `thread_partial=true`
   - 引用推文：从推文 `entities.urls` 中提取 `twitter.com/*/status/*` 链接，抓取被引用推文文本（仅一层，不递归）
   - 成本控制：playwright 仅对 thread 触发，非 thread 推文走纯 HTTP（同 shu）
+- **X adapter 观测与退化**：
+  - 关键指标：thread 完整率（成功展开 / 检测到的 thread 总数），目标 ≥70%
+  - `prism status` 展示各源的 thread 完整率和近 24h 趋势
+  - 告警：thread 完整率连续 3 天 <50% 时在日报中标红提醒
+  - **最小可用定义**：即使 thread 展开完全失效，Prism 退化为"精选头部账号首条推文 + arXiv + GitHub deep"，仍然通过源精选 + 聚类关联 + 叙述体日报优于 shu。thread 是增量价值，不是生存依赖
 - 频率：每小时
 - 配置示例：
   ```yaml
@@ -86,8 +91,14 @@ Pipeline 架构（两阶段分析）:
 
 #### 源管理
 
+- **源唯一标识**：`(type, handle)` 二元组为 source identity，全局唯一。DB 中同时有自增 `id` 用于 FK。
 - **YAML 是声明式配置**（what should exist），**SQLite sources 表是运行时状态**（last_synced_at, consecutive_failures 等）
-- 启动时自动 reconcile：YAML 新增 → DB 插入；YAML 删除 → DB 标记 disabled；DB 运行时字段永不被 YAML 覆盖
+- **YAML 是最终权威**。冲突仲裁规则：
+  - 启动 reconcile：YAML 新增 → DB 插入；YAML 删除 → DB 标记 `origin=yaml_removed`, `enabled=false`；DB 运行时字段（last_synced_at, consecutive_failures）永不被 YAML 覆盖
+  - CLI/API 新增：写入 DB（`origin=cli`）**并同时回写 YAML**，保证 YAML 始终是完整 source of truth
+  - CLI/API 删除：从 DB 标记 disabled **并同时从 YAML 移除**
+  - 自动禁用（连续失败）：仅改 DB `enabled=false`，不改 YAML。下次手动 `prism source enable` 可恢复
+  - 避免 YAML 和 DB 漂移的核心原则：**任何变更都同时更新两处**
 - CLI 动态增删：
   ```bash
   prism source add x --handle karpathy --depth thread
@@ -110,7 +121,8 @@ Pipeline 架构（两阶段分析）:
      3. 标题相似度：normalized Jaccard on bigrams > 0.5 → 同簇
      4. 实体共现：两条 item 共享 2+ 个已知实体 → 同簇
    - **增量策略**：hourly `prism cluster` 只将新 raw_items 匹配到当天已有 clusters，不重新聚类历史数据。无匹配则创建新 cluster。
-   - **merged_context 构建**：cluster 内所有 item 的 body 按 published_at 排序拼接，截断到 4000 tokens。超长时优先保留 signal_strength 高的 item。
+   - **评估闭环**：上线第 1 周每日人工抽样 20 个 clusters，标注误合并/漏合并。目标：precision ≥80%, recall ≥60%。若不达标，优先调阈值；若规则法天花板不够，再引入 embedding 或 reranker。`prism cluster --eval` 命令输出当日聚类统计（簇数、平均簇大小、最大簇、单条簇占比）辅助判断。
+   - **merged_context 构建**：cluster 内所有 item 的 body 按 published_at 降序（最新优先）拼接，截断到 4000 tokens。超长时按以下优先级保留：(1) 源优先级（X 原创 > arXiv > GitHub）、(2) 新鲜度（published_at 降序）、(3) 内容长度（更长的 item 信息量更大）。注意：signal_strength 此时尚未产出，不可用于预处理阶段排序。
 2. **富化**：补全上下文
    - X：thread 展开全文（见 4.1 thread 采集机制）
    - GitHub：README 摘要（前 500 tokens）+ 最近 7 天 issue/PR 标题列表
@@ -186,13 +198,14 @@ User:
 **Context window 管理**：
 - 预算：~60K tokens（qwen-plus）
 - 每个 cluster 的 merged_context 限 4000 tokens（见上文）
-- 若当日 clusters 总量超出 context budget，分批调用：按 signal_strength 降序排列，高分簇优先进入主批次，低分簇进入补充批次
+- 若当日 clusters 总量超出 context budget，分批调用：按 cluster 内 item 数量降序 + 源多样性（跨源簇优先）排列，多源/大簇优先进入主批次，单源/小簇进入补充批次
 - 补充批次只做单簇分析（无交叉关联），结果合并入主批次输出
 
 **增量 vs 日级分析的交互**：
-- hourly `--incremental`：新簇用便宜模型做单簇快速打标（summary + signal_layer + tags），存入 signals 表，标记 `analysis_type=incremental`
-- daily `--daily`：24h 窗口批量分析，输出**覆盖**当天所有 incremental 结果，标记 `analysis_type=daily`
-- briefing 仅从 `analysis_type=daily` 的结果生成
+- hourly `--incremental`：新簇用便宜模型做单簇快速打标（summary + signal_layer + tags），存入 signals 表，标记 `analysis_type=incremental`, `is_current=true`
+- daily `--daily`：24h 窗口批量分析，**逻辑失效**当天所有 incremental 结果（`is_current=false`），插入新行标记 `analysis_type=daily`, `is_current=true`。历史结果保留用于审计和对比，不物理删除。
+- briefing 仅从 `is_current=true AND analysis_type=daily` 的结果生成
+- 每条 signal 记录 `model_id`、`prompt_version`、`job_run_id`，支持重放和版本比较
 
 模型选择：
 - 预处理/初筛：百炼便宜模型
@@ -209,10 +222,12 @@ SQLite + WAL + FTS5，表结构：
 | `raw_items` | 原始采集 | source_id, url, title, body, author, published_at, raw_json |
 | `clusters` | 信号簇 | date, topic_label, item_count, merged_context |
 | `cluster_items` | 簇↔原始项 | cluster_id, raw_item_id（多对多） |
-| `signals` | LLM 分析结果 | cluster_id, summary, signal_layer, signal_strength, why_it_matters, action, tl_perspective, tags_json |
+| `signals` | LLM 分析结果 | cluster_id, summary, signal_layer, signal_strength, why_it_matters, action, tl_perspective, tags_json, analysis_type(incremental/daily), model_id, prompt_version, job_run_id, created_at, is_current(bool) |
 | `cross_links` | 簇间关联 | cluster_a_id, cluster_b_id, relation_type(same_topic/builds_on/contradicts/same_project/converging_trend), reason |
 | `trends` | 趋势追踪 | topic_label, date, heat_score, delta_vs_yesterday |
 | `briefings` | 每日日报 | date, html, markdown, generated_at |
+
+| `job_runs` | pipeline 执行记录 | job_type(sync/cluster/analyze_incremental/analyze_daily/briefing), started_at, finished_at, status(ok/partial/failed), stats_json |
 
 设计决策：
 - `raw_items` 与 `signals` 解耦 — 可对同一批数据重新分析
@@ -294,7 +309,12 @@ prism status                  # 各源健康状态
 健康检查：
 - 每次 sync 记录成功/失败/耗时
 - `prism status` 展示各源最后成功时间、连续失败次数
-- 连续 3 次失败自动禁用该源，日报中提醒
+- 自动禁用策略（区分失败类型）：
+  - **硬失败**（HTTP 404/403、源不存在）：连续 2 次 → 自动禁用
+  - **软失败**（超时、429 限流、5xx）：连续 6 次（即 6 小时）→ 自动禁用
+  - 禁用后 24h 自动尝试恢复一次（`auto_retry_at`），成功则重新启用
+  - `prism source enable <handle>` 可手动恢复
+  - 日报中展示被禁用/降级的源列表
 
 **错误恢复**：每个 pipeline 阶段独立执行。sync 部分失败（如 5/10 源成功）不阻塞 cluster 和 analyze，后续阶段处理已有数据。失败记录日志并在 `prism status` 中展示。
 
@@ -320,8 +340,11 @@ prism status                  # 各源健康状态
 
 ## 7. Success Criteria
 
-1. 日报信噪比显著高于 shu — 通过聚类去重 + 精选源实现
-2. 能发现跨源关联 — 日报中有"关联发现"段落，且有实际价值
-3. 趋势追踪可用 — 能看到话题升温/降温
-4. 源管理零摩擦 — CLI 一行命令增删
-5. 24/7 无人值守运行 — 健康检查 + 自动禁用故障源
+核心目标是**更高信噪比 + 更强关联 + 更可行动**。"时间差"（比公众更早发现）是 v2+ 的待验证假设，v1 不以此为验收标准。
+
+1. **信噪比** — 日报 actionable 条目中，≥80% 被用户认为确实值得关注（人工抽样验收）
+2. **关联发现** — 日报中有"关联发现"段落，且每周至少 2 次产出用户认可的跨源连接
+3. **可行动性** — 每条 actionable 信号有具体行动建议，用户无需二次查找即可决策
+4. **趋势追踪** — 能看到话题升温/降温，与用户直觉一致
+5. **源管理零摩擦** — CLI 一行命令增删
+6. **24/7 无人值守运行** — 健康检查 + 自动禁用故障源
