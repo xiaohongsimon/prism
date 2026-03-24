@@ -57,6 +57,33 @@ def test_remove_source_disables_and_removes_from_yaml(db, tmp_path):
     assert len(data["sources"]) == 0
 
 
+def test_reconcile_disables_sources_removed_from_yaml(db, tmp_path):
+    yaml_path = tmp_path / "sources.yaml"
+    _write_yaml(yaml_path, [{"type": "x", "handle": "karpathy"}])
+    reconcile_sources(db, yaml_path)
+    # Remove from YAML and re-reconcile
+    _write_yaml(yaml_path, [])
+    reconcile_sources(db, yaml_path)
+    src = db.execute("SELECT * FROM sources WHERE source_key='x:karpathy'").fetchone()
+    assert src["enabled"] == 0
+    assert src["disabled_reason"] == "yaml_removed"
+    assert src["origin"] == "yaml_removed"
+
+
+def test_reconcile_reenables_yaml_removed_sources(db, tmp_path):
+    yaml_path = tmp_path / "sources.yaml"
+    _write_yaml(yaml_path, [{"type": "x", "handle": "karpathy"}])
+    reconcile_sources(db, yaml_path)
+    # Remove, then re-add
+    _write_yaml(yaml_path, [])
+    reconcile_sources(db, yaml_path)
+    _write_yaml(yaml_path, [{"type": "x", "handle": "karpathy"}])
+    reconcile_sources(db, yaml_path)
+    src = db.execute("SELECT * FROM sources WHERE source_key='x:karpathy'").fetchone()
+    assert src["enabled"] == 1
+    assert src["disabled_reason"] is None
+
+
 def test_enable_source_clears_auto_disable(db, tmp_path):
     yaml_path = tmp_path / "sources.yaml"
     _write_yaml(yaml_path, [{"type": "x", "handle": "karpathy"}])

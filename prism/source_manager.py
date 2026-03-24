@@ -5,7 +5,8 @@ SQLite tracks runtime state (last_synced_at, consecutive_failures, etc.).
 
 Reconcile rules:
 - YAML new → DB insert
-- YAML removed → DB mark disabled (enabled=0, disabled_reason='manual')
+- YAML removed → DB mark disabled (enabled=0, origin='yaml_removed')
+- YAML re-added after removal → DB re-enable (if disabled_reason='yaml_removed')
 - DB runtime fields are never overwritten by YAML
 - Auto-disabled sources (disabled_reason='auto') are NOT re-enabled by reconcile
 """
@@ -25,7 +26,10 @@ def _read_yaml(path: Path) -> list[dict]:
     if not path.exists():
         return []
     data = yaml.safe_load(path.read_text()) or {}
-    return data.get("sources", []) or []
+    sources = data.get("sources", [])
+    if not isinstance(sources, list):
+        return []
+    return sources or []
 
 
 def _write_yaml(path: Path, sources: list[dict]) -> None:
@@ -95,7 +99,15 @@ def reconcile_sources(conn: sqlite3.Connection, yaml_path: Path) -> None:
                 (key, type_, handle, config_yaml_str),
             )
 
-    # 2. Disable DB sources that were removed from YAML (only if not auto-disabled)
+    # 2. Re-enable sources that reappeared in YAML after being yaml_removed
+    for key in yaml_keys:
+        if key in db_keys and db_keys[key]["disabled_reason"] == "yaml_removed":
+            conn.execute(
+                "UPDATE sources SET enabled=1, origin='yaml', disabled_reason=NULL WHERE source_key=?",
+                (key,),
+            )
+
+    # 3. Disable DB sources that were removed from YAML (only if not auto-disabled)
     for key, row in db_keys.items():
         if key not in yaml_keys:
             # Only mark as disabled if not already auto-disabled
@@ -160,12 +172,13 @@ def add_source(
 
 def remove_source(conn: sqlite3.Connection, yaml_path: Path, source_key: str) -> None:
     """Disable source in DB AND remove from YAML."""
-    # Disable in DB
-    conn.execute(
+    cursor = conn.execute(
         "UPDATE sources SET enabled=0, disabled_reason='manual' WHERE source_key=?",
         (source_key,),
     )
     conn.commit()
+    if cursor.rowcount == 0:
+        raise ValueError(f"Source not found: {source_key}")
 
     # Remove from YAML
     existing = _read_yaml(yaml_path)
@@ -175,11 +188,13 @@ def remove_source(conn: sqlite3.Connection, yaml_path: Path, source_key: str) ->
 
 def enable_source(conn: sqlite3.Connection, source_key: str) -> None:
     """Force-enable a source, clearing auto_disabled state and auto_retry_at."""
-    conn.execute(
+    cursor = conn.execute(
         "UPDATE sources SET enabled=1, disabled_reason=NULL, auto_retry_at=NULL WHERE source_key=?",
         (source_key,),
     )
     conn.commit()
+    if cursor.rowcount == 0:
+        raise ValueError(f"Source not found: {source_key}")
 
 
 def list_sources(conn: sqlite3.Connection) -> list[sqlite3.Row]:
