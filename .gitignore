@@ -1,6 +1,7 @@
 __pycache__/
 *.egg-info/
 .env
+.venv/
 data/
 briefings/
 *.sqlite3
