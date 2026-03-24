@@ -1,0 +1,18 @@
+sources:
+  - type: x
+    handle: karpathy
+    depth: thread
+  - type: x
+    handle: swyx
+    depth: thread
+  - type: x
+    handle: simonw
+    depth: thread
+  - type: arxiv
+    key: "arxiv:daily"
+    categories: [cs.LG, cs.CL, cs.AI]
+    filter: keyword+llm
+  - type: github_trending
+    key: "github:trending"
+    track_days: 7
+    deep_fetch: true
