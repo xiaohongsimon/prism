@@ -192,3 +192,19 @@ def trends(date):
     for r in rows:
         delta = f"+{r['delta_vs_yesterday']:.0f}" if r["delta_vs_yesterday"] > 0 else f"{r['delta_vs_yesterday']:.0f}"
         click.echo(f"  {r['topic_label']:25s}  heat={r['heat_score']:.0f}  delta={delta}")
+
+
+@cli.command()
+@click.option("--date", default=None, help="Date for briefing (YYYY-MM-DD)")
+@click.option("--save", is_flag=True, help="Save to DB and file")
+def briefing(date, save):
+    """Generate daily briefing."""
+    from datetime import date as date_cls
+    from prism.output.briefing import generate_briefing
+    conn = get_connection(settings.db_path)
+    brief_date = date or date_cls.today().isoformat()
+    result = generate_briefing(conn, date=brief_date, save=save)
+    if save:
+        click.echo(f"Briefing saved for {brief_date}")
+    else:
+        click.echo(result["markdown"])
