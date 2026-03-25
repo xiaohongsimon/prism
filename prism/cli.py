@@ -216,3 +216,78 @@ def serve(port):
     """Start the API server."""
     import uvicorn
     uvicorn.run("prism.api.app:create_app", host="0.0.0.0", port=port, factory=True)
+
+
+@cli.command()
+def status():
+    """Show system status: sources, items, signals."""
+    from datetime import date
+    conn = get_connection(settings.db_path)
+    from prism.source_manager import reconcile_sources
+    reconcile_sources(conn, settings.source_config)
+    today = date.today().isoformat()
+
+    click.echo("=== Sources ===")
+    sources = conn.execute("SELECT * FROM sources ORDER BY source_key").fetchall()
+    for s in sources:
+        st = "enabled" if s["enabled"] else f"DISABLED ({s['disabled_reason']})"
+        fails = f"  failures={s['consecutive_failures']}" if s["consecutive_failures"] > 0 else ""
+        click.echo(f"  {s['source_key']:25s}  {st:20s}  last_sync={s['last_synced_at'] or 'never'}{fails}")
+
+    click.echo(f"\n=== Today ({today}) ===")
+    item_count = conn.execute("SELECT COUNT(*) FROM raw_items WHERE date(created_at) = ?", (today,)).fetchone()[0]
+    cluster_count = conn.execute("SELECT COUNT(*) FROM clusters WHERE date = ?", (today,)).fetchone()[0]
+    click.echo(f"  Items: {item_count}  Clusters: {cluster_count}")
+
+    layers = conn.execute(
+        "SELECT signal_layer, COUNT(*) as cnt FROM signals s "
+        "JOIN clusters c ON s.cluster_id = c.id "
+        "WHERE c.date = ? AND s.is_current = 1 GROUP BY signal_layer",
+        (today,),
+    ).fetchall()
+    if layers:
+        parts = [f"{r['signal_layer']}={r['cnt']}" for r in layers]
+        click.echo(f"  Signals: {', '.join(parts)}")
+
+
+@cli.command()
+@click.option("--notion", is_flag=True, help="Publish to Notion")
+@click.option("--date", default=None, help="Date to publish")
+def publish(notion, date):
+    """Publish briefing to external services."""
+    from datetime import date as date_cls
+    pub_date = date or date_cls.today().isoformat()
+    conn = get_connection(settings.db_path)
+
+    if notion:
+        if not settings.notion_api_key or not settings.notion_parent_page_id:
+            click.echo("Error: NOTION_API_KEY and NOTION_BRIEFING_PARENT_PAGE_ID must be set")
+            return
+        row = conn.execute("SELECT markdown FROM briefings WHERE date = ?", (pub_date,)).fetchone()
+        if not row:
+            click.echo(f"No briefing found for {pub_date}. Run 'prism briefing --save' first.")
+            return
+        from prism.output.notion import publish_briefing_to_notion
+        result = publish_briefing_to_notion(
+            markdown=row["markdown"], date=pub_date,
+            api_key=settings.notion_api_key, parent_page_id=settings.notion_parent_page_id)
+        click.echo(f"Published to Notion: {result.get('id', 'ok')}")
+    else:
+        click.echo("Specify --notion")
+
+
+@cli.command()
+@click.option("--days", default=90, help="Retention period in days")
+def cleanup(days):
+    """Clean up old data per retention policy."""
+    conn = get_connection(settings.db_path)
+    # Delete old raw_items (FTS5 triggers handle item_search cleanup)
+    cursor = conn.execute(
+        f"DELETE FROM raw_items WHERE created_at < datetime('now', '-{int(days)} days')")
+    items_deleted = cursor.rowcount
+    # Clean old job_runs
+    cursor = conn.execute(
+        f"DELETE FROM job_runs WHERE started_at < datetime('now', '-{int(days)} days')")
+    jobs_deleted = cursor.rowcount
+    conn.commit()
+    click.echo(f"Cleanup: {items_deleted} items, {jobs_deleted} job_runs deleted (>{days} days)")
