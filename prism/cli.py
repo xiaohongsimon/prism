@@ -170,3 +170,25 @@ def analyze(incremental, daily, date):
         stats = run_daily_analysis(conn, dt=analysis_date, model=settings.llm_model)
         click.echo(f"Daily analysis: {stats.get('signals_created', 0)} signals, "
                     f"{stats.get('cross_links', 0)} cross-links")
+
+
+@cli.command()
+@click.option("--date", default=None, help="Date to calculate trends for (YYYY-MM-DD)")
+def trends(date):
+    """Calculate trend heat scores and day-over-day deltas."""
+    from datetime import date as date_cls
+    from prism.pipeline.trends import calculate_trends
+    conn = get_connection(settings.db_path)
+    trend_date = date or date_cls.today().isoformat()
+    count = calculate_trends(conn, date=trend_date)
+    click.echo(f"Trends: {count} topics calculated for {trend_date}")
+
+    # Show top trends
+    rows = conn.execute(
+        "SELECT topic_label, heat_score, delta_vs_yesterday FROM trends "
+        "WHERE date = ? AND is_current = 1 ORDER BY heat_score DESC LIMIT 10",
+        (trend_date,),
+    ).fetchall()
+    for r in rows:
+        delta = f"+{r['delta_vs_yesterday']:.0f}" if r["delta_vs_yesterday"] > 0 else f"{r['delta_vs_yesterday']:.0f}"
+        click.echo(f"  {r['topic_label']:25s}  heat={r['heat_score']:.0f}  delta={delta}")
