@@ -151,7 +151,8 @@ def cluster(show_eval):
 @click.option("--incremental", is_flag=True, help="Run incremental analysis on new clusters")
 @click.option("--daily", is_flag=True, help="Run daily batch analysis")
 @click.option("--date", default=None, help="Date for daily analysis (YYYY-MM-DD)")
-def analyze(incremental, daily, date):
+@click.option("--workers", default=4, help="Max concurrent LLM calls")
+def analyze(incremental, daily, date, workers):
     """Run LLM signal analysis."""
     from prism.pipeline.analyze import run_incremental_analysis, run_daily_analysis
     conn = get_connection(settings.db_path)
@@ -161,7 +162,7 @@ def analyze(incremental, daily, date):
         return
 
     if incremental:
-        count = run_incremental_analysis(conn, model=settings.llm_cheap_model)
+        count = run_incremental_analysis(conn, model=settings.llm_cheap_model, max_workers=workers)
         click.echo(f"Incremental analysis: {count} signals created")
 
     if daily:

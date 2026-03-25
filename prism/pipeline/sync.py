@@ -24,7 +24,7 @@ def get_adapter(source_type: str):
     elif source_type == "arxiv":
         from prism.sources.arxiv import ArxivAdapter
         return ArxivAdapter()
-    elif source_type == "github":
+    elif source_type in ("github", "github_trending"):
         from prism.sources.github import GithubAdapter
         return GithubAdapter()
     else:

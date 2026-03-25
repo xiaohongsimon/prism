@@ -2,6 +2,8 @@
 
 import json
 import logging
+import subprocess
+import time
 from typing import Optional
 
 import httpx
@@ -67,7 +69,8 @@ DAILY_BATCH_USER_TEMPLATE = """今日日期：{date}
 # ---------------------------------------------------------------------------
 
 def call_llm(prompt: str, system: str = "", model: Optional[str] = None,
-             base_url: Optional[str] = None, api_key: Optional[str] = None) -> str:
+             base_url: Optional[str] = None, api_key: Optional[str] = None,
+             timeout: int = 300) -> str:
     """Call OpenAI-compatible LLM API, return response text."""
     base_url = base_url or settings.llm_base_url
     api_key = api_key or settings.llm_api_key
@@ -81,20 +84,38 @@ def call_llm(prompt: str, system: str = "", model: Optional[str] = None,
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
-    resp = httpx.post(
-        f"{base_url.rstrip('/')}/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}"},
-        json={"model": model, "messages": messages, "temperature": 0.3},
-        timeout=120,
-    )
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    payload = {"model": model, "messages": messages, "temperature": 0.3}
+
+    for attempt in range(4):
+        try:
+            result = subprocess.run(
+                ["curl", "-sS", "--max-time", str(timeout),
+                 url,
+                 "-H", f"Authorization: Bearer {api_key}",
+                 "-H", "Content-Type: application/json",
+                 "-d", json.dumps(payload, ensure_ascii=False)],
+                capture_output=True, text=True, timeout=timeout + 10,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"curl failed: {result.stderr}")
+            body = json.loads(result.stdout)
+            if "error" in body:
+                raise RuntimeError(f"API error: {body['error']}")
+            return body["choices"][0]["message"]["content"]
+        except (json.JSONDecodeError, KeyError, RuntimeError) as exc:
+            wait = 2 ** attempt
+            logger.warning("LLM call failed (attempt %d/4): %s, retrying in %ds", attempt + 1, exc, wait)
+            time.sleep(wait)
+
+    raise RuntimeError("LLM call failed after 4 attempts")
 
 
 def call_llm_json(prompt: str, system: str = "", model: Optional[str] = None,
-                  base_url: Optional[str] = None, api_key: Optional[str] = None) -> dict:
+                  base_url: Optional[str] = None, api_key: Optional[str] = None,
+                  timeout: int = 300) -> dict:
     """Call LLM and parse JSON from response."""
-    text = call_llm(prompt, system, model, base_url, api_key)
+    text = call_llm(prompt, system, model, base_url, api_key, timeout=timeout)
 
     # Try to extract JSON from response (handle markdown code blocks)
     text = text.strip()

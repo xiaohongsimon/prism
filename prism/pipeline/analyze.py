@@ -3,6 +3,7 @@
 import json
 import logging
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from typing import Optional
 
@@ -74,7 +75,22 @@ def _split_batches(clusters: list[sqlite3.Row], max_tokens: int = 60000) -> tupl
     return main, supplementary
 
 
-def run_incremental_analysis(conn: sqlite3.Connection, model: Optional[str] = None) -> int:
+def _analyze_one_cluster(cluster_data: dict, model: Optional[str] = None) -> Optional[dict]:
+    """Analyze a single cluster via LLM (thread-safe, no DB access)."""
+    prompt = INCREMENTAL_USER_TEMPLATE.format(
+        topic_label=cluster_data["topic_label"],
+        item_count=cluster_data["item_count"],
+        merged_context=cluster_data["merged_context"],
+    )
+    try:
+        return call_llm_json(prompt, system=INCREMENTAL_SYSTEM, model=model)
+    except Exception as exc:
+        logger.error("Incremental analysis failed for cluster %d: %s", cluster_data["id"], exc)
+        return None
+
+
+def run_incremental_analysis(conn: sqlite3.Connection, model: Optional[str] = None,
+                             max_workers: int = 8) -> int:
     """Analyze clusters without signals. Returns count of signals created."""
     clusters = _get_unanalyzed_clusters(conn)
     if not clusters:
@@ -83,39 +99,45 @@ def run_incremental_analysis(conn: sqlite3.Connection, model: Optional[str] = No
     job_id = insert_job_run(conn, job_type="analyze_incremental")
     count = 0
 
-    for c in clusters:
-        prompt = INCREMENTAL_USER_TEMPLATE.format(
-            topic_label=c["topic_label"],
-            item_count=c["item_count"],
-            merged_context=c["merged_context"],
-        )
-        try:
-            result = call_llm_json(prompt, system=INCREMENTAL_SYSTEM, model=model)
-        except Exception as exc:
-            logger.error("Incremental analysis failed for cluster %d: %s", c["id"], exc)
-            continue
+    # Prepare cluster data dicts for thread-safe access
+    cluster_dicts = [
+        {"id": c["id"], "topic_label": c["topic_label"],
+         "item_count": c["item_count"], "merged_context": c["merged_context"]}
+        for c in clusters
+    ]
 
-        conn.execute(
-            "INSERT INTO signals (cluster_id, summary, signal_layer, signal_strength, "
-            "why_it_matters, action, tl_perspective, tags_json, analysis_type, "
-            "model_id, prompt_version, job_run_id, is_current) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'incremental', ?, ?, ?, 1)",
-            (
-                c["id"],
-                result.get("summary", ""),
-                result.get("signal_layer", "noise"),
-                result.get("signal_strength", 1),
-                result.get("why_it_matters", ""),
-                result.get("action", ""),
-                result.get("tl_perspective", ""),
-                json.dumps(result.get("tags", []), ensure_ascii=False),
-                model or "",
-                PROMPT_VERSION,
-                job_id,
-            ),
-        )
-        conn.commit()
-        count += 1
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_cluster = {
+            executor.submit(_analyze_one_cluster, cd, model): cd
+            for cd in cluster_dicts
+        }
+        for future in as_completed(future_to_cluster):
+            cd = future_to_cluster[future]
+            result = future.result()
+            if result is None:
+                continue
+
+            conn.execute(
+                "INSERT INTO signals (cluster_id, summary, signal_layer, signal_strength, "
+                "why_it_matters, action, tl_perspective, tags_json, analysis_type, "
+                "model_id, prompt_version, job_run_id, is_current) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'incremental', ?, ?, ?, 1)",
+                (
+                    cd["id"],
+                    result.get("summary", ""),
+                    result.get("signal_layer", "noise"),
+                    result.get("signal_strength", 1),
+                    result.get("why_it_matters", ""),
+                    result.get("action", ""),
+                    result.get("tl_perspective", ""),
+                    json.dumps(result.get("tags", []), ensure_ascii=False),
+                    model or "",
+                    PROMPT_VERSION,
+                    job_id,
+                ),
+            )
+            conn.commit()
+            count += 1
 
     finish_job_run(conn, job_id, status="ok" if count > 0 else "failed",
                    stats_json=json.dumps({"signals_created": count}))
