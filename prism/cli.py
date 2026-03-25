@@ -145,3 +145,28 @@ def cluster(show_eval):
         stats = cluster_eval_stats(clusters)
         click.echo(f"  Clusters: {stats['cluster_count']}, Avg size: {stats['avg_size']:.1f}, "
                     f"Max size: {stats['max_size']}, Singleton ratio: {stats['singleton_ratio']:.0%}")
+
+
+@cli.command()
+@click.option("--incremental", is_flag=True, help="Run incremental analysis on new clusters")
+@click.option("--daily", is_flag=True, help="Run daily batch analysis")
+@click.option("--date", default=None, help="Date for daily analysis (YYYY-MM-DD)")
+def analyze(incremental, daily, date):
+    """Run LLM signal analysis."""
+    from prism.pipeline.analyze import run_incremental_analysis, run_daily_analysis
+    conn = get_connection(settings.db_path)
+
+    if not incremental and not daily:
+        click.echo("Specify --incremental or --daily")
+        return
+
+    if incremental:
+        count = run_incremental_analysis(conn, model=settings.llm_cheap_model)
+        click.echo(f"Incremental analysis: {count} signals created")
+
+    if daily:
+        from datetime import date as date_cls
+        analysis_date = date or date_cls.today().isoformat()
+        stats = run_daily_analysis(conn, dt=analysis_date, model=settings.llm_model)
+        click.echo(f"Daily analysis: {stats.get('signals_created', 0)} signals, "
+                    f"{stats.get('cross_links', 0)} cross-links")

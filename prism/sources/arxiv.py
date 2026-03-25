@@ -108,12 +108,41 @@ def keyword_filter(items: list[RawItem]) -> list[RawItem]:
 
 
 def llm_relevance_filter(items: list[RawItem]) -> list[RawItem]:
-    """LLM-based relevance filter — STUB.
+    """LLM-based relevance filter using cheap model.
 
-    Will be wired in Task 6 to use LLM for deeper relevance scoring.
-    Currently returns all items unchanged.
+    Rates each paper 1-5 for relevance to LLM/AI agent engineering.
+    Keeps items scoring >= 3. Falls back to returning all items on error.
     """
-    return items
+    if not items:
+        return items
+
+    try:
+        from prism.pipeline.llm import call_llm
+        from prism.config import settings
+    except ImportError:
+        return items
+
+    if not settings.llm_api_key:
+        return items
+
+    filtered = []
+    for item in items:
+        meta = item.raw_json if isinstance(item.raw_json, dict) else {}
+        abstract = meta.get("abstract", item.body) if isinstance(meta, dict) else item.body
+        prompt = (
+            f"Rate 1-5 how relevant this paper is to LLM/AI agent engineering.\n"
+            f"Title: {item.title}\nAbstract: {abstract}\n"
+            f"Reply with ONLY a single digit 1-5."
+        )
+        try:
+            score_text = call_llm(prompt, model=settings.llm_cheap_model)
+            score = int("".join(c for c in score_text.strip() if c.isdigit())[:1] or "0")
+            if score >= 3:
+                filtered.append(item)
+        except Exception:
+            filtered.append(item)  # Keep on error
+
+    return filtered if filtered else items
 
 
 # ---------------------------------------------------------------------------
