@@ -71,3 +71,77 @@ def source_enable(source_key):
     conn = get_connection(settings.db_path)
     enable_source(conn, source_key)
     click.echo(f"Enabled {source_key}")
+
+
+@cli.command()
+@click.option("--eval", "show_eval", is_flag=True, help="Show clustering statistics")
+def cluster(show_eval):
+    """Run incremental clustering on today's unprocessed items."""
+    from datetime import date
+    from prism.pipeline.cluster import cluster_items, build_merged_context, cluster_eval_stats
+    from prism.pipeline.entities import load_entities, tag_entities
+    from prism.source_manager import reconcile_sources
+
+    conn = get_connection(settings.db_path)
+    reconcile_sources(conn, settings.source_config)
+
+    today = date.today().isoformat()
+
+    # Load entities if config exists
+    entities = None
+    if settings.entity_config.exists():
+        entities = load_entities(settings.entity_config)
+
+    # Get today's unprocessed items (not yet in any cluster)
+    rows = conn.execute(
+        "SELECT ri.* FROM raw_items ri "
+        "LEFT JOIN cluster_items ci ON ri.id = ci.raw_item_id "
+        "WHERE ci.cluster_id IS NULL AND date(ri.created_at) = ?",
+        (today,),
+    ).fetchall()
+
+    if not rows:
+        click.echo("No new items to cluster.")
+        return
+
+    from prism.models import RawItem
+    items = [
+        RawItem(
+            id=r["id"], source_id=r["source_id"], url=r["url"],
+            title=r["title"], body=r["body"], author=r["author"],
+            published_at=r["published_at"], raw_json=r["raw_json"],
+        )
+        for r in rows
+    ]
+
+    # Tag entities
+    if entities:
+        for item in items:
+            tags = tag_entities(item.title, item.body, entities)
+            if tags:
+                click.echo(f"  Tagged {item.url}: {', '.join(tags)}")
+
+    # Cluster
+    clusters = cluster_items(items, existing_clusters=[], entities=entities)
+
+    # Store clusters in DB
+    items_by_id = {item.id: item for item in items}
+    for c in clusters:
+        c_items = [items_by_id[i] for i in c["item_ids"] if i in items_by_id]
+        merged = build_merged_context(c_items)
+        cursor = conn.execute(
+            "INSERT INTO clusters (date, topic_label, item_count, merged_context) VALUES (?, ?, ?, ?)",
+            (today, c.get("topic_label", ""), len(c["item_ids"]), merged),
+        )
+        cluster_id = cursor.lastrowid
+        for item_id in c["item_ids"]:
+            conn.execute("INSERT OR IGNORE INTO cluster_items (cluster_id, raw_item_id) VALUES (?, ?)",
+                         (cluster_id, item_id))
+    conn.commit()
+
+    click.echo(f"Clustered {len(items)} items into {len(clusters)} clusters.")
+
+    if show_eval:
+        stats = cluster_eval_stats(clusters)
+        click.echo(f"  Clusters: {stats['cluster_count']}, Avg size: {stats['avg_size']:.1f}, "
+                    f"Max size: {stats['max_size']}, Singleton ratio: {stats['singleton_ratio']:.0%}")
