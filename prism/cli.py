@@ -208,3 +208,11 @@ def briefing(date, save):
         click.echo(f"Briefing saved for {brief_date}")
     else:
         click.echo(result["markdown"])
+
+
+@cli.command()
+@click.option("--port", default=8000, help="Port to listen on")
+def serve(port):
+    """Start the API server."""
+    import uvicorn
+    uvicorn.run("prism.api.app:create_app", host="0.0.0.0", port=port, factory=True)
