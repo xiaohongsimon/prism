@@ -36,8 +36,20 @@
         <a class="slides-link" href="/slides/{{ item.signal_id }}" target="_blank">
             📊 精华 PPT
         </a>
+        <a class="slides-link" href="/slides/{{ item.signal_id }}/alt" target="_blank" style="opacity:0.6">
+            📊 备选 PPT
+        </a>
         {% endif %}
         </div>
+        {% if item.has_slides %}
+        <div class="slides-viewer">
+            <iframe src="/slides/{{ item.signal_id }}" loading="lazy"></iframe>
+            <div class="slides-viewer-bar">
+                <span>用方向键 ← → 翻页</span>
+                <a href="/slides/{{ item.signal_id }}" target="_blank">全屏查看 ↗</a>
+            </div>
+        </div>
+        {% endif %}
         {% if item.source_keys %}
         <div class="card-sources">
             {% for sk in item.source_keys %}
