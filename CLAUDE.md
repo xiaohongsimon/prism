@@ -19,7 +19,7 @@ API: prism/api/ (JSON API at /api/*, Web UI at /)
 
 ## Constraints & Gotchas
 - **YAML 权威**: sources.yaml 是信号源配置的 source of truth，DB 只跟踪运行时状态
-- **LLM via omlx-manager**: 调用本地 omlx gateway (port 8003)，模型可切换，见 .env
+- **LLM via omlx**: 调用本地 omlx 后端 (port 8002)，gateway (8003) 不稳定时直连后端，模型可切换，见 .env
 - **LLM 并发限制**: prism 和 Claude Code 共享 omlx，高并发会 503，analyze 应错峰运行
 - **Reasoning 模型**: LLM 输出可能含 `<think>` 标签，llm.py 已处理
 - **source_key 含冒号**: 如 `x:karpathy`，在 HTML id/CSS selector 中需转义或避免使用
