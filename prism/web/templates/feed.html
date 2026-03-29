@@ -11,13 +11,13 @@
            href="/?tab=hot">热门</a>
     </div>
 </nav>
-{% if tab == 'follow' and channels %}
+{% if tab == 'follow' and source_types %}
 <div class="channel-bar">
     <a class="channel-chip {% if not current_channel %}active{% endif %}"
        href="/?tab=follow">全部</a>
-    {% for ch in channels %}
-    <a class="channel-chip {% if current_channel == ch.key %}active{% endif %}"
-       href="/?tab=follow&channel={{ ch.key }}">{{ ch.label }}</a>
+    {% for st in source_types %}
+    <a class="channel-chip {% if current_channel == st.key %}active{% endif %}"
+       href="/?tab=follow&channel={{ st.key }}">{{ st.label }}</a>
     {% endfor %}
 </div>
 {% endif %}

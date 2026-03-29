@@ -60,17 +60,18 @@ def index(request: Request, tab: str = "recommend", channel: str = ""):
     signal_ids = [item["signal_id"] for item in items]
     feedback_map = _feedback_map(conn, signal_ids)
 
-    # Build channel list for follow tab
+    # Build source type list for follow tab
     from prism.web.ranking import FOLLOW_SOURCE_TYPES
-    channels = []
+    type_labels = {"x": "X / Twitter", "youtube": "YouTube", "follow_builders": "Builders", "github_releases": "GitHub"}
+    source_types = []
     if tab == "follow":
         rows = conn.execute(
-            "SELECT source_key, type, handle FROM sources WHERE type IN ({}) ORDER BY source_key".format(
+            "SELECT DISTINCT type FROM sources WHERE type IN ({}) ORDER BY type".format(
                 ",".join("?" * len(FOLLOW_SOURCE_TYPES))
             ),
             list(FOLLOW_SOURCE_TYPES),
         ).fetchall()
-        channels = [{"key": r["source_key"], "label": r["handle"] or r["source_key"]} for r in rows]
+        source_types = [{"key": r["type"], "label": type_labels.get(r["type"], r["type"])} for r in rows]
 
     return _render(
         "feed.html",
@@ -79,7 +80,7 @@ def index(request: Request, tab: str = "recommend", channel: str = ""):
         page=1,
         per_page=per_page,
         feedback_map=feedback_map,
-        channels=channels,
+        source_types=source_types,
         current_channel=channel,
     )
 

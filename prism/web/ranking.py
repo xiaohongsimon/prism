@@ -98,8 +98,9 @@ def compute_feed(
     # Load preference map
     pref_map = _load_preference_map(conn) if w_pref > 0 else {}
 
-    # Load source keys, authors, and URLs for each cluster
+    # Load source keys, types, authors, and URLs for each cluster
     cluster_sources: dict[int, list[str]] = {}
+    cluster_source_types: dict[int, set[str]] = {}
     cluster_authors: dict[int, list[str]] = {}
     cluster_urls: dict[int, list[str]] = {}
     source_rows = conn.execute(
@@ -115,8 +116,10 @@ def compute_feed(
     for sr in source_rows:
         cid = sr["cluster_id"]
         cluster_sources.setdefault(cid, [])
+        cluster_source_types.setdefault(cid, set())
         if sr["source_key"] not in cluster_sources[cid]:
             cluster_sources[cid].append(sr["source_key"])
+        cluster_source_types[cid].add(sr["type"])
         if sr["enabled"]:
             enabled_sources.add(sr["source_key"])
         if sr["type"] in FOLLOW_SOURCE_TYPES:
@@ -146,8 +149,8 @@ def compute_feed(
         if tab == "follow":
             if not any(sk in follow_sources for sk in source_keys):
                 continue
-            # Channel filter within follow tab
-            if channel and channel not in source_keys:
+            # Channel filter = source type filter (e.g. "x", "youtube")
+            if channel and channel not in cluster_source_types.get(r["cluster_id"], set()):
                 continue
 
         authors = cluster_authors.get(r["cluster_id"], [])
