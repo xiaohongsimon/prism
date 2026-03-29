@@ -292,3 +292,185 @@ def cleanup(days):
     jobs_deleted = cursor.rowcount
     conn.commit()
     click.echo(f"Cleanup: {items_deleted} items, {jobs_deleted} job_runs deleted (>{days} days)")
+
+
+# ---------------------------------------------------------------------------
+# entity-link
+# ---------------------------------------------------------------------------
+
+@cli.command("entity-link")
+@click.option("--date", default=None, help="Date to run entity linking (YYYY-MM-DD)")
+@click.option("--model", default=None, help="LLM model override")
+def entity_link(date, model):
+    """Run entity link pipeline, auto-migrating YAML entities on first run."""
+    from datetime import date as date_cls
+    from prism.pipeline.entity_link import run_entity_link
+    from prism.pipeline.entities import migrate_yaml_to_db
+
+    conn = get_connection(settings.db_path)
+    link_date = date or date_cls.today().isoformat()
+
+    # Auto-migrate YAML on first run if entity_config exists and no profiles yet
+    if settings.entity_config.exists():
+        existing = conn.execute("SELECT COUNT(*) FROM entity_profiles").fetchone()[0]
+        if existing == 0:
+            migrated = migrate_yaml_to_db(conn, settings.entity_config)
+            if migrated:
+                click.echo(f"Auto-migrated {migrated} entities from YAML")
+
+    stats = run_entity_link(conn, link_date, model=model or settings.llm_model)
+    click.echo(
+        f"entity-link {link_date}: signals={stats['signals_processed']} "
+        f"linked={stats['entities_linked']} created={stats['entities_created']} "
+        f"staged={stats['entities_staged']} promoted={stats['candidates_promoted']}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# entity group
+# ---------------------------------------------------------------------------
+
+@cli.group()
+def entity():
+    """Manage tracked entities."""
+    pass
+
+
+@entity.command("list")
+@click.option("--status", default=None,
+              type=click.Choice(["emerging", "growing", "mature", "declining"]),
+              help="Filter by lifecycle status")
+@click.option("--category", default=None,
+              type=click.Choice(["person", "org", "project", "model", "technique", "dataset"]),
+              help="Filter by category")
+def entity_list(status, category):
+    """List entity profiles ordered by m7_score."""
+    conn = get_connection(settings.db_path)
+
+    clauses = []
+    params: list = []
+    if status:
+        clauses.append("status = ?")
+        params.append(status)
+    if category:
+        clauses.append("category = ?")
+        params.append(category)
+
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    rows = conn.execute(
+        f"SELECT display_name, category, status, m7_score, event_count_7d, needs_review "
+        f"FROM entity_profiles {where} ORDER BY m7_score DESC",
+        params,
+    ).fetchall()
+
+    if not rows:
+        click.echo("No entities found.")
+        return
+
+    for r in rows:
+        review = "  [needs review]" if r["needs_review"] else ""
+        click.echo(
+            f"  {r['display_name']:25s}  {r['category']:10s}  {r['status']:10s}  "
+            f"m7={r['m7_score']:.1f}  events_7d={r['event_count_7d']}{review}"
+        )
+
+
+@entity.command("show")
+@click.argument("name")
+def entity_show(name):
+    """Show profile details, aliases, and last 10 events for NAME."""
+    from prism.pipeline.entity_normalize import normalize
+
+    conn = get_connection(settings.db_path)
+    name_norm = normalize(name)
+
+    row = conn.execute(
+        """
+        SELECT ep.*
+        FROM entity_aliases ea
+        JOIN entity_profiles ep ON ea.entity_id = ep.id
+        WHERE ea.alias_norm = ?
+        LIMIT 1
+        """,
+        (name_norm,),
+    ).fetchone()
+
+    if row is None:
+        # Try direct canonical_name lookup
+        row = conn.execute(
+            "SELECT * FROM entity_profiles WHERE canonical_name = ?",
+            (name_norm,),
+        ).fetchone()
+
+    if row is None:
+        click.echo(f"Entity not found: {name}")
+        return
+
+    click.echo(f"\n=== {row['display_name']} ===")
+    click.echo(f"  category : {row['category']}")
+    click.echo(f"  status   : {row['status']}")
+    click.echo(f"  m7_score : {row['m7_score']:.2f}")
+    click.echo(f"  events   : 7d={row['event_count_7d']}  30d={row['event_count_30d']}  total={row['event_count_total']}")
+    if row["summary"]:
+        click.echo(f"  summary  : {row['summary']}")
+
+    # Aliases
+    aliases = conn.execute(
+        "SELECT surface_form, source FROM entity_aliases WHERE entity_id = ? ORDER BY source",
+        (row["id"],),
+    ).fetchall()
+    if aliases:
+        click.echo(f"\nAliases ({len(aliases)}):")
+        for a in aliases:
+            click.echo(f"  [{a['source']}] {a['surface_form']}")
+
+    # Last 10 events
+    events = conn.execute(
+        """
+        SELECT ee.date, ee.event_type, ee.impact, ee.description
+        FROM entity_events ee
+        WHERE ee.entity_id = ?
+        ORDER BY ee.date DESC, ee.id DESC
+        LIMIT 10
+        """,
+        (row["id"],),
+    ).fetchall()
+    if events:
+        click.echo(f"\nLast {len(events)} events:")
+        for e in events:
+            desc = (e["description"] or "")[:80]
+            click.echo(f"  {e['date']}  {e['event_type']:10s}  {e['impact']:6s}  {desc}")
+
+
+# ---------------------------------------------------------------------------
+# practice
+# ---------------------------------------------------------------------------
+
+@cli.command()
+@click.argument("note")
+def practice(note):
+    """Record a manual practice note as a raw item."""
+    from datetime import datetime
+    from prism.db import get_source_by_key, insert_source, insert_raw_item
+
+    conn = get_connection(settings.db_path)
+
+    source_key = "practice:manual"
+    source_row = get_source_by_key(conn, source_key)
+    if source_row is None:
+        source_id = insert_source(
+            conn, source_key=source_key, type="manual",
+            handle="manual", origin="cli"
+        )
+    else:
+        source_id = source_row["id"]
+
+    url = f"practice:{datetime.now().isoformat()}"
+    item_id = insert_raw_item(
+        conn, source_id=source_id, url=url,
+        title=note, body=note,
+    )
+    if item_id:
+        click.echo(f"Saved practice note (id={item_id}): {note[:80]}")
+    else:
+        click.echo("Note already recorded.")
