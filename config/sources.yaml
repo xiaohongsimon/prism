@@ -1,18 +1,77 @@
 sources:
+  # === X (Twitter) — priority follows ===
   - type: x
     handle: karpathy
     depth: thread
   - type: x
-    handle: swyx
-    depth: thread
-  - type: x
     handle: simonw
     depth: thread
+
+  # === HN ===
+  - type: hackernews
+    key: "hn:best"
+    feed_url: "https://hnrss.org/best"
+    max_items: 15
+
+  # === GitHub Releases ===
+  - type: github_releases
+    key: "github:releases"
+    orgs:
+      - vllm-project
+      - sgl-project
+      - deepseek-ai
+      - QwenLM
+      - THUDM
+      - huggingface
+      - pytorch
+      - meta-llama
+      - mistralai
+      - apple
+      - XiaoMi
+      - MiniMaxAI
+
+  # === YouTube ===
+  - type: youtube
+    key: "youtube:ai-interviews"
+    channels:
+      - UCbfYPyITQ-7l4upoX8nvctg
+      - UC6107grRI4m0o2-emgoDnAA
+      - UCb1VhJpMEaMQ0yIflg0sDQQ
+      - UCUyeluBRhGPCW4acMCN7V0Q
+      - UCZHmQk67mSJgfCCTn7xBfew
+      - UCsBjURrPoezykLs9EqgamOA
+
+  # === Model Economics ===
+  - type: model_economics
+    key: "economics:models"
+
+  # === Practice ===
+  - type: git_practice
+    key: "practice:git"
+    repos:
+      - /Users/leehom/work/prism
+    lookback_hours: 24
+
+  - type: claude_sessions
+    key: "practice:claude"
+    memory_dirs:
+      - /Users/leehom/.claude/projects
+
+  # === Deprioritized (kept for coverage) ===
+  - type: x
+    handle: swyx
+    depth: thread
+
   - type: arxiv
     key: "arxiv:daily"
     categories: [cs.LG, cs.CL, cs.AI]
-    filter: keyword+llm
+    filter: keyword
+
   - type: github_trending
     key: "github:trending"
     track_days: 7
     deep_fetch: true
+
+  - type: follow_builders
+    key: "feed:follow-builders"
+    url: https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-x.json
