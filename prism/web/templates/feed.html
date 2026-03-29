@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<nav class="top-nav">
+    <span class="logo">⬡ Prism</span>
+    <div class="tabs">
+        <a class="tab {% if tab == 'recommend' %}active{% endif %}"
+           hx-get="/feed?tab=recommend&page=1"
+           hx-target="#feed-list"
+           hx-swap="innerHTML"
+           href="#">推荐</a>
+        <a class="tab {% if tab == 'follow' %}active{% endif %}"
+           hx-get="/feed?tab=follow&page=1"
+           hx-target="#feed-list"
+           hx-swap="innerHTML"
+           href="#">关注</a>
+        <a class="tab {% if tab == 'hot' %}active{% endif %}"
+           hx-get="/feed?tab=hot&page=1"
+           hx-target="#feed-list"
+           hx-swap="innerHTML"
+           href="#">热门</a>
+    </div>
+</nav>
+<div id="feed-list">
+{% for item in items %}
+    {% set feedback_state = feedback_map.get(item.signal_id) if feedback_map else None %}
+    {% include "partials/card.html" %}
+{% endfor %}
+{% if items | length >= per_page %}
+<div hx-get="/feed?tab={{ tab }}&page={{ page + 1 }}&per_page={{ per_page }}"
+     hx-trigger="revealed"
+     hx-target="#feed-list"
+     hx-swap="beforeend"
+     class="loading">加载中…</div>
+{% endif %}
+{% if not items %}
+<div class="empty">暂无内容</div>
+{% endif %}
+</div>
+{% endblock %}

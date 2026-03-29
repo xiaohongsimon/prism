@@ -1,0 +1,32 @@
+<div class="card">
+    <div class="card-icon {{ item.signal_layer }}">
+        {% if item.signal_layer == 'actionable' %}⚡
+        {% elif item.signal_layer == 'strategic' %}🎯
+        {% else %}📰{% endif %}
+    </div>
+    <div class="card-body">
+        <div class="card-title">{{ item.topic_label }}</div>
+        <div class="card-meta">
+            <span>🔥 {{ item.signal_strength }}</span>
+            <span class="sep"></span>
+            <span>{{ item.cluster_date or item.created_at[:10] }}</span>
+            {% if item.source_keys %}
+            <span class="sep"></span>
+            <span>{{ item.source_keys | length }} 个来源</span>
+            {% endif %}
+            <span class="sep"></span>
+            <span class="badge {{ item.signal_layer }}">{{ item.signal_layer }}</span>
+        </div>
+        <div class="card-summary">{{ item.summary }}</div>
+        {% if item.source_keys %}
+        <div class="card-sources">
+            {% for sk in item.source_keys %}
+            <a class="source-pill" href="/channel/{{ sk }}">{{ sk }}</a>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <div id="actions-{{ item.signal_id }}">
+            {% include "partials/card_actions.html" %}
+        </div>
+    </div>
+</div>

@@ -1,0 +1,18 @@
+<div class="actions">
+    <button class="action-btn {% if feedback_state == 'like' %}liked{% endif %}"
+            hx-post="/feedback"
+            hx-vals='{"signal_id": "{{ item.signal_id }}", "action": "like"}'
+            hx-target="#actions-{{ item.signal_id }}"
+            hx-swap="innerHTML">👍</button>
+    <button class="action-btn {% if feedback_state == 'dislike' %}disliked{% endif %}"
+            hx-post="/feedback"
+            hx-vals='{"signal_id": "{{ item.signal_id }}", "action": "dislike"}'
+            hx-target="#actions-{{ item.signal_id }}"
+            hx-swap="innerHTML">👎</button>
+    <button class="action-btn {% if feedback_state == 'save' %}saved{% endif %}"
+            hx-post="/feedback"
+            hx-vals='{"signal_id": "{{ item.signal_id }}", "action": "save"}'
+            hx-target="#actions-{{ item.signal_id }}"
+            hx-swap="innerHTML">⭐</button>
+    <a class="action-btn" href="#signal-{{ item.signal_id }}">🔗</a>
+</div>
