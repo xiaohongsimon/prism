@@ -241,6 +241,10 @@ a:hover { text-decoration: underline; }
   margin-top: 4px;
 }
 
+.action-form {
+  display: inline;
+}
+
 .action-btn {
   display: inline-flex;
   align-items: center;
