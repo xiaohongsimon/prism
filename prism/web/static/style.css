@@ -128,10 +128,23 @@ a:hover { text-decoration: underline; }
 .card-icon.strategic  { background: rgba(0,186,124,.2);   color: var(--accent-green); }
 .card-icon.noise      { background: rgba(113,118,123,.15); color: var(--text-secondary); }
 
+.avatar-letter {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
 /* ── Card content ───────────────────────────────────────────── */
 .card-body {
   flex: 1;
   min-width: 0;
+}
+
+.card-author {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 1px;
 }
 
 .card-title {
@@ -159,6 +172,26 @@ a:hover { text-decoration: underline; }
   color: var(--text-primary);
   margin-bottom: 8px;
   line-height: 1.5;
+}
+
+/* ── Original link ──────────────────────────────────────────── */
+.original-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--separator);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent-blue);
+  transition: background 0.12s, border-color 0.12s;
+}
+.original-link:hover {
+  background: var(--bg-blue-subtle);
+  border-color: var(--accent-blue);
+  text-decoration: none;
 }
 
 .card-sources {

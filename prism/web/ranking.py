@@ -18,6 +18,9 @@ HALF_LIFE_HOURS = 24.0
 # Feedback deltas per action
 ACTION_DELTAS = {"like": 1.0, "dislike": -1.0, "save": 2.0}
 
+# "Follow" tab source types: personal/curated channels (not aggregators)
+FOLLOW_SOURCE_TYPES = {"x", "youtube", "follow_builders", "github_releases"}
+
 
 def _time_decay(published_at: str | None) -> float:
     """Exponential decay based on age in hours."""
@@ -94,29 +97,38 @@ def compute_feed(
     # Load preference map
     pref_map = _load_preference_map(conn) if w_pref > 0 else {}
 
-    # Load source keys and authors for each cluster
+    # Load source keys, authors, and URLs for each cluster
     cluster_sources: dict[int, list[str]] = {}
     cluster_authors: dict[int, list[str]] = {}
+    cluster_urls: dict[int, list[str]] = {}
     source_rows = conn.execute(
         """
-        SELECT ci.cluster_id, src.source_key, src.enabled, ri.author
+        SELECT ci.cluster_id, src.source_key, src.type, src.enabled, ri.author, ri.url
         FROM cluster_items ci
         JOIN raw_items ri ON ri.id = ci.raw_item_id
         JOIN sources src ON src.id = ri.source_id
         """
     ).fetchall()
     enabled_sources: set[str] = set()
+    follow_sources: set[str] = set()
     for sr in source_rows:
-        cluster_sources.setdefault(sr["cluster_id"], [])
-        if sr["source_key"] not in cluster_sources[sr["cluster_id"]]:
-            cluster_sources[sr["cluster_id"]].append(sr["source_key"])
+        cid = sr["cluster_id"]
+        cluster_sources.setdefault(cid, [])
+        if sr["source_key"] not in cluster_sources[cid]:
+            cluster_sources[cid].append(sr["source_key"])
         if sr["enabled"]:
             enabled_sources.add(sr["source_key"])
+        if sr["type"] in FOLLOW_SOURCE_TYPES:
+            follow_sources.add(sr["source_key"])
         if sr["author"] and sr["author"].strip():
-            cluster_authors.setdefault(sr["cluster_id"], [])
+            cluster_authors.setdefault(cid, [])
             author = sr["author"].strip()
-            if author not in cluster_authors[sr["cluster_id"]]:
-                cluster_authors[sr["cluster_id"]].append(author)
+            if author not in cluster_authors[cid]:
+                cluster_authors[cid].append(author)
+        if sr["url"] and sr["url"].startswith("http"):
+            cluster_urls.setdefault(cid, [])
+            if sr["url"] not in cluster_urls[cid]:
+                cluster_urls[cid].append(sr["url"])
 
     # Build scored items
     items = []
@@ -129,12 +141,13 @@ def compute_feed(
 
         source_keys = cluster_sources.get(r["cluster_id"], [])
 
-        # Follow tab: skip clusters with no enabled sources
+        # Follow tab: only show clusters from personal/curated sources
         if tab == "follow":
-            if not any(sk in enabled_sources for sk in source_keys):
+            if not any(sk in follow_sources for sk in source_keys):
                 continue
 
         authors = cluster_authors.get(r["cluster_id"], [])
+        urls = cluster_urls.get(r["cluster_id"], [])
 
         item = {
             "signal_id": r["signal_id"],
@@ -148,6 +161,7 @@ def compute_feed(
             "tags": tags,
             "source_keys": source_keys,
             "authors": authors,
+            "urls": urls,
             "cluster_date": r["cluster_date"],
             "created_at": r["created_at"],
         }

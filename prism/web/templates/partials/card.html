@@ -1,10 +1,15 @@
 <div class="card">
     <div class="card-icon {{ item.signal_layer }}">
-        {% if item.signal_layer == 'actionable' %}⚡
+        {% if item.authors %}
+            <span class="avatar-letter">{{ item.authors[0][0] | upper }}</span>
+        {% elif item.signal_layer == 'actionable' %}⚡
         {% elif item.signal_layer == 'strategic' %}🎯
         {% else %}📰{% endif %}
     </div>
     <div class="card-body">
+        {% if item.authors %}
+        <div class="card-author">{{ item.authors | join(', ') }}</div>
+        {% endif %}
         {% set clean_title = item.topic_label | replace('[Practice] ', '') %}
         {% if ' — ' in clean_title and ('/' in clean_title.split(' — ')[1] or '-Users-' in clean_title) %}
         <div class="card-title">{{ clean_title.split(' — ')[0] }}</div>
@@ -12,10 +17,6 @@
         <div class="card-title">{{ clean_title }}</div>
         {% endif %}
         <div class="card-meta">
-            {% if item.authors %}
-            <span>{{ item.authors | join(', ') }}</span>
-            <span class="sep"></span>
-            {% endif %}
             <span>🔥 {{ item.signal_strength }}</span>
             <span class="sep"></span>
             <span>{{ item.cluster_date or item.created_at[:10] }}</span>
@@ -25,6 +26,11 @@
             {% endif %}
         </div>
         <div class="card-summary">{{ item.summary }}</div>
+        {% if item.urls %}
+        <a class="original-link" href="{{ item.urls[0] }}" target="_blank" rel="noopener">
+            查看原文 ↗
+        </a>
+        {% endif %}
         {% if item.source_keys %}
         <div class="card-sources">
             {% for sk in item.source_keys %}
