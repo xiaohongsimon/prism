@@ -11,6 +11,7 @@ from prism.db import insert_job_run, finish_job_run
 from prism.pipeline.llm import (
     call_llm_json, PROMPT_VERSION,
     INCREMENTAL_SYSTEM, INCREMENTAL_USER_TEMPLATE,
+    VIDEO_SYSTEM, VIDEO_USER_TEMPLATE,
     DAILY_BATCH_SYSTEM, DAILY_BATCH_USER_TEMPLATE,
 )
 
@@ -77,13 +78,29 @@ def _split_batches(clusters: list[sqlite3.Row], max_tokens: int = 60000) -> tupl
 
 def _analyze_one_cluster(cluster_data: dict, model: Optional[str] = None) -> Optional[dict]:
     """Analyze a single cluster via LLM (thread-safe, no DB access)."""
-    prompt = INCREMENTAL_USER_TEMPLATE.format(
+    is_video = cluster_data.get("is_video", False)
+    if is_video and len(cluster_data.get("merged_context", "")) > 500:
+        system = VIDEO_SYSTEM
+        user_template = VIDEO_USER_TEMPLATE
+    else:
+        system = INCREMENTAL_SYSTEM
+        user_template = INCREMENTAL_USER_TEMPLATE
+
+    prompt = user_template.format(
         topic_label=cluster_data["topic_label"],
-        item_count=cluster_data["item_count"],
+        item_count=cluster_data.get("item_count", 1),
         merged_context=cluster_data["merged_context"],
     )
     try:
-        return call_llm_json(prompt, system=INCREMENTAL_SYSTEM, model=model)
+        result = call_llm_json(prompt, system=system, model=model)
+        # For video analysis, merge key_insights into summary for display
+        if is_video and "key_insights" in result:
+            insights = result.get("key_insights", [])
+            if insights:
+                result["summary"] = result.get("summary", "") + "\n\n💡 核心洞察：\n" + "\n".join(
+                    f"• {ins}" for ins in insights
+                )
+        return result
     except Exception as exc:
         logger.error("Incremental analysis failed for cluster %d: %s", cluster_data["id"], exc)
         return None
@@ -99,10 +116,24 @@ def run_incremental_analysis(conn: sqlite3.Connection, model: Optional[str] = No
     job_id = insert_job_run(conn, job_type="analyze_incremental")
     count = 0
 
+    # Detect which clusters are from YouTube (for video-specific analysis)
+    youtube_cluster_ids = set()
+    yt_rows = conn.execute(
+        """
+        SELECT DISTINCT ci.cluster_id FROM cluster_items ci
+        JOIN raw_items ri ON ri.id = ci.raw_item_id
+        JOIN sources s ON s.id = ri.source_id
+        WHERE s.type = 'youtube'
+        """
+    ).fetchall()
+    for r in yt_rows:
+        youtube_cluster_ids.add(r["cluster_id"])
+
     # Prepare cluster data dicts for thread-safe access
     cluster_dicts = [
         {"id": c["id"], "topic_label": c["topic_label"],
-         "item_count": c["item_count"], "merged_context": c["merged_context"]}
+         "item_count": c["item_count"], "merged_context": c["merged_context"],
+         "is_video": c["id"] in youtube_cluster_ids}
         for c in clusters
     ]
 
