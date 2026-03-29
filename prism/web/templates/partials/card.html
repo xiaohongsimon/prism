@@ -5,7 +5,12 @@
         {% else %}📰{% endif %}
     </div>
     <div class="card-body">
-        <div class="card-title">{{ item.topic_label | replace('[Practice] ', '') }}</div>
+        {% set clean_title = item.topic_label | replace('[Practice] ', '') %}
+        {% if ' — ' in clean_title and ('/' in clean_title.split(' — ')[1] or '-Users-' in clean_title) %}
+        <div class="card-title">{{ clean_title.split(' — ')[0] }}</div>
+        {% else %}
+        <div class="card-title">{{ clean_title }}</div>
+        {% endif %}
         <div class="card-meta">
             {% if item.authors %}
             <span>{{ item.authors | join(', ') }}</span>
@@ -18,8 +23,6 @@
             <span class="sep"></span>
             <span>{{ item.source_keys | length }} 个来源</span>
             {% endif %}
-            <span class="sep"></span>
-            <span class="badge {{ item.signal_layer }}">{{ item.signal_layer }}</span>
         </div>
         <div class="card-summary">{{ item.summary }}</div>
         {% if item.source_keys %}
