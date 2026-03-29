@@ -119,10 +119,6 @@ def feedback(
     conn.commit()
     update_preferences(conn, sig_id, action)
 
-    # Build a minimal item dict just for the template
-    row = conn.execute(
-        "SELECT id AS signal_id FROM signals WHERE id = ?", (sig_id,)
-    ).fetchone()
     item = {"signal_id": sig_id}
     feedback_state = action
 
@@ -202,12 +198,10 @@ def channel_unfollow(request: Request, source_key: str):
         "UPDATE sources SET enabled = 0 WHERE source_key = ?", (source_key,)
     )
     conn.commit()
-    # Return the follow button so user can re-follow
     html = (
         f'<button class="follow-btn"'
         f' hx-post="/channel/{source_key}/follow"'
-        f' hx-target="#follow-btn-{source_key}"'
-        f' hx-swap="innerHTML">关注</button>'
+        f' hx-swap="outerHTML">关注</button>'
     )
     return HTMLResponse(html)
 
@@ -220,11 +214,9 @@ def channel_follow(request: Request, source_key: str):
         "UPDATE sources SET enabled = 1 WHERE source_key = ?", (source_key,)
     )
     conn.commit()
-    # Return the unfollow button
     html = (
         f'<button class="unfollow-btn"'
         f' hx-post="/channel/{source_key}/unfollow"'
-        f' hx-target="#follow-btn-{source_key}"'
-        f' hx-swap="innerHTML">取消关注</button>'
+        f' hx-swap="outerHTML">取消关注</button>'
     )
     return HTMLResponse(html)

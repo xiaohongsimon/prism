@@ -6,19 +6,15 @@
         <h2>{{ source_key }}</h2>
         <div class="channel-meta">{{ item_count }} 条内容</div>
     </div>
-    <div id="follow-btn-{{ source_key }}">
     {% if enabled %}
         <button class="unfollow-btn"
                 hx-post="/channel/{{ source_key }}/unfollow"
-                hx-target="#follow-btn-{{ source_key }}"
-                hx-swap="innerHTML">取消关注</button>
+                hx-swap="outerHTML">取消关注</button>
     {% else %}
         <button class="follow-btn"
                 hx-post="/channel/{{ source_key }}/follow"
-                hx-target="#follow-btn-{{ source_key }}"
-                hx-swap="innerHTML">关注</button>
+                hx-swap="outerHTML">关注</button>
     {% endif %}
-    </div>
 </div>
 <div id="channel-list">
 {% for item in items %}
