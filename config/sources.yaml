@@ -28,18 +28,19 @@ sources:
       - mistralai
       - apple
       - XiaoMi
-      - MiniMaxAI
 
   # === YouTube ===
   - type: youtube
     key: "youtube:ai-interviews"
     channels:
-      - UCbfYPyITQ-7l4upoX8nvctg
-      - UC6107grRI4m0o2-emgoDnAA
-      - UCb1VhJpMEaMQ0yIflg0sDQQ
-      - UCUyeluBRhGPCW4acMCN7V0Q
-      - UCZHmQk67mSJgfCCTn7xBfew
-      - UCsBjURrPoezykLs9EqgamOA
+      - UCGWYKICLOE8Wxy7q3eYXmPA  # @bestpartners
+      - UCkHrq03gWLLx6vjS2DOJ8aA  # @sunriches
+      - UCUGLhcs3-3y_yhZZsgRzrzw  # @StorytellerFan
+      - UCjJklW6MyT2yjHEOrRu-FOA  # @maskfinance447
+      - UCQ1VQj-37kl2yS_VUhfQHsw  # @a16z
+      - UC1Lk6WO-eKuYc6GHYbKVY2g  # @sunlao
+      - UCVThAeUXPZcUfdYBvWGV3UA  # @ltshijie
+      - UCn9_KbNANeyYREePe8YA2DA  # @caijinglengyan
 
   # === Model Economics ===
   - type: model_economics

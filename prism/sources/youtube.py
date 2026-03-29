@@ -124,14 +124,21 @@ class YoutubeAdapter:
             async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                 for channel_id in channels:
                     feed_url = _YT_FEED_URL.format(channel_id=channel_id)
-                    resp = await client.get(feed_url)
-                    resp.raise_for_status()
-                    channel_items = parse_youtube_feed(
-                        resp.text,
-                        channel_id=channel_id,
-                        lookback_hours=lookback_hours,
-                    )
-                    items.extend(channel_items)
+                    try:
+                        resp = await client.get(feed_url)
+                        if resp.status_code in (404, 403):
+                            logger.warning("Skipping channel %s: %s", channel_id, resp.status_code)
+                            continue
+                        resp.raise_for_status()
+                        channel_items = parse_youtube_feed(
+                            resp.text,
+                            channel_id=channel_id,
+                            lookback_hours=lookback_hours,
+                        )
+                        items.extend(channel_items)
+                    except httpx.HTTPStatusError:
+                        logger.warning("Skipping channel %s: HTTP error", channel_id)
+                        continue
 
             return SyncResult(
                 source_key=source_key,

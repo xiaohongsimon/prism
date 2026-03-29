@@ -68,12 +68,19 @@ class GithubReleasesAdapter:
                 for org in orgs:
                     # Fetch org repos sorted by recent push activity
                     repos_url = f"{_GITHUB_API}/orgs/{org}/repos"
-                    repos_resp = await client.get(
-                        repos_url,
-                        params={"sort": "pushed", "per_page": 5},
-                    )
-                    repos_resp.raise_for_status()
-                    repos = repos_resp.json()
+                    try:
+                        repos_resp = await client.get(
+                            repos_url,
+                            params={"sort": "pushed", "per_page": 5},
+                        )
+                        if repos_resp.status_code in (404, 403):
+                            logger.warning("Skipping org %s: %s", org, repos_resp.status_code)
+                            continue
+                        repos_resp.raise_for_status()
+                        repos = repos_resp.json()
+                    except httpx.HTTPStatusError:
+                        logger.warning("Skipping org %s: HTTP error", org)
+                        continue
 
                     for repo in repos:
                         owner = repo.get("owner", {}).get("login", org)
