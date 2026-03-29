@@ -101,3 +101,56 @@ class JobRun:
     finished_at: Optional[datetime] = None
     status: str = ""  # ok | partial | failed
     stats_json: str = "{}"
+
+
+@dataclass
+class EntityProfile:
+    id: Optional[int] = None
+    canonical_name: str = ""
+    display_name: str = ""
+    category: str = ""
+    status: str = "emerging"
+    summary: str = ""
+    needs_review: bool = True
+    first_seen_at: Optional[datetime] = None
+    last_event_at: Optional[datetime] = None
+    event_count_7d: int = 0
+    event_count_30d: int = 0
+    event_count_total: int = 0
+    m7_score: float = 0.0
+    m30_score: float = 0.0
+    metadata_json: str = "{}"
+
+
+@dataclass
+class EntityAlias:
+    alias_norm: str = ""
+    entity_id: int = 0
+    surface_form: str = ""
+    source: str = "llm"
+
+
+@dataclass
+class EntityCandidate:
+    name_norm: str = ""
+    display_name: str = ""
+    category: str = ""
+    mention_count: int = 1
+    first_seen_at: Optional[datetime] = None
+    last_seen_at: Optional[datetime] = None
+    sample_signals_json: str = "[]"
+    expires_at: Optional[datetime] = None
+
+
+@dataclass
+class EntityEvent:
+    id: Optional[int] = None
+    entity_id: int = 0
+    signal_id: Optional[int] = None
+    date: str = ""
+    event_type: str = ""
+    role: str = "subject"
+    impact: str = "medium"
+    confidence: float = 0.8
+    description: str = ""
+    metadata_json: str = "{}"

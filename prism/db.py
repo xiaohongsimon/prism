@@ -130,6 +130,75 @@ def init_db(conn: sqlite3.Connection) -> None:
         CREATE TRIGGER IF NOT EXISTS signals_ad AFTER DELETE ON signals BEGIN
             INSERT INTO signal_search(signal_search, rowid, summary, tl_perspective) VALUES('delete', old.id, old.summary, old.tl_perspective);
         END;
+
+        -- Entity system tables (v2)
+        CREATE TABLE IF NOT EXISTS entity_profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            canonical_name TEXT UNIQUE NOT NULL,
+            display_name TEXT NOT NULL,
+            category TEXT NOT NULL CHECK(category IN ('person','org','project','model','technique','dataset')),
+            status TEXT DEFAULT 'emerging' CHECK(status IN ('emerging','growing','mature','declining')),
+            summary TEXT DEFAULT '',
+            needs_review INTEGER DEFAULT 1,
+            first_seen_at TEXT NOT NULL,
+            last_event_at TEXT,
+            event_count_7d INTEGER DEFAULT 0,
+            event_count_30d INTEGER DEFAULT 0,
+            event_count_total INTEGER DEFAULT 0,
+            m7_score REAL DEFAULT 0.0,
+            m30_score REAL DEFAULT 0.0,
+            metadata_json TEXT DEFAULT '{}'
+        );
+
+        CREATE TABLE IF NOT EXISTS entity_aliases (
+            alias_norm TEXT NOT NULL,
+            entity_id INTEGER NOT NULL REFERENCES entity_profiles(id),
+            surface_form TEXT NOT NULL,
+            source TEXT DEFAULT 'llm',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (alias_norm, entity_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_alias_norm ON entity_aliases(alias_norm);
+
+        CREATE TABLE IF NOT EXISTS entity_candidates (
+            name_norm TEXT PRIMARY KEY,
+            display_name TEXT DEFAULT '',
+            category TEXT DEFAULT '',
+            mention_count INTEGER DEFAULT 1,
+            first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+            last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+            sample_signals_json TEXT DEFAULT '[]',
+            expires_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS entity_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_id INTEGER NOT NULL REFERENCES entity_profiles(id),
+            signal_id INTEGER REFERENCES signals(id),
+            date TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            role TEXT DEFAULT 'subject',
+            impact TEXT DEFAULT 'medium' CHECK(impact IN ('high','medium','low')),
+            confidence REAL DEFAULT 0.8,
+            description TEXT DEFAULT '',
+            metadata_json TEXT DEFAULT '{}'
+        );
+        CREATE INDEX IF NOT EXISTS idx_entity_events_entity ON entity_events(entity_id, date);
+        CREATE INDEX IF NOT EXISTS idx_entity_events_date ON entity_events(date);
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS entity_search USING fts5(
+            canonical_name, display_name, summary,
+            content=entity_profiles, content_rowid=id
+        );
+
+        CREATE TRIGGER IF NOT EXISTS entity_profiles_ai AFTER INSERT ON entity_profiles BEGIN
+            INSERT INTO entity_search(rowid, canonical_name, display_name, summary)
+            VALUES (new.id, new.canonical_name, new.display_name, new.summary);
+        END;
+        CREATE TRIGGER IF NOT EXISTS entity_profiles_ad AFTER DELETE ON entity_profiles BEGIN
+            INSERT INTO entity_search(entity_search, rowid, canonical_name, display_name, summary)
+            VALUES('delete', old.id, old.canonical_name, old.display_name, old.summary);
+        END;
     """)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.commit()
