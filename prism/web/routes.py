@@ -130,16 +130,16 @@ def slides_page(request: Request, signal_id: int):
     return HTMLResponse(html)
 
 
-@web_router.get("/slides/{signal_id}/embed", response_class=HTMLResponse)
-def slides_embed(request: Request, signal_id: int):
-    """Return slides wrapped for iframe embedding in feed card."""
+@web_router.get("/slides/{signal_id}/alt", response_class=HTMLResponse)
+def slides_runner_up(request: Request, signal_id: int):
+    """Serve the runner-up slides (2nd place from horse race)."""
     conn = _db(request)
-    from prism.web.slides import get_or_generate_slides
-    html = get_or_generate_slides(conn, signal_id)
-    if not html:
-        return HTMLResponse("")
-    # Wrap in a container for iframe
-    return HTMLResponse(html)
+    row = conn.execute(
+        "SELECT html, model_id FROM signal_slides WHERE signal_id = ?", (-signal_id,)
+    ).fetchone()
+    if not row:
+        return HTMLResponse("<div class='empty'>无备选 PPT</div>", status_code=404)
+    return HTMLResponse(row["html"])
 
 
 @web_router.post("/feedback", response_class=HTMLResponse)
