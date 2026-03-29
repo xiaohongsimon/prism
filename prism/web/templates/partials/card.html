@@ -26,11 +26,18 @@
             {% endif %}
         </div>
         <div class="card-summary">{{ item.summary }}</div>
+        <div class="card-links">
         {% if item.urls %}
         <a class="original-link" href="{{ item.urls[0] }}" target="_blank" rel="noopener">
             查看原文 ↗
         </a>
         {% endif %}
+        {% if item.has_slides %}
+        <a class="slides-link" href="/slides/{{ item.signal_id }}" target="_blank">
+            📊 精华 PPT
+        </a>
+        {% endif %}
+        </div>
         {% if item.source_keys %}
         <div class="card-sources">
             {% for sk in item.source_keys %}

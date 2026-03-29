@@ -204,7 +204,14 @@ a:hover { text-decoration: underline; }
 }
 
 /* ── Original link ──────────────────────────────────────────── */
-.original-link {
+.card-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.original-link, .slides-link {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -217,10 +224,19 @@ a:hover { text-decoration: underline; }
   color: var(--accent-blue);
   transition: background 0.12s, border-color 0.12s;
 }
-.original-link:hover {
+.original-link:hover, .slides-link:hover {
   background: var(--bg-blue-subtle);
   border-color: var(--accent-blue);
   text-decoration: none;
+}
+
+.slides-link {
+  color: var(--accent-yellow);
+  border-color: rgba(255,212,0,.3);
+}
+.slides-link:hover {
+  border-color: var(--accent-yellow);
+  background: rgba(255,212,0,.08);
 }
 
 .card-sources {

@@ -217,6 +217,14 @@ def init_db(conn: sqlite3.Connection) -> None:
             updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
             PRIMARY KEY (dimension, key)
         );
+
+        -- Generated HTML slides for rich signal cards
+        CREATE TABLE IF NOT EXISTS signal_slides (
+            signal_id INTEGER PRIMARY KEY REFERENCES signals(id),
+            html TEXT NOT NULL,
+            model_id TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+        );
     """)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.commit()

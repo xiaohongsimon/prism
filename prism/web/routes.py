@@ -119,6 +119,29 @@ def feed_fragment(
     return HTMLResponse("".join(html_parts))
 
 
+@web_router.get("/slides/{signal_id}", response_class=HTMLResponse)
+def slides_page(request: Request, signal_id: int):
+    """Generate or serve cached HTML slides for a signal."""
+    conn = _db(request)
+    from prism.web.slides import get_or_generate_slides
+    html = get_or_generate_slides(conn, signal_id)
+    if not html:
+        return HTMLResponse("<div class='empty'>该内容暂不支持生成精华 PPT</div>", status_code=404)
+    return HTMLResponse(html)
+
+
+@web_router.get("/slides/{signal_id}/embed", response_class=HTMLResponse)
+def slides_embed(request: Request, signal_id: int):
+    """Return slides wrapped for iframe embedding in feed card."""
+    conn = _db(request)
+    from prism.web.slides import get_or_generate_slides
+    html = get_or_generate_slides(conn, signal_id)
+    if not html:
+        return HTMLResponse("")
+    # Wrap in a container for iframe
+    return HTMLResponse(html)
+
+
 @web_router.post("/feedback", response_class=HTMLResponse)
 def feedback(
     request: Request,

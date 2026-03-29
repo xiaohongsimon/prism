@@ -155,6 +155,8 @@ def compute_feed(
 
         authors = cluster_authors.get(r["cluster_id"], [])
         urls = cluster_urls.get(r["cluster_id"], [])
+        # Mark as slides-eligible if summary has key insights (from video analysis)
+        has_slides = "💡" in (r["summary"] or "")
 
         item = {
             "signal_id": r["signal_id"],
@@ -169,6 +171,7 @@ def compute_feed(
             "source_keys": source_keys,
             "authors": authors,
             "urls": urls,
+            "has_slides": has_slides,
             "cluster_date": r["cluster_date"],
             "created_at": r["created_at"],
         }
