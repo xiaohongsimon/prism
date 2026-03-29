@@ -4,20 +4,11 @@
     <span class="logo">⬡ Prism</span>
     <div class="tabs">
         <a class="tab {% if tab == 'recommend' %}active{% endif %}"
-           hx-get="/feed?tab=recommend&page=1"
-           hx-target="#feed-list"
-           hx-swap="innerHTML"
-           href="#">推荐</a>
+           href="/?tab=recommend">推荐</a>
         <a class="tab {% if tab == 'follow' %}active{% endif %}"
-           hx-get="/feed?tab=follow&page=1"
-           hx-target="#feed-list"
-           hx-swap="innerHTML"
-           href="#">关注</a>
+           href="/?tab=follow">关注</a>
         <a class="tab {% if tab == 'hot' %}active{% endif %}"
-           hx-get="/feed?tab=hot&page=1"
-           hx-target="#feed-list"
-           hx-swap="innerHTML"
-           href="#">热门</a>
+           href="/?tab=hot">热门</a>
     </div>
 </nav>
 <div id="feed-list">

@@ -94,11 +94,12 @@ def compute_feed(
     # Load preference map
     pref_map = _load_preference_map(conn) if w_pref > 0 else {}
 
-    # Load source keys for each cluster
+    # Load source keys and authors for each cluster
     cluster_sources: dict[int, list[str]] = {}
+    cluster_authors: dict[int, list[str]] = {}
     source_rows = conn.execute(
         """
-        SELECT ci.cluster_id, src.source_key, src.enabled
+        SELECT ci.cluster_id, src.source_key, src.enabled, ri.author
         FROM cluster_items ci
         JOIN raw_items ri ON ri.id = ci.raw_item_id
         JOIN sources src ON src.id = ri.source_id
@@ -111,6 +112,11 @@ def compute_feed(
             cluster_sources[sr["cluster_id"]].append(sr["source_key"])
         if sr["enabled"]:
             enabled_sources.add(sr["source_key"])
+        if sr["author"] and sr["author"].strip():
+            cluster_authors.setdefault(sr["cluster_id"], [])
+            author = sr["author"].strip()
+            if author not in cluster_authors[sr["cluster_id"]]:
+                cluster_authors[sr["cluster_id"]].append(author)
 
     # Build scored items
     items = []
@@ -128,6 +134,8 @@ def compute_feed(
             if not any(sk in enabled_sources for sk in source_keys):
                 continue
 
+        authors = cluster_authors.get(r["cluster_id"], [])
+
         item = {
             "signal_id": r["signal_id"],
             "cluster_id": r["cluster_id"],
@@ -139,6 +147,7 @@ def compute_feed(
             "item_count": r["item_count"],
             "tags": tags,
             "source_keys": source_keys,
+            "authors": authors,
             "cluster_date": r["cluster_date"],
             "created_at": r["created_at"],
         }

@@ -50,10 +50,11 @@ def _feedback_map(conn: sqlite3.Connection, signal_ids: list[int]) -> dict[int, 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @web_router.get("/", response_class=HTMLResponse)
-def index(request: Request):
+def index(request: Request, tab: str = "recommend"):
     """Full feed page."""
     conn = _db(request)
-    tab = "recommend"
+    if tab not in ("recommend", "follow", "hot"):
+        tab = "recommend"
     per_page = 20
     items = compute_feed(conn, tab=tab, page=1, per_page=per_page)
     signal_ids = [item["signal_id"] for item in items]
