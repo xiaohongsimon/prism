@@ -199,6 +199,24 @@ def init_db(conn: sqlite3.Connection) -> None:
             INSERT INTO entity_search(entity_search, rowid, canonical_name, display_name, summary)
             VALUES('delete', old.id, old.canonical_name, old.display_name, old.summary);
         END;
+
+        -- Feedback & preference system
+        CREATE TABLE IF NOT EXISTS feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            signal_id INTEGER NOT NULL REFERENCES signals(id),
+            action TEXT NOT NULL CHECK(action IN ('like', 'dislike', 'save')),
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_feedback_signal ON feedback(signal_id);
+        CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at);
+
+        CREATE TABLE IF NOT EXISTS preference_weights (
+            dimension TEXT NOT NULL,
+            key TEXT NOT NULL,
+            weight REAL NOT NULL DEFAULT 0.0,
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
+            PRIMARY KEY (dimension, key)
+        );
     """)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.commit()
