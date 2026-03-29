@@ -18,17 +18,15 @@ HARD_FAIL_PATTERNS = ("403", "404", "not found", "forbidden")
 
 def get_adapter(source_type: str):
     """Return an adapter instance for the given source type."""
-    if source_type == "x":
-        from prism.sources.x import XAdapter
-        return XAdapter()
-    elif source_type == "arxiv":
-        from prism.sources.arxiv import ArxivAdapter
-        return ArxivAdapter()
-    elif source_type in ("github", "github_trending"):
-        from prism.sources.github import GithubAdapter
-        return GithubAdapter()
-    else:
+    from prism.sources import ADAPTERS
+
+    # Handle legacy alias
+    lookup = source_type if source_type != "github" else "github_trending"
+
+    adapter_cls = ADAPTERS.get(lookup)
+    if adapter_cls is None:
         raise ValueError(f"Unknown source type: {source_type}")
+    return adapter_cls()
 
 
 def _is_hard_failure(error: str) -> bool:
@@ -126,7 +124,12 @@ async def run_sync(conn: sqlite3.Connection, source_key: str | None = None) -> d
     for src in sources:
         try:
             adapter = get_adapter(src["type"])
-            config = {"handle": src["handle"]}
+            # Build config from DB fields + parsed config_yaml
+            config = {"handle": src["handle"], "source_key": src["source_key"]}
+            if src["config_yaml"]:
+                import yaml
+                extra = yaml.safe_load(src["config_yaml"]) or {}
+                config.update(extra)
             result = await adapter.sync(config)
         except Exception as exc:
             result = SyncResult(
