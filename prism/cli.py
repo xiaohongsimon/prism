@@ -261,6 +261,54 @@ def enrich_youtube(limit):
     click.echo(f"\nEnriched {enriched}/{len(rows)} items")
 
 
+@cli.command("generate-slides")
+@click.option("--limit", default=50, help="Max signals to process")
+@click.option("--race", is_flag=True, help="Use 3-model horse race (slower, higher quality)")
+def generate_slides(limit, race):
+    """Batch generate PPT slides for all eligible signals."""
+    from prism.config import settings
+    from prism.db import get_connection
+
+    conn = get_connection(settings.db_path)
+    # Find signals with enough content but no slides yet
+    rows = conn.execute(
+        """
+        SELECT DISTINCT s.id as signal_id, c.topic_label, LENGTH(ri.body) as body_len
+        FROM signals s
+        JOIN clusters c ON c.id = s.cluster_id
+        JOIN cluster_items ci ON ci.cluster_id = c.id
+        JOIN raw_items ri ON ri.id = ci.raw_item_id
+        WHERE s.is_current = 1
+          AND LENGTH(ri.body) > 500
+          AND s.id NOT IN (SELECT signal_id FROM signal_slides WHERE signal_id > 0)
+        ORDER BY s.signal_strength DESC, body_len DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+    click.echo(f"Found {len(rows)} signals without slides")
+    success = 0
+    for i, row in enumerate(rows, 1):
+        click.echo(f"  [{i}/{len(rows)}] {row['topic_label'][:60]}...")
+        try:
+            if race:
+                from prism.web.slides import get_or_generate_slides
+                html = get_or_generate_slides(conn, row["signal_id"])
+            else:
+                from prism.web.slides import generate_slides_fast
+                html = generate_slides_fast(conn, row["signal_id"])
+            if html:
+                success += 1
+                click.echo(f"    ✓ {len(html)} bytes")
+            else:
+                click.echo("    ✗ generation failed")
+        except Exception as exc:
+            click.echo(f"    ✗ {exc}")
+
+    click.echo(f"\nGenerated {success}/{len(rows)} slides")
+
+
 @cli.command()
 def status():
     """Show system status: sources, items, signals."""

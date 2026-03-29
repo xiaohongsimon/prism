@@ -98,6 +98,11 @@ def compute_feed(
     # Load preference map
     pref_map = _load_preference_map(conn) if w_pref > 0 else {}
 
+    # Load cached slides set
+    slides_set = {r["signal_id"] for r in conn.execute(
+        "SELECT signal_id FROM signal_slides WHERE signal_id > 0"
+    ).fetchall()}
+
     # Load source keys, types, authors, and URLs for each cluster
     cluster_sources: dict[int, list[str]] = {}
     cluster_source_types: dict[int, set[str]] = {}
@@ -155,8 +160,7 @@ def compute_feed(
 
         authors = cluster_authors.get(r["cluster_id"], [])
         urls = cluster_urls.get(r["cluster_id"], [])
-        # Mark as slides-eligible if summary has key insights (from video analysis)
-        has_slides = "💡" in (r["summary"] or "")
+        has_slides = r["signal_id"] in slides_set
 
         item = {
             "signal_id": r["signal_id"],

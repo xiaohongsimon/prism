@@ -134,6 +134,49 @@ def _judge_entries(entries: list[tuple[str, str]], title: str) -> list[int]:
         return [0, 1]
 
 
+FAST_MODEL = "MiMo-V2-Flash-4bit"
+
+
+def generate_slides_fast(conn: sqlite3.Connection, signal_id: int) -> str | None:
+    """Fast single-model generation (for batch processing all content)."""
+    row = conn.execute(
+        "SELECT html FROM signal_slides WHERE signal_id = ?", (signal_id,)
+    ).fetchone()
+    if row:
+        return row["html"]
+
+    signal = conn.execute(
+        "SELECT s.id, s.summary, s.cluster_id, c.topic_label "
+        "FROM signals s JOIN clusters c ON s.cluster_id = c.id "
+        "WHERE s.id = ?",
+        (signal_id,),
+    ).fetchone()
+    if not signal:
+        return None
+
+    transcript_row = conn.execute(
+        """
+        SELECT ri.body FROM raw_items ri
+        JOIN cluster_items ci ON ci.raw_item_id = ri.id
+        WHERE ci.cluster_id = ? AND LENGTH(ri.body) > 500
+        ORDER BY LENGTH(ri.body) DESC LIMIT 1
+        """,
+        (signal["cluster_id"],),
+    ).fetchone()
+    if not transcript_row:
+        return None
+
+    title = signal["topic_label"]
+    html = _generate_one(FAST_MODEL, title, transcript_row["body"])
+    if html:
+        conn.execute(
+            "INSERT OR REPLACE INTO signal_slides (signal_id, html, model_id) VALUES (?, ?, ?)",
+            (signal_id, html, FAST_MODEL),
+        )
+        conn.commit()
+    return html
+
+
 def get_or_generate_slides(conn: sqlite3.Connection, signal_id: int) -> str | None:
     """Get cached slides or run horse race to generate."""
     # Check cache
