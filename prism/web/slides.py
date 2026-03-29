@@ -109,11 +109,11 @@ def get_or_generate_slides(conn: sqlite3.Connection, signal_id: int) -> str | No
         logger.error("Slides planning failed for signal %d: %s", signal_id, exc)
         return None
 
-    # Step 2: Generate HTML from outline
+    # Step 2: Generate HTML from outline (needs high max_tokens for full HTML+CSS+JS)
     logger.info("Generating HTML slides for signal %d", signal_id)
     code_prompt = CODE_PROMPT.format(outline=outline)
     try:
-        html = call_llm(code_prompt, model=CODE_MODEL, timeout=180)
+        html = call_llm(code_prompt, model=CODE_MODEL, timeout=300, max_tokens=8192)
     except Exception as exc:
         logger.error("Slides HTML generation failed for signal %d: %s", signal_id, exc)
         return None

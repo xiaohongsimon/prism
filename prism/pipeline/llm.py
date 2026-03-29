@@ -93,7 +93,7 @@ DAILY_BATCH_USER_TEMPLATE = """今日日期：{date}
 
 def call_llm(prompt: str, system: str = "", model: Optional[str] = None,
              base_url: Optional[str] = None, api_key: Optional[str] = None,
-             timeout: int = 300) -> str:
+             timeout: int = 300, max_tokens: int = 2048) -> str:
     """Call OpenAI-compatible LLM API, return response text."""
     base_url = base_url or settings.llm_base_url
     api_key = api_key or settings.llm_api_key
@@ -108,7 +108,7 @@ def call_llm(prompt: str, system: str = "", model: Optional[str] = None,
     messages.append({"role": "user", "content": prompt})
 
     url = f"{base_url.rstrip('/')}/chat/completions"
-    payload = {"model": model, "messages": messages, "temperature": 0.3, "max_tokens": 2048}
+    payload = {"model": model, "messages": messages, "temperature": 0.3, "max_tokens": max_tokens}
 
     for attempt in range(4):
         try:
