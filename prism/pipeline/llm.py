@@ -85,7 +85,7 @@ def call_llm(prompt: str, system: str = "", model: Optional[str] = None,
     messages.append({"role": "user", "content": prompt})
 
     url = f"{base_url.rstrip('/')}/chat/completions"
-    payload = {"model": model, "messages": messages, "temperature": 0.3}
+    payload = {"model": model, "messages": messages, "temperature": 0.3, "max_tokens": 2048}
 
     for attempt in range(4):
         try:
@@ -117,12 +117,36 @@ def call_llm_json(prompt: str, system: str = "", model: Optional[str] = None,
     """Call LLM and parse JSON from response."""
     text = call_llm(prompt, system, model, base_url, api_key, timeout=timeout)
 
-    # Try to extract JSON from response (handle markdown code blocks)
+    # Extract JSON from response (handle thinking tags, code blocks, extra text)
     text = text.strip()
-    if text.startswith("```"):
-        # Remove code block markers
+
+    # Strip <think>...</think> blocks (reasoning models)
+    import re
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+    # Remove markdown code block markers
+    if "```" in text:
         lines = text.split("\n")
         lines = [l for l in lines if not l.strip().startswith("```")]
-        text = "\n".join(lines)
+        text = "\n".join(lines).strip()
+
+    # Find the first { ... } or [ ... ] block
+    start = -1
+    for i, ch in enumerate(text):
+        if ch in "{[":
+            start = i
+            break
+    if start >= 0:
+        bracket = "{" if text[start] == "{" else "["
+        close = "}" if bracket == "{" else "]"
+        depth = 0
+        for i in range(start, len(text)):
+            if text[i] == bracket:
+                depth += 1
+            elif text[i] == close:
+                depth -= 1
+                if depth == 0:
+                    text = text[start:i + 1]
+                    break
 
     return json.loads(text)
