@@ -69,6 +69,7 @@ def compute_feed(
     tab: str = "recommend",
     page: int = 1,
     per_page: int = 20,
+    channel: str = "",
 ) -> list[dict]:
     """Compute ranked feed items for a tab."""
     w_heat, w_pref, w_decay = TAB_WEIGHTS.get(tab, TAB_WEIGHTS["recommend"])
@@ -144,6 +145,9 @@ def compute_feed(
         # Follow tab: only show clusters from personal/curated sources
         if tab == "follow":
             if not any(sk in follow_sources for sk in source_keys):
+                continue
+            # Channel filter within follow tab
+            if channel and channel not in source_keys:
                 continue
 
         authors = cluster_authors.get(r["cluster_id"], [])

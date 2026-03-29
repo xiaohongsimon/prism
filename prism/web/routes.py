@@ -50,15 +50,28 @@ def _feedback_map(conn: sqlite3.Connection, signal_ids: list[int]) -> dict[int, 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @web_router.get("/", response_class=HTMLResponse)
-def index(request: Request, tab: str = "recommend"):
+def index(request: Request, tab: str = "recommend", channel: str = ""):
     """Full feed page."""
     conn = _db(request)
     if tab not in ("recommend", "follow", "hot"):
         tab = "recommend"
     per_page = 20
-    items = compute_feed(conn, tab=tab, page=1, per_page=per_page)
+    items = compute_feed(conn, tab=tab, page=1, per_page=per_page, channel=channel)
     signal_ids = [item["signal_id"] for item in items]
     feedback_map = _feedback_map(conn, signal_ids)
+
+    # Build channel list for follow tab
+    from prism.web.ranking import FOLLOW_SOURCE_TYPES
+    channels = []
+    if tab == "follow":
+        rows = conn.execute(
+            "SELECT source_key, type, handle FROM sources WHERE type IN ({}) ORDER BY source_key".format(
+                ",".join("?" * len(FOLLOW_SOURCE_TYPES))
+            ),
+            list(FOLLOW_SOURCE_TYPES),
+        ).fetchall()
+        channels = [{"key": r["source_key"], "label": r["handle"] or r["source_key"]} for r in rows]
+
     return _render(
         "feed.html",
         items=items,
@@ -66,6 +79,8 @@ def index(request: Request, tab: str = "recommend"):
         page=1,
         per_page=per_page,
         feedback_map=feedback_map,
+        channels=channels,
+        current_channel=channel,
     )
 
 

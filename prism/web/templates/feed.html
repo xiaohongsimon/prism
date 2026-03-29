@@ -11,13 +11,23 @@
            href="/?tab=hot">热门</a>
     </div>
 </nav>
+{% if tab == 'follow' and channels %}
+<div class="channel-bar">
+    <a class="channel-chip {% if not current_channel %}active{% endif %}"
+       href="/?tab=follow">全部</a>
+    {% for ch in channels %}
+    <a class="channel-chip {% if current_channel == ch.key %}active{% endif %}"
+       href="/?tab=follow&channel={{ ch.key }}">{{ ch.label }}</a>
+    {% endfor %}
+</div>
+{% endif %}
 <div id="feed-list">
 {% for item in items %}
     {% set feedback_state = feedback_map.get(item.signal_id) if feedback_map else None %}
     {% include "partials/card.html" %}
 {% endfor %}
 {% if items | length >= per_page %}
-<div hx-get="/feed?tab={{ tab }}&page={{ page + 1 }}&per_page={{ per_page }}"
+<div hx-get="/feed?tab={{ tab }}&page={{ page + 1 }}&per_page={{ per_page }}{% if current_channel %}&channel={{ current_channel }}{% endif %}"
      hx-trigger="revealed"
      hx-target="#feed-list"
      hx-swap="beforeend"

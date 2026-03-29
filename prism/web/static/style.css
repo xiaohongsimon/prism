@@ -97,6 +97,35 @@ a:hover { text-decoration: underline; }
   border-bottom: 2px solid var(--accent-blue);
 }
 
+/* ── Channel bar (follow tab sub-filter) ─────────────────────── */
+.channel-bar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--separator);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.channel-chip {
+  flex-shrink: 0;
+  padding: 4px 14px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--separator);
+  transition: background 0.12s, color 0.12s;
+}
+.channel-chip:hover {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.channel-chip.active {
+  background: var(--accent-blue);
+  color: #fff;
+}
+
 /* ── Feed card ──────────────────────────────────────────────── */
 .card {
   display: flex;
