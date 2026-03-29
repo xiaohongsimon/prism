@@ -219,6 +219,48 @@ def serve(port):
     uvicorn.run("prism.api.app:create_app", host="0.0.0.0", port=port, factory=True)
 
 
+@cli.command("enrich-youtube")
+@click.option("--limit", default=10, help="Max videos to process")
+def enrich_youtube(limit):
+    """Backfill YouTube items with subtitle transcripts."""
+    from prism.config import settings
+    from prism.db import get_connection
+    from prism.sources.subtitles import extract_subtitles
+
+    conn = get_connection(settings.db_path)
+    rows = conn.execute(
+        """
+        SELECT ri.id, ri.url, ri.title, LENGTH(ri.body) as body_len
+        FROM raw_items ri
+        JOIN sources s ON s.id = ri.source_id
+        WHERE s.type = 'youtube'
+          AND ri.url NOT LIKE '%/shorts/%'
+          AND LENGTH(ri.body) < 200
+        ORDER BY ri.id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+    click.echo(f"Found {len(rows)} YouTube items with short body")
+    enriched = 0
+    for row in rows:
+        click.echo(f"  Processing: {row['title'][:60]}...")
+        transcript = extract_subtitles(row["url"])
+        if transcript and len(transcript) > row["body_len"]:
+            conn.execute(
+                "UPDATE raw_items SET body = ? WHERE id = ?",
+                (transcript[:4000], row["id"]),
+            )
+            conn.commit()
+            enriched += 1
+            click.echo(f"    ✓ {len(transcript)} chars")
+        else:
+            click.echo("    ✗ no subtitles")
+
+    click.echo(f"\nEnriched {enriched}/{len(rows)} items")
+
+
 @cli.command()
 def status():
     """Show system status: sources, items, signals."""

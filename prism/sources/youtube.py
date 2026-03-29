@@ -140,11 +140,24 @@ class YoutubeAdapter:
                         logger.warning("Skipping channel %s: HTTP error", channel_id)
                         continue
 
+            # Enrich items with subtitle transcript
+            enriched = 0
+            for item in items:
+                if item.url and "/shorts/" not in item.url and len(item.body) < 200:
+                    try:
+                        from prism.sources.subtitles import extract_subtitles
+                        transcript = extract_subtitles(item.url)
+                        if transcript and len(transcript) > len(item.body):
+                            item.body = transcript[:4000]  # Cap at 4k chars
+                            enriched += 1
+                    except Exception as exc:
+                        logger.debug("Subtitle extraction failed for %s: %s", item.url, exc)
+
             return SyncResult(
                 source_key=source_key,
                 items=items,
                 success=True,
-                stats={"channels": len(channels), "videos_found": len(items)},
+                stats={"channels": len(channels), "videos_found": len(items), "subtitles_enriched": enriched},
             )
 
         except Exception as e:
