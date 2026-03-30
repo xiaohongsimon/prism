@@ -17,23 +17,16 @@ logger = logging.getLogger(__name__)
 
 FAST_MODEL = "MiMo-V2-Flash-4bit"
 
-EXTRACT_PROMPT = """从以下内容中提炼出 5 页 PPT 的核心要点。
+EXTRACT_PROMPT = """从以下内容中提炼出核心信息摘要卡。
 
 要求：
-- 第 1 页：标题页（一句标题 ≤15字 + 一句副标题 ≤25字）
-- 第 2-4 页：每页一个最精华的观点（标题 ≤12字 + 补充说明 ≤40字）
-- 第 5 页：一句话总结或行动号召 ≤20字
-- 优先选择有数据、有案例、有反直觉的观点
+- 一句话核心论点（≤30字，直击要害）
+- 3-5 个关键洞察（每条 15-30 字，有数据/案例/反直觉的优先）
+- 一句话结论或行动建议（≤25字）
 - 所有内容用中文
 
 输出 JSON 格式：
-{{"slides": [
-  {{"title": "...", "subtitle": "..."}},
-  {{"title": "...", "body": "..."}},
-  {{"title": "...", "body": "..."}},
-  {{"title": "...", "body": "..."}},
-  {{"title": "...", "subtitle": ""}}
-]}}
+{{"thesis": "核心论点", "insights": ["洞察1", "洞察2", "洞察3", "洞察4"], "conclusion": "结论/行动建议"}}
 
 内容标题：{title}
 
@@ -48,67 +41,51 @@ SLIDES_TEMPLATE = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
-html,body{{height:100%;overflow:hidden;font-family:'Inter',-apple-system,"PingFang SC",sans-serif;
+html,body{{min-height:100%;font-family:'Inter',-apple-system,"PingFang SC",sans-serif;
   background:radial-gradient(ellipse at top center,#12122a 0%,#0a0a0f 55%);color:#ebebf0}}
-.slide{{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;
-  justify-content:center;align-items:center;padding:48px;opacity:0;transition:opacity .3s ease;pointer-events:none;text-align:center}}
-.slide.active{{opacity:1;pointer-events:auto}}
-.slide h1{{font-size:clamp(28px,5vw,44px);font-weight:800;letter-spacing:-.02em;line-height:1.2;margin-bottom:24px;max-width:85%}}
-.slide .sub{{font-size:clamp(16px,2.5vw,20px);color:#8b8b9e;line-height:1.6;max-width:75%}}
-.slide .body-card{{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);
-  border-left:3px solid #6366f1;border-radius:12px;padding:24px 32px;max-width:700px;text-align:left;margin-top:8px}}
-.slide .body-card p{{font-size:clamp(15px,2vw,18px);color:#8b8b9e;line-height:1.7}}
-.hl{{color:#6366f1;font-weight:600}}
-.dots{{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:10}}
-.dot{{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.2);cursor:pointer;transition:all .2s}}
-.dot.active{{background:#6366f1;transform:scale(1.3)}}
-.hint{{position:fixed;bottom:8px;width:100%;text-align:center;color:rgba(255,255,255,.25);font-size:12px}}
-@media(max-width:768px){{.slide{{padding:24px}}.slide .body-card{{padding:16px 20px}}}}
+.card{{max-width:680px;margin:24px auto;padding:28px 32px;
+  background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:16px}}
+.thesis{{font-size:clamp(18px,3.5vw,24px);font-weight:800;letter-spacing:-.02em;line-height:1.35;
+  margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,.06)}}
+.thesis .hl{{color:#6366f1}}
+.insights{{list-style:none;display:flex;flex-direction:column;gap:10px;margin-bottom:20px}}
+.insights li{{display:flex;gap:12px;align-items:flex-start;padding:12px 16px;
+  background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);
+  border-left:3px solid #6366f1;border-radius:10px;font-size:14px;line-height:1.6;color:#c0c0d0}}
+.insights li .num{{flex-shrink:0;width:22px;height:22px;border-radius:50%;
+  background:rgba(99,102,241,.15);color:#a78bfa;font-size:11px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;margin-top:1px}}
+.conclusion{{font-size:15px;color:#8b8b9e;padding:14px 16px;
+  background:rgba(99,102,241,.04);border:1px solid rgba(99,102,241,.1);
+  border-radius:10px;text-align:center;font-weight:500}}
+.conclusion .arrow{{color:#6366f1;font-weight:700}}
+@media(max-width:600px){{.card{{margin:12px;padding:20px 18px}}.insights li{{padding:10px 12px}}}}
 </style>
 </head>
 <body>
-{slides_html}
-<div class="dots">{dots_html}</div>
-<div class="hint">← → 翻页</div>
-<script>
-const S=document.querySelectorAll('.slide'),D=document.querySelectorAll('.dot');
-let c=0;
-function go(i){{if(i<0||i>=S.length)return;S[c].classList.remove('active');D[c].classList.remove('active');
-c=i;S[c].classList.add('active');D[c].classList.add('active')}}
-document.addEventListener('keydown',e=>{{if(e.key==='ArrowRight')go(c+1);if(e.key==='ArrowLeft')go(c-1)}});
-D.forEach((d,i)=>d.onclick=()=>go(i));
-</script>
+{content_html}
 </body>
 </html>"""
 
 
-def _render_slides_html(slides_data: list[dict]) -> str:
-    """Render slides JSON into complete HTML."""
-    slides_parts = []
-    for i, s in enumerate(slides_data):
-        active = ' active' if i == 0 else ''
-        title = s.get("title", "")
-        subtitle = s.get("subtitle", "")
-        body = s.get("body", "")
+def _render_slides_html(data: dict) -> str:
+    """Render extracted insights into a single info-dense card."""
+    thesis = data.get("thesis", "")
+    insights = data.get("insights", [])
+    conclusion = data.get("conclusion", "")
 
-        if subtitle:
-            slides_parts.append(
-                f'<div class="slide{active}"><h1>{title}</h1><div class="sub">{subtitle}</div></div>'
-            )
-        elif body:
-            slides_parts.append(
-                f'<div class="slide{active}"><h1>{title}</h1><div class="body-card"><p>{body}</p></div></div>'
-            )
-        else:
-            slides_parts.append(
-                f'<div class="slide{active}"><h1>{title}</h1></div>'
-            )
-
-    dots = "".join(
-        f'<div class="dot{" active" if i == 0 else ""}"></div>'
-        for i in range(len(slides_data))
+    items = "\n".join(
+        f'<li><span class="num">{i+1}</span><span>{ins}</span></li>'
+        for i, ins in enumerate(insights)
     )
-    return SLIDES_TEMPLATE.format(slides_html="\n".join(slides_parts), dots_html=dots)
+
+    content = f"""<div class="card">
+<div class="thesis">{thesis}</div>
+<ul class="insights">{items}</ul>
+<div class="conclusion"><span class="arrow">→</span> {conclusion}</div>
+</div>"""
+
+    return SLIDES_TEMPLATE.format(content_html=content)
 
 
 def generate_slides_fast(conn: sqlite3.Connection, signal_id: int) -> str | None:
@@ -146,11 +123,10 @@ def generate_slides_fast(conn: sqlite3.Connection, signal_id: int) -> str | None
 
     try:
         result = call_llm_json(prompt, model=FAST_MODEL, timeout=60)
-        slides_data = result.get("slides", [])
-        if not slides_data or len(slides_data) < 3:
+        if not result.get("thesis") or not result.get("insights"):
             return None
 
-        html = _render_slides_html(slides_data)
+        html = _render_slides_html(result)
 
         conn.execute(
             "INSERT OR REPLACE INTO signal_slides (signal_id, html, model_id) VALUES (?, ?, ?)",
