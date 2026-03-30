@@ -5,21 +5,36 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader
 
 from prism.web.ranking import compute_feed, update_preferences
+from prism.web.auth import (
+    COOKIE_NAME, validate_session, login, create_admin,
+    create_invite, register_with_invite,
+)
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 _jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
 
 web_router = APIRouter()
 
+# Public paths that don't need auth
+_PUBLIC_PATHS = {"/login", "/register", "/auth/login", "/auth/register", "/static"}
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _db(request: Request) -> sqlite3.Connection:
     return request.state.db
+
+
+def _get_user(request: Request) -> dict | None:
+    """Get authenticated user from session cookie."""
+    token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        return None
+    return validate_session(_db(request), token)
 
 
 def _render(template_name: str, **ctx) -> HTMLResponse:
@@ -48,6 +63,58 @@ def _feedback_map(conn: sqlite3.Connection, signal_ids: list[int]) -> dict[int, 
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
+
+# ── Auth Routes ──────────────────────────────────────────────────────────────
+
+@web_router.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    return _render("login.html", mode="login", error="")
+
+
+@web_router.get("/register", response_class=HTMLResponse)
+def register_page(request: Request):
+    return _render("login.html", mode="register", error="")
+
+
+@web_router.post("/auth/login")
+def auth_login(request: Request, username: str = Form(...), password: str = Form(...)):
+    conn = _db(request)
+    token = login(conn, username, password)
+    if not token:
+        return _render("login.html", mode="login", error="用户名或密码错误")
+    resp = RedirectResponse("/", status_code=303)
+    resp.set_cookie(COOKIE_NAME, token, max_age=86400 * 30, httponly=True, samesite="lax")
+    return resp
+
+
+@web_router.post("/auth/register")
+def auth_register(request: Request, code: str = Form(...), username: str = Form(...), password: str = Form(...)):
+    conn = _db(request)
+    token = register_with_invite(conn, code, username, password)
+    if not token:
+        return _render("login.html", mode="register", error="邀请码无效或已使用")
+    resp = RedirectResponse("/", status_code=303)
+    resp.set_cookie(COOKIE_NAME, token, max_age=86400 * 30, httponly=True, samesite="lax")
+    return resp
+
+
+@web_router.get("/auth/logout")
+def auth_logout(request: Request):
+    resp = RedirectResponse("/login", status_code=303)
+    resp.delete_cookie(COOKIE_NAME)
+    return resp
+
+
+@web_router.get("/auth/invite", response_class=HTMLResponse)
+def gen_invite(request: Request):
+    user = _get_user(request)
+    if not user or user["role"] != "admin":
+        return HTMLResponse("无权限", status_code=403)
+    code = create_invite(_db(request), user["user_id"])
+    return HTMLResponse(f'<div style="padding:40px;text-align:center;color:#ebebf0;font-size:24px;font-family:monospace">{code}</div>')
+
+
+# ── Feed Routes ──────────────────────────────────────────────────────────────
 
 @web_router.get("/", response_class=HTMLResponse)
 def index(request: Request, tab: str = "recommend", channel: str = ""):

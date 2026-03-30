@@ -218,6 +218,28 @@ def init_db(conn: sqlite3.Connection) -> None:
             PRIMARY KEY (dimension, key)
         );
 
+        -- Auth: invite codes + sessions
+        CREATE TABLE IF NOT EXISTS auth_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'viewer',
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+        );
+        CREATE TABLE IF NOT EXISTS invite_codes (
+            code TEXT PRIMARY KEY,
+            created_by INTEGER REFERENCES auth_users(id),
+            used_by INTEGER REFERENCES auth_users(id),
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
+            used_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS auth_sessions (
+            token TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES auth_users(id),
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
+            expires_at TEXT NOT NULL
+        );
+
         -- Generated HTML slides for rich signal cards
         CREATE TABLE IF NOT EXISTS signal_slides (
             signal_id INTEGER PRIMARY KEY REFERENCES signals(id),

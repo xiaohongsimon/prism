@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prism — Login</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+.login-box{max-width:360px;margin:120px auto;padding:32px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg)}
+.login-box h1{font-size:24px;font-weight:800;text-align:center;margin-bottom:8px;background:linear-gradient(135deg,#6366f1,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.login-box p{text-align:center;color:var(--text-secondary);font-size:13px;margin-bottom:24px}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px}
+.field input{width:100%;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-family:inherit;outline:none;transition:border-color .15s}
+.field input:focus{border-color:var(--accent)}
+.btn-primary{width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:700;cursor:pointer;transition:opacity .15s;font-family:inherit}
+.btn-primary:hover{opacity:.9}
+.error{color:var(--error);font-size:13px;text-align:center;margin-bottom:12px}
+.toggle{text-align:center;margin-top:16px;font-size:13px;color:var(--text-tertiary)}
+.toggle a{color:var(--accent-soft)}
+</style>
+</head>
+<body>
+<div class="login-box">
+    <h1>⬡ Prism</h1>
+    <p>私人 AI 新闻平台</p>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+    {% if mode == 'register' %}
+    <form method="POST" action="/auth/register">
+        <div class="field"><label>邀请码</label><input name="code" required></div>
+        <div class="field"><label>用户名</label><input name="username" required></div>
+        <div class="field"><label>密码</label><input name="password" type="password" required></div>
+        <button class="btn-primary" type="submit">注册</button>
+    </form>
+    <div class="toggle">已有账号？<a href="/login">登录</a></div>
+    {% else %}
+    <form method="POST" action="/auth/login">
+        <div class="field"><label>用户名</label><input name="username" required></div>
+        <div class="field"><label>密码</label><input name="password" type="password" required></div>
+        <button class="btn-primary" type="submit">登录</button>
+    </form>
+    <div class="toggle">有邀请码？<a href="/register">注册新账号</a></div>
+    {% endif %}
+</div>
+</body>
+</html>
