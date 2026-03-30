@@ -17,16 +17,31 @@ logger = logging.getLogger(__name__)
 
 FAST_MODEL = "MiMo-V2-Flash-4bit"
 
-EXTRACT_PROMPT = """从以下内容中提炼出核心信息摘要卡。
+EXTRACT_PROMPT = """分析以下内容，选择最合适的可视化格式来展示核心信息。
 
-要求：
-- 一句话核心论点（≤30字，直击要害）
-- 3-5 个关键洞察（每条 15-30 字，有数据/案例/反直觉的优先）
-- 一句话结论或行动建议（≤25字）
-- 所有内容用中文
+可选格式（选一个最合适的）：
+1. "debate" — 观点争论/正反对比（有明确支持和反对的内容）
+2. "metrics" — 关键指标/数据对比（技术发布、性能评测、产品更新）
+3. "timeline" — 时间线/演进过程（历史回顾、趋势变化、发展阶段）
+4. "quote" — 金句+上下文（人物访谈、观点输出、演讲）
+5. "method" — 问题→方法→结果（论文、技术方案、解决方案）
 
-输出 JSON 格式：
-{{"thesis": "核心论点", "insights": ["洞察1", "洞察2", "洞察3", "洞察4"], "conclusion": "结论/行动建议"}}
+根据你选的格式，输出对应的 JSON：
+
+debate 格式：
+{{"format": "debate", "topic": "争论主题≤15字", "for": [{{"point": "支持观点≤25字", "evidence": "论据≤30字"}}], "against": [{{"point": "反对观点≤25字", "evidence": "论据≤30字"}}], "verdict": "结论≤25字"}}
+
+metrics 格式：
+{{"format": "metrics", "title": "产品/技术名≤15字", "subtitle": "一句话定位≤20字", "metrics": [{{"label": "指标名≤6字", "value": "数值", "delta": "+20%或描述", "good": true}}], "takeaway": "一句话结论≤25字"}}
+
+timeline 格式：
+{{"format": "timeline", "title": "主题≤15字", "events": [{{"time": "时间点", "text": "事件描述≤25字", "highlight": false}}], "insight": "演进规律≤30字"}}
+
+quote 格式：
+{{"format": "quote", "speaker": "人名", "role": "身份≤15字", "quote": "最精华的一句话≤40字", "context": "背景说明≤50字", "implications": ["启示1≤25字", "启示2≤25字", "启示3≤25字"]}}
+
+method 格式：
+{{"format": "method", "problem": "要解决的问题≤25字", "approach": "核心方法≤30字", "results": [{{"metric": "指标", "value": "结果"}}], "significance": "意义≤30字"}}
 
 内容标题：{title}
 
@@ -34,58 +49,152 @@ EXTRACT_PROMPT = """从以下内容中提炼出核心信息摘要卡。
 {content}
 """
 
-SLIDES_TEMPLATE = """<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-*{{margin:0;padding:0;box-sizing:border-box}}
-html,body{{min-height:100%;font-family:'Inter',-apple-system,"PingFang SC",sans-serif;
-  background:radial-gradient(ellipse at top center,#12122a 0%,#0a0a0f 55%);color:#ebebf0}}
-.card{{max-width:680px;margin:24px auto;padding:28px 32px;
-  background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:16px}}
-.thesis{{font-size:clamp(18px,3.5vw,24px);font-weight:800;letter-spacing:-.02em;line-height:1.35;
-  margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,.06)}}
-.thesis .hl{{color:#6366f1}}
-.insights{{list-style:none;display:flex;flex-direction:column;gap:10px;margin-bottom:20px}}
-.insights li{{display:flex;gap:12px;align-items:flex-start;padding:12px 16px;
-  background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);
-  border-left:3px solid #6366f1;border-radius:10px;font-size:14px;line-height:1.6;color:#c0c0d0}}
-.insights li .num{{flex-shrink:0;width:22px;height:22px;border-radius:50%;
-  background:rgba(99,102,241,.15);color:#a78bfa;font-size:11px;font-weight:700;
-  display:flex;align-items:center;justify-content:center;margin-top:1px}}
-.conclusion{{font-size:15px;color:#8b8b9e;padding:14px 16px;
-  background:rgba(99,102,241,.04);border:1px solid rgba(99,102,241,.1);
-  border-radius:10px;text-align:center;font-weight:500}}
-.conclusion .arrow{{color:#6366f1;font-weight:700}}
-@media(max-width:600px){{.card{{margin:12px;padding:20px 18px}}.insights li{{padding:10px 12px}}}}
-</style>
-</head>
-<body>
-{content_html}
-</body>
-</html>"""
+CARD_CSS = """*{margin:0;padding:0;box-sizing:border-box}
+html,body{min-height:100%;font-family:'Inter',-apple-system,"PingFang SC",sans-serif;
+  background:radial-gradient(ellipse at top center,#12122a 0%,#0a0a0f 55%);color:#ebebf0;font-size:14px}
+.c{max-width:680px;margin:20px auto;padding:24px 28px;
+  background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:16px}
+.hd{font-size:clamp(16px,3vw,20px);font-weight:800;letter-spacing:-.02em;line-height:1.3;
+  margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.06)}
+.hl{color:#6366f1}.gr{color:#34d399}.rd{color:#f87171}.yl{color:#fbbf24}
+.sub{font-size:13px;color:#8b8b9e;margin-bottom:14px}
+/* debate */
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.vs-col{padding:14px;border-radius:10px;font-size:13px;line-height:1.6}
+.vs-for{background:rgba(52,211,153,.04);border:1px solid rgba(52,211,153,.12)}
+.vs-against{background:rgba(248,113,113,.04);border:1px solid rgba(248,113,113,.12)}
+.vs-col h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+.vs-for h3{color:#34d399}.vs-against h3{color:#f87171}
+.vs-item{margin-bottom:8px}.vs-item strong{color:#c0c0d0}
+.vs-item span{display:block;color:#6a6a7e;font-size:12px;margin-top:2px}
+/* metrics */
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+.m{padding:14px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);border-radius:10px;text-align:center}
+.m .val{font-size:22px;font-weight:800;color:#ebebf0;margin-bottom:2px}
+.m .delta{font-size:12px;font-weight:600;margin-bottom:4px}
+.m .delta.up{color:#34d399}.m .delta.down{color:#f87171}.m .delta.neutral{color:#8b8b9e}
+.m .lbl{font-size:11px;color:#5a5a6e;text-transform:uppercase;letter-spacing:.5px}
+/* timeline */
+.tl{position:relative;padding-left:20px;margin-bottom:14px}
+.tl::before{content:'';position:absolute;left:6px;top:4px;bottom:4px;width:2px;background:rgba(99,102,241,.2);border-radius:1px}
+.tl-item{position:relative;padding:8px 0 8px 16px;font-size:13px;line-height:1.5}
+.tl-item::before{content:'';position:absolute;left:-17px;top:14px;width:8px;height:8px;border-radius:50%;
+  background:rgba(99,102,241,.3);border:2px solid #0a0a0f}
+.tl-item.hi::before{background:#6366f1;box-shadow:0 0 8px rgba(99,102,241,.4)}
+.tl-time{font-size:11px;color:#5a5a6e;font-weight:600;margin-bottom:2px}
+.tl-text{color:#c0c0d0}
+/* quote */
+.qt{padding:20px 24px;background:rgba(99,102,241,.04);border-left:3px solid #6366f1;
+  border-radius:0 12px 12px 0;margin-bottom:14px;font-size:16px;font-weight:600;
+  line-height:1.5;color:#ebebf0;font-style:italic}
+.qt-src{font-size:12px;color:#8b8b9e;font-style:normal;margin-top:8px;font-weight:400}
+.imp{list-style:none;display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.imp li{padding:8px 14px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);
+  border-left:3px solid #a78bfa;border-radius:8px;font-size:13px;color:#c0c0d0;line-height:1.5}
+/* method */
+.method-flow{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.mf-step{padding:12px 16px;border-radius:10px;font-size:13px;line-height:1.5}
+.mf-problem{background:rgba(248,113,113,.04);border:1px solid rgba(248,113,113,.1);color:#c0c0d0}
+.mf-approach{background:rgba(99,102,241,.04);border:1px solid rgba(99,102,241,.1);color:#c0c0d0}
+.mf-results{background:rgba(52,211,153,.04);border:1px solid rgba(52,211,153,.1);color:#c0c0d0}
+.mf-step .tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;display:block}
+.mf-problem .tag{color:#f87171}.mf-approach .tag{color:#6366f1}.mf-results .tag{color:#34d399}
+.res-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;margin-top:6px}
+.res-item{font-size:12px;color:#8b8b9e}.res-item strong{color:#34d399;font-size:14px;display:block}
+/* footer */
+.ft{font-size:13px;color:#8b8b9e;padding:12px 14px;background:rgba(99,102,241,.03);
+  border:1px solid rgba(99,102,241,.08);border-radius:8px;text-align:center;font-weight:500}
+.ft .arrow{color:#6366f1;font-weight:700}
+@media(max-width:600px){.c{margin:8px;padding:16px}.vs{grid-template-columns:1fr}
+  .metrics{grid-template-columns:1fr 1fr}}"""
+
+_CARD_HEAD = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>' + CARD_CSS + '</style></head><body>'
+_CARD_TAIL = '</body></html>'
 
 
-def _render_slides_html(data: dict) -> str:
-    """Render extracted insights into a single info-dense card."""
-    thesis = data.get("thesis", "")
-    insights = data.get("insights", [])
-    conclusion = data.get("conclusion", "")
+def _wrap_card(inner_html: str) -> str:
+    return _CARD_HEAD + inner_html + _CARD_TAIL
 
-    items = "\n".join(
-        f'<li><span class="num">{i+1}</span><span>{ins}</span></li>'
-        for i, ins in enumerate(insights)
-    )
 
-    content = f"""<div class="card">
-<div class="thesis">{thesis}</div>
-<ul class="insights">{items}</ul>
-<div class="conclusion"><span class="arrow">→</span> {conclusion}</div>
-</div>"""
+def _render_visual(data: dict) -> str:
+    """Render structured data into the appropriate visual format."""
+    fmt = data.get("format", "quote")
+    html = ""
 
-    return SLIDES_TEMPLATE.format(content_html=content)
+    if fmt == "debate":
+        topic = data.get("topic", "")
+        fors = data.get("for", [])
+        againsts = data.get("against", [])
+        verdict = data.get("verdict", "")
+        for_items = "".join(f'<div class="vs-item"><strong>{p["point"]}</strong><span>{p.get("evidence","")}</span></div>' for p in fors)
+        against_items = "".join(f'<div class="vs-item"><strong>{p["point"]}</strong><span>{p.get("evidence","")}</span></div>' for p in againsts)
+        html = f"""<div class="c">
+<div class="hd">{topic}</div>
+<div class="vs">
+<div class="vs-col vs-for"><h3>支持 ✓</h3>{for_items}</div>
+<div class="vs-col vs-against"><h3>反对 ✗</h3>{against_items}</div>
+</div>
+<div class="ft"><span class="arrow">→</span> {verdict}</div></div>"""
+
+    elif fmt == "metrics":
+        title = data.get("title", "")
+        subtitle = data.get("subtitle", "")
+        metrics = data.get("metrics", [])
+        takeaway = data.get("takeaway", "")
+        m_html = ""
+        for m in metrics:
+            good = m.get("good", True)
+            cls = "up" if good else "down"
+            m_html += f'<div class="m"><div class="val">{m.get("value","")}</div><div class="delta {cls}">{m.get("delta","")}</div><div class="lbl">{m.get("label","")}</div></div>'
+        html = f"""<div class="c">
+<div class="hd">{title}</div><div class="sub">{subtitle}</div>
+<div class="metrics">{m_html}</div>
+<div class="ft"><span class="arrow">→</span> {takeaway}</div></div>"""
+
+    elif fmt == "timeline":
+        title = data.get("title", "")
+        events = data.get("events", [])
+        insight = data.get("insight", "")
+        ev_html = ""
+        for ev in events:
+            hi = " hi" if ev.get("highlight") else ""
+            ev_html += f'<div class="tl-item{hi}"><div class="tl-time">{ev.get("time","")}</div><div class="tl-text">{ev.get("text","")}</div></div>'
+        html = f"""<div class="c">
+<div class="hd">{title}</div>
+<div class="tl">{ev_html}</div>
+<div class="ft"><span class="arrow">→</span> {insight}</div></div>"""
+
+    elif fmt == "quote":
+        speaker = data.get("speaker", "")
+        role = data.get("role", "")
+        quote = data.get("quote", "")
+        context = data.get("context", "")
+        implications = data.get("implications", [])
+        imp_html = "".join(f"<li>{imp}</li>" for imp in implications)
+        html = f"""<div class="c">
+<div class="qt">"{quote}"<div class="qt-src">— {speaker}，{role}</div></div>
+<div class="sub">{context}</div>
+<ul class="imp">{imp_html}</ul></div>"""
+
+    elif fmt == "method":
+        problem = data.get("problem", "")
+        approach = data.get("approach", "")
+        results = data.get("results", [])
+        significance = data.get("significance", "")
+        res_html = "".join(
+            f'<div class="res-item"><strong>{r.get("value","") if isinstance(r, dict) else r}</strong>{r.get("metric","") if isinstance(r, dict) else ""}</div>'
+            for r in results
+        )
+        html = f"""<div class="c">
+<div class="hd">研究速览</div>
+<div class="method-flow">
+<div class="mf-step mf-problem"><span class="tag">问题</span>{problem}</div>
+<div class="mf-step mf-approach"><span class="tag">方法</span>{approach}</div>
+<div class="mf-step mf-results"><span class="tag">结果</span><div class="res-grid">{res_html}</div></div>
+</div>
+<div class="ft"><span class="arrow">→</span> {significance}</div></div>"""
+
+    return _wrap_card(html)
 
 
 def generate_slides_fast(conn: sqlite3.Connection, signal_id: int) -> str | None:
@@ -123,10 +232,10 @@ def generate_slides_fast(conn: sqlite3.Connection, signal_id: int) -> str | None
 
     try:
         result = call_llm_json(prompt, model=FAST_MODEL, timeout=60)
-        if not result.get("thesis") or not result.get("insights"):
+        if not result.get("format"):
             return None
 
-        html = _render_slides_html(result)
+        html = _render_visual(result)
 
         conn.execute(
             "INSERT OR REPLACE INTO signal_slides (signal_id, html, model_id) VALUES (?, ?, ?)",
