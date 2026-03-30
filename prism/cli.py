@@ -261,6 +261,19 @@ def enrich_youtube(limit):
     click.echo(f"\nEnriched {enriched}/{len(rows)} items")
 
 
+@cli.command("expand-links")
+@click.option("--limit", default=20, help="Max items to process")
+def expand_links(limit):
+    """Resolve t.co short links and fetch YouTube transcripts from tweets."""
+    from prism.config import settings
+    from prism.db import get_connection
+    from prism.sources.link_expander import batch_enrich_links
+
+    conn = get_connection(settings.db_path)
+    enriched = batch_enrich_links(conn, limit=limit)
+    click.echo(f"Enriched {enriched} items with expanded links")
+
+
 @cli.command("generate-slides")
 @click.option("--limit", default=50, help="Max signals to process")
 @click.option("--race", is_flag=True, help="Use 3-model horse race (slower, higher quality)")
