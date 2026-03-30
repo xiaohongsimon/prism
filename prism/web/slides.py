@@ -1,184 +1,118 @@
-"""Generate presentation-quality HTML slides via multi-model horse race.
+"""Generate slides: LLM extracts key points (JSON) → server renders HTML template.
 
-Flow:
-1. Full transcript → content outline (each contestant model independently)
-2. Outline → HTML slides (each contestant generates its own)
-3. Opus judges all entries, picks top 2
-4. Winners stored and displayed on site
+Fast mode: ~5-10s per signal (300 token output vs 8192).
+Background worker processes queue continuously.
 """
 
 import json
 import logging
 import re
 import sqlite3
-from concurrent.futures import ThreadPoolExecutor
+import threading
+import time
 
-from prism.pipeline.llm import call_llm
+from prism.pipeline.llm import call_llm_json
 
 logger = logging.getLogger(__name__)
 
-# --- Contestant models (local) ---
-CONTESTANTS = [
-    "GLM-4.7-Flash-MLX-8bit",
-    "MiMo-V2-Flash-4bit",
-    "Qwen3.5-27B-Claude-4.6-Opus-Reasoning-Distilled-qx64-hi-mlx",
-]
+FAST_MODEL = "MiMo-V2-Flash-4bit"
 
-# --- Judge ---
-JUDGE_MODEL = "Qwen3.5-27B-Claude-4.6-Opus-Reasoning-Distilled-qx64-hi-mlx"
+EXTRACT_PROMPT = """从以下内容中提炼出 5 页 PPT 的核心要点。
 
-# --- Prompts ---
-GENERATE_PROMPT = """你是一个顶级演讲设计师。根据以下视频字幕全文，生成一个 5 页自包含 HTML 幻灯片。
-
-设计原则：
-- 字要少！每页核心观点 ≤15 个字，大字体居中
-- 下方用 1-2 句小字补充关键论据或数据
-- 提炼最震撼、最有价值、最反直觉的观点
-- 视觉要高级：深色渐变背景、大量留白
-
-设计规范（严格遵守）：
-- 背景：radial-gradient(ellipse at top center, #12122a 0%, #0a0a0f 55%)
-- 主标题：#ebebf0，clamp(28px, 5vw, 44px)，font-weight 800，letter-spacing -0.02em
-- 副文字：#8b8b9e，18px，line-height 1.6
-- 强调色：#6366f1（关键词高亮），次要强调 #a78bfa
-- 要点卡片：背景 rgba(255,255,255,0.03)，border: 1px solid rgba(255,255,255,0.06)，border-left: 3px solid #6366f1，border-radius: 12px
-- 字体：'Inter', -apple-system, "PingFang SC", sans-serif
-- 完全自包含 HTML（inline CSS + JS）
-- 全屏 100vh slides，flexbox 居中，padding 48px
-- 左右箭头键 + 底部圆点导航（active 色 #6366f1）
-- 淡入淡出 opacity 0.3s ease
-- 响应式（手机 padding 24px）
-
-第 1 页：标题页（一句话核心主题 + 短副标题）
-第 2-4 页：每页一个最精华的观点（大字 + 小字论据）
-第 5 页：一句话总结或行动号召
-
-只输出 HTML 代码，不要任何解释文字。
-
-视频标题：{title}
-
-字幕全文：
-{transcript}
-"""
-
-JUDGE_PROMPT = """你是一位严格的演讲评审。以下是 {n} 份由不同 AI 模型生成的 HTML 幻灯片，内容来自同一个视频。
-
-请评估每份作品，从以下维度打分（1-10）：
-1. 内容提炼：是否抓住了视频最核心、最有价值的观点？
-2. 信息密度：字数是否精炼？是否做到"少即是多"？
-3. 视觉设计：排版、配色、留白是否高级？
-4. 可分享性：拿去分享给别人，对方能否快速理解并留下深刻印象？
+要求：
+- 第 1 页：标题页（一句标题 ≤15字 + 一句副标题 ≤25字）
+- 第 2-4 页：每页一个最精华的观点（标题 ≤12字 + 补充说明 ≤40字）
+- 第 5 页：一句话总结或行动号召 ≤20字
+- 优先选择有数据、有案例、有反直觉的观点
+- 所有内容用中文
 
 输出 JSON 格式：
-{{
-  "rankings": [
-    {{"entry": 1, "total_score": 35, "content": 9, "density": 8, "visual": 9, "shareable": 9, "comment": "..."}},
-    ...
-  ],
-  "winners": [1, 3],
-  "reason": "选择理由"
-}}
+{{"slides": [
+  {{"title": "...", "subtitle": "..."}},
+  {{"title": "...", "body": "..."}},
+  {{"title": "...", "body": "..."}},
+  {{"title": "...", "body": "..."}},
+  {{"title": "...", "subtitle": ""}}
+]}}
 
-其中 winners 是得分最高的两个 entry 编号（从 1 开始）。
+内容标题：{title}
 
-{entries}
+正文：
+{content}
 """
 
-
-def _generate_one(model: str, title: str, transcript: str) -> str | None:
-    """Single contestant generates slides."""
-    prompt = GENERATE_PROMPT.format(title=title, transcript=transcript[:6000])
-    try:
-        html = call_llm(prompt, model=model, timeout=300, max_tokens=8192)
-        html = html.strip()
-        # Clean reasoning tags
-        html = re.sub(r"<think>.*?</think>", "", html, flags=re.DOTALL).strip()
-        if "```html" in html:
-            html = html.split("```html", 1)[1]
-        if "```" in html:
-            html = html.split("```")[0]
-        html = html.strip()
-        # Validate
-        if "</html>" in html and "slide" in html:
-            return html
-        return None
-    except Exception as exc:
-        logger.error("Contestant %s failed: %s", model, exc)
-        return None
-
-
-def _judge_entries(entries: list[tuple[str, str]], title: str) -> list[int]:
-    """Judge picks top 2 entries. Returns list of winning indices (0-based)."""
-    if len(entries) <= 2:
-        return list(range(len(entries)))
-
-    # Build entries text for judge (abbreviated — just structure, not full HTML)
-    entry_texts = []
-    for i, (model, html) in enumerate(entries, 1):
-        # Extract visible text content for judging
-        text_only = re.sub(r"<style>.*?</style>", "", html, flags=re.DOTALL)
-        text_only = re.sub(r"<script>.*?</script>", "", text_only, flags=re.DOTALL)
-        text_only = re.sub(r"<[^>]+>", " ", text_only)
-        text_only = re.sub(r"\s+", " ", text_only).strip()
-        entry_texts.append(f"=== Entry {i} (by {model}) ===\n{text_only[:1500]}\n")
-
-    prompt = JUDGE_PROMPT.format(n=len(entries), entries="\n".join(entry_texts))
-    try:
-        from prism.pipeline.llm import call_llm_json
-        result = call_llm_json(prompt, model=JUDGE_MODEL, timeout=120)
-        winners = result.get("winners", [1, 2])
-        logger.info("Judge result: winners=%s, reason=%s", winners, result.get("reason", ""))
-        return [w - 1 for w in winners]  # Convert to 0-based
-    except Exception as exc:
-        logger.error("Judge failed: %s, defaulting to first two", exc)
-        return [0, 1]
+SLIDES_TEMPLATE = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+html,body{{height:100%;overflow:hidden;font-family:'Inter',-apple-system,"PingFang SC",sans-serif;
+  background:radial-gradient(ellipse at top center,#12122a 0%,#0a0a0f 55%);color:#ebebf0}}
+.slide{{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;
+  justify-content:center;align-items:center;padding:48px;opacity:0;transition:opacity .3s ease;pointer-events:none;text-align:center}}
+.slide.active{{opacity:1;pointer-events:auto}}
+.slide h1{{font-size:clamp(28px,5vw,44px);font-weight:800;letter-spacing:-.02em;line-height:1.2;margin-bottom:24px;max-width:85%}}
+.slide .sub{{font-size:clamp(16px,2.5vw,20px);color:#8b8b9e;line-height:1.6;max-width:75%}}
+.slide .body-card{{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);
+  border-left:3px solid #6366f1;border-radius:12px;padding:24px 32px;max-width:700px;text-align:left;margin-top:8px}}
+.slide .body-card p{{font-size:clamp(15px,2vw,18px);color:#8b8b9e;line-height:1.7}}
+.hl{{color:#6366f1;font-weight:600}}
+.dots{{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:10}}
+.dot{{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.2);cursor:pointer;transition:all .2s}}
+.dot.active{{background:#6366f1;transform:scale(1.3)}}
+.hint{{position:fixed;bottom:8px;width:100%;text-align:center;color:rgba(255,255,255,.25);font-size:12px}}
+@media(max-width:768px){{.slide{{padding:24px}}.slide .body-card{{padding:16px 20px}}}}
+</style>
+</head>
+<body>
+{slides_html}
+<div class="dots">{dots_html}</div>
+<div class="hint">← → 翻页</div>
+<script>
+const S=document.querySelectorAll('.slide'),D=document.querySelectorAll('.dot');
+let c=0;
+function go(i){{if(i<0||i>=S.length)return;S[c].classList.remove('active');D[c].classList.remove('active');
+c=i;S[c].classList.add('active');D[c].classList.add('active')}}
+document.addEventListener('keydown',e=>{{if(e.key==='ArrowRight')go(c+1);if(e.key==='ArrowLeft')go(c-1)}});
+D.forEach((d,i)=>d.onclick=()=>go(i));
+</script>
+</body>
+</html>"""
 
 
-FAST_MODEL = "MiMo-V2-Flash-4bit"
+def _render_slides_html(slides_data: list[dict]) -> str:
+    """Render slides JSON into complete HTML."""
+    slides_parts = []
+    for i, s in enumerate(slides_data):
+        active = ' active' if i == 0 else ''
+        title = s.get("title", "")
+        subtitle = s.get("subtitle", "")
+        body = s.get("body", "")
+
+        if subtitle:
+            slides_parts.append(
+                f'<div class="slide{active}"><h1>{title}</h1><div class="sub">{subtitle}</div></div>'
+            )
+        elif body:
+            slides_parts.append(
+                f'<div class="slide{active}"><h1>{title}</h1><div class="body-card"><p>{body}</p></div></div>'
+            )
+        else:
+            slides_parts.append(
+                f'<div class="slide{active}"><h1>{title}</h1></div>'
+            )
+
+    dots = "".join(
+        f'<div class="dot{" active" if i == 0 else ""}"></div>'
+        for i in range(len(slides_data))
+    )
+    return SLIDES_TEMPLATE.format(slides_html="\n".join(slides_parts), dots_html=dots)
 
 
 def generate_slides_fast(conn: sqlite3.Connection, signal_id: int) -> str | None:
-    """Fast single-model generation (for batch processing all content)."""
-    row = conn.execute(
-        "SELECT html FROM signal_slides WHERE signal_id = ?", (signal_id,)
-    ).fetchone()
-    if row:
-        return row["html"]
-
-    signal = conn.execute(
-        "SELECT s.id, s.summary, s.cluster_id, c.topic_label "
-        "FROM signals s JOIN clusters c ON s.cluster_id = c.id "
-        "WHERE s.id = ?",
-        (signal_id,),
-    ).fetchone()
-    if not signal:
-        return None
-
-    transcript_row = conn.execute(
-        """
-        SELECT ri.body FROM raw_items ri
-        JOIN cluster_items ci ON ci.raw_item_id = ri.id
-        WHERE ci.cluster_id = ? AND LENGTH(ri.body) > 500
-        ORDER BY LENGTH(ri.body) DESC LIMIT 1
-        """,
-        (signal["cluster_id"],),
-    ).fetchone()
-    if not transcript_row:
-        return None
-
-    title = signal["topic_label"]
-    html = _generate_one(FAST_MODEL, title, transcript_row["body"])
-    if html:
-        conn.execute(
-            "INSERT OR REPLACE INTO signal_slides (signal_id, html, model_id) VALUES (?, ?, ?)",
-            (signal_id, html, FAST_MODEL),
-        )
-        conn.commit()
-    return html
-
-
-def get_or_generate_slides(conn: sqlite3.Connection, signal_id: int) -> str | None:
-    """Get cached slides or run horse race to generate."""
+    """Fast template-based generation: LLM outputs JSON → server renders HTML."""
     # Check cache
     row = conn.execute(
         "SELECT html FROM signal_slides WHERE signal_id = ?", (signal_id,)
@@ -186,81 +120,112 @@ def get_or_generate_slides(conn: sqlite3.Connection, signal_id: int) -> str | No
     if row:
         return row["html"]
 
-    # Get signal + full transcript
+    # Get content
     signal = conn.execute(
         "SELECT s.id, s.summary, s.cluster_id, c.topic_label "
-        "FROM signals s JOIN clusters c ON s.cluster_id = c.id "
-        "WHERE s.id = ?",
+        "FROM signals s JOIN clusters c ON s.cluster_id = c.id WHERE s.id = ?",
         (signal_id,),
     ).fetchone()
     if not signal:
         return None
 
     transcript_row = conn.execute(
-        """
-        SELECT ri.body, ri.title FROM raw_items ri
-        JOIN cluster_items ci ON ci.raw_item_id = ri.id
-        WHERE ci.cluster_id = ? AND LENGTH(ri.body) > 500
-        ORDER BY LENGTH(ri.body) DESC LIMIT 1
-        """,
+        "SELECT ri.body FROM raw_items ri "
+        "JOIN cluster_items ci ON ci.raw_item_id = ri.id "
+        "WHERE ci.cluster_id = ? AND LENGTH(ri.body) > 500 "
+        "ORDER BY LENGTH(ri.body) DESC LIMIT 1",
         (signal["cluster_id"],),
     ).fetchone()
-    if not transcript_row:
+
+    content = transcript_row["body"] if transcript_row else signal["summary"]
+    if len(content) < 100:
         return None
 
-    transcript = transcript_row["body"]
     title = signal["topic_label"]
+    prompt = EXTRACT_PROMPT.format(title=title, content=content[:5000])
 
-    # --- Horse Race: all contestants generate in parallel ---
-    logger.info("Starting slides horse race for signal %d: %s", signal_id, title[:50])
-    entries: list[tuple[str, str]] = []  # (model, html)
+    try:
+        result = call_llm_json(prompt, model=FAST_MODEL, timeout=60)
+        slides_data = result.get("slides", [])
+        if not slides_data or len(slides_data) < 3:
+            return None
 
-    with ThreadPoolExecutor(max_workers=len(CONTESTANTS)) as executor:
-        futures = {
-            executor.submit(_generate_one, model, title, transcript): model
-            for model in CONTESTANTS
-        }
-        for future in futures:
-            model = futures[future]
-            html = future.result()
-            if html:
-                entries.append((model, html))
-                logger.info("Contestant %s: ✓ (%d bytes)", model, len(html))
-            else:
-                logger.warning("Contestant %s: ✗ failed", model)
+        html = _render_slides_html(slides_data)
 
-    if not entries:
-        logger.error("All contestants failed for signal %d", signal_id)
+        conn.execute(
+            "INSERT OR REPLACE INTO signal_slides (signal_id, html, model_id) VALUES (?, ?, ?)",
+            (signal_id, html, FAST_MODEL + "+template"),
+        )
+        conn.commit()
+        return html
+    except Exception as exc:
+        logger.error("Slides generation failed for signal %d: %s", signal_id, exc)
         return None
 
-    if len(entries) == 1:
-        winner_html = entries[0][1]
-        winner_model = entries[0][0]
-    else:
-        # --- Judge picks top 2 ---
-        logger.info("Judging %d entries...", len(entries))
-        winner_indices = _judge_entries(entries, title)
 
-        # Store both winners
-        for rank, idx in enumerate(winner_indices[:2]):
-            if idx < len(entries):
-                model, html = entries[idx]
-                suffix = "" if rank == 0 else "_runner_up"
-                conn.execute(
-                    f"INSERT OR REPLACE INTO signal_slides (signal_id, html, model_id) VALUES (?, ?, ?)",
-                    (signal_id if rank == 0 else -signal_id, html, model),
-                )
-                logger.info("Winner #%d: %s", rank + 1, model)
+def get_or_generate_slides(conn: sqlite3.Connection, signal_id: int) -> str | None:
+    """Get cached slides or generate on demand."""
+    row = conn.execute(
+        "SELECT html FROM signal_slides WHERE signal_id = ?", (signal_id,)
+    ).fetchone()
+    if row:
+        return row["html"]
+    return generate_slides_fast(conn, signal_id)
 
-        winner_idx = winner_indices[0] if winner_indices[0] < len(entries) else 0
-        winner_html = entries[winner_idx][1]
-        winner_model = entries[winner_idx][0]
 
-    # Cache primary winner
-    conn.execute(
-        "INSERT OR REPLACE INTO signal_slides (signal_id, html, model_id) VALUES (?, ?, ?)",
-        (signal_id, winner_html, winner_model),
-    )
-    conn.commit()
-    logger.info("Horse race complete for signal %d. Winner: %s", signal_id, winner_model)
-    return winner_html
+# --- Background Worker ---
+
+_worker_running = False
+_worker_lock = threading.Lock()
+
+
+def start_slides_worker(conn: sqlite3.Connection, batch_size: int = 10, interval: int = 30):
+    """Start background thread that continuously generates slides for pending signals."""
+    global _worker_running
+    with _worker_lock:
+        if _worker_running:
+            return
+        _worker_running = True
+
+    def _worker():
+        global _worker_running
+        logger.info("Slides background worker started")
+        while _worker_running:
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT s.id as signal_id
+                    FROM signals s
+                    JOIN clusters c ON c.id = s.cluster_id
+                    JOIN cluster_items ci ON ci.cluster_id = c.id
+                    JOIN raw_items ri ON ri.id = ci.raw_item_id
+                    WHERE s.is_current = 1 AND LENGTH(ri.body) > 500
+                      AND s.id NOT IN (SELECT signal_id FROM signal_slides WHERE signal_id > 0)
+                    ORDER BY s.signal_strength DESC
+                    LIMIT ?
+                    """,
+                    (batch_size,),
+                ).fetchall()
+
+                if not rows:
+                    time.sleep(interval)
+                    continue
+
+                for row in rows:
+                    if not _worker_running:
+                        break
+                    generate_slides_fast(conn, row["signal_id"])
+
+            except Exception as exc:
+                logger.error("Slides worker error: %s", exc)
+                time.sleep(interval)
+
+        logger.info("Slides background worker stopped")
+
+    t = threading.Thread(target=_worker, daemon=True, name="slides-worker")
+    t.start()
+
+
+def stop_slides_worker():
+    global _worker_running
+    _worker_running = False
