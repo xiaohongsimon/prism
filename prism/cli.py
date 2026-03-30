@@ -273,15 +273,19 @@ def generate_slides(limit, race):
     # Find signals with enough content but no slides yet
     rows = conn.execute(
         """
-        SELECT DISTINCT s.id as signal_id, c.topic_label, LENGTH(ri.body) as body_len
-        FROM signals s
-        JOIN clusters c ON c.id = s.cluster_id
-        JOIN cluster_items ci ON ci.cluster_id = c.id
-        JOIN raw_items ri ON ri.id = ci.raw_item_id
-        WHERE s.is_current = 1
-          AND LENGTH(ri.body) > 500
-          AND s.id NOT IN (SELECT signal_id FROM signal_slides WHERE signal_id > 0)
-        ORDER BY s.signal_strength DESC, body_len DESC
+        SELECT signal_id, topic_label, body_len FROM (
+            SELECT s.id as signal_id, c.topic_label, LENGTH(ri.body) as body_len, src.type,
+                   ROW_NUMBER() OVER (PARTITION BY src.type ORDER BY s.signal_strength DESC) as rn
+            FROM signals s
+            JOIN clusters c ON c.id = s.cluster_id
+            JOIN cluster_items ci ON ci.cluster_id = c.id
+            JOIN raw_items ri ON ri.id = ci.raw_item_id
+            JOIN sources src ON src.id = ri.source_id
+            WHERE s.is_current = 1
+              AND LENGTH(ri.body) > 80
+              AND s.id NOT IN (SELECT signal_id FROM signal_slides WHERE signal_id > 0)
+        )
+        ORDER BY rn, body_len DESC
         LIMIT ?
         """,
         (limit,),

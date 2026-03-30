@@ -132,13 +132,13 @@ def generate_slides_fast(conn: sqlite3.Connection, signal_id: int) -> str | None
     transcript_row = conn.execute(
         "SELECT ri.body FROM raw_items ri "
         "JOIN cluster_items ci ON ci.raw_item_id = ri.id "
-        "WHERE ci.cluster_id = ? AND LENGTH(ri.body) > 500 "
+        "WHERE ci.cluster_id = ? AND LENGTH(ri.body) > 80 "
         "ORDER BY LENGTH(ri.body) DESC LIMIT 1",
         (signal["cluster_id"],),
     ).fetchone()
 
     content = transcript_row["body"] if transcript_row else signal["summary"]
-    if len(content) < 100:
+    if len(content) < 80:
         return None
 
     title = signal["topic_label"]
@@ -192,16 +192,19 @@ def start_slides_worker(conn: sqlite3.Connection, batch_size: int = 10, interval
         logger.info("Slides background worker started")
         while _worker_running:
             try:
+                # Round-robin: pick from each source type to ensure coverage
                 rows = conn.execute(
                     """
-                    SELECT DISTINCT s.id as signal_id
+                    SELECT s.id as signal_id, src.type,
+                           ROW_NUMBER() OVER (PARTITION BY src.type ORDER BY s.signal_strength DESC) as rn
                     FROM signals s
                     JOIN clusters c ON c.id = s.cluster_id
                     JOIN cluster_items ci ON ci.cluster_id = c.id
                     JOIN raw_items ri ON ri.id = ci.raw_item_id
-                    WHERE s.is_current = 1 AND LENGTH(ri.body) > 500
+                    JOIN sources src ON src.id = ri.source_id
+                    WHERE s.is_current = 1 AND LENGTH(ri.body) > 80
                       AND s.id NOT IN (SELECT signal_id FROM signal_slides WHERE signal_id > 0)
-                    ORDER BY s.signal_strength DESC
+                    ORDER BY rn, s.signal_strength DESC
                     LIMIT ?
                     """,
                     (batch_size,),
