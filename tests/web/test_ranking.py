@@ -102,6 +102,19 @@ def test_update_preferences_dislike():
     assert row["weight"] == -1.0
 
 
+def test_hot_tab_bt_integration():
+    """Hot tab should incorporate BT scores into ranking."""
+    conn = _fresh_db()
+    _seed(conn)
+    # Give signal 2 (vLLM, strength=3) a much higher BT score
+    conn.execute("INSERT INTO signal_scores (signal_id, bt_score) VALUES (2, 3000.0)")
+    conn.execute("INSERT INTO signal_scores (signal_id, bt_score) VALUES (1, 1000.0)")
+    conn.commit()
+    items = compute_feed(conn, tab="hot", page=1, per_page=10)
+    # With BT boost, vLLM (signal 2) should rank higher despite lower signal_strength
+    assert items[0]["topic_label"] == "vLLM"
+
+
 def test_update_preferences_save():
     conn = _fresh_db()
     _seed(conn)
