@@ -13,6 +13,9 @@ from prism.web.auth import (
     COOKIE_NAME, validate_session, login, create_admin,
     create_invite, register_with_invite,
 )
+from prism.web.pairwise import (
+    select_pair, record_vote, process_external_feed, get_pairwise_history,
+)
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 _jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
@@ -122,6 +125,15 @@ def index(request: Request, tab: str = "recommend", channel: str = ""):
     conn = _db(request)
     if tab not in ("recommend", "follow", "hot"):
         tab = "recommend"
+
+    # Pairwise mode for recommend tab
+    if tab == "recommend":
+        pair = select_pair(conn)
+        tpl = _jinja_env.get_template("pairwise.html")
+        if pair:
+            a, b = pair
+            return HTMLResponse(tpl.render(signal_a=a, signal_b=b, tab="recommend"))
+        return HTMLResponse(tpl.render(signal_a=None, signal_b=None, tab="recommend"))
     per_page = 20
     items = compute_feed(conn, tab=tab, page=1, per_page=per_page, channel=channel)
     signal_ids = [item["signal_id"] for item in items]
@@ -327,3 +339,67 @@ def channel_follow(request: Request, source_key: str):
         f' hx-swap="outerHTML">取消关注</button>'
     )
     return HTMLResponse(html)
+
+
+# ── Pairwise Routes ────────────────────────────────────────────────────────
+
+@web_router.get("/pairwise/pair", response_class=HTMLResponse)
+def pairwise_pair(request: Request):
+    """HTMX: return next pair of signals."""
+    conn = _db(request)
+    pair = select_pair(conn)
+    if pair is None:
+        tpl = _jinja_env.get_template("partials/pair_empty.html")
+        return HTMLResponse(tpl.render())
+    a, b = pair
+    tpl = _jinja_env.get_template("partials/pair_cards.html")
+    return HTMLResponse(tpl.render(signal_a=a, signal_b=b))
+
+
+@web_router.post("/pairwise/vote", response_class=HTMLResponse)
+def pairwise_vote(
+    request: Request,
+    signal_a_id: int = Form(...),
+    signal_b_id: int = Form(...),
+    winner: str = Form(...),
+    comment: str = Form(""),
+    response_time_ms: int = Form(0),
+):
+    """Record vote and return next pair."""
+    conn = _db(request)
+    record_vote(conn, signal_a_id, signal_b_id, winner, comment, response_time_ms)
+    pair = select_pair(conn)
+    if pair is None:
+        tpl = _jinja_env.get_template("partials/pair_empty.html")
+        return HTMLResponse(tpl.render())
+    a, b = pair
+    tpl = _jinja_env.get_template("partials/pair_cards.html")
+    return HTMLResponse(tpl.render(signal_a=a, signal_b=b))
+
+
+@web_router.post("/pairwise/feed", response_class=HTMLResponse)
+def pairwise_feed(
+    request: Request,
+    url: str = Form(""),
+    note: str = Form(""),
+):
+    """Accept external link/topic as strong positive feedback."""
+    conn = _db(request)
+    if url.strip():
+        process_external_feed(conn, url=url.strip(), note=note.strip())
+    pair = select_pair(conn)
+    if pair is None:
+        tpl = _jinja_env.get_template("partials/pair_empty.html")
+        return HTMLResponse(tpl.render(feed_success=True))
+    a, b = pair
+    tpl = _jinja_env.get_template("partials/pair_cards.html")
+    return HTMLResponse(tpl.render(signal_a=a, signal_b=b, feed_success=True))
+
+
+@web_router.get("/pairwise/history", response_class=HTMLResponse)
+def pairwise_history(request: Request, page: int = 1):
+    """Render pairwise history page."""
+    conn = _db(request)
+    history = get_pairwise_history(conn, page=page)
+    tpl = _jinja_env.get_template("history.html")
+    return HTMLResponse(tpl.render(history=history, page=page, tab="history"))
