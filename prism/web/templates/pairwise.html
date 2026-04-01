@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<nav class="top-nav">
+    <span class="logo">⬡ Prism</span>
+    <div class="tabs">
+        <a class="tab active" href="/?tab=recommend">推荐</a>
+        <a class="tab" href="/?tab=follow">关注</a>
+        <a class="tab" href="/?tab=hot">热门</a>
+        <a class="tab" href="/pairwise/history">历史</a>
+    </div>
+</nav>
+<div id="pairwise-area">
+{% if signal_a and signal_b %}
+    {% include "partials/pair_cards.html" %}
+{% else %}
+    {% include "partials/pair_empty.html" %}
+{% endif %}
+</div>
+{% endblock %}

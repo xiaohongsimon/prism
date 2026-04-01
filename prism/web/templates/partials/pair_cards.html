@@ -1,0 +1,74 @@
+<div class="pair-container">
+    <div class="pair-cards">
+        <div class="pair-card pair-card-a">
+            <div class="pair-label">A</div>
+            <div class="card-title">{{ signal_a.topic_label }}</div>
+            <div class="card-summary">{{ signal_a.summary }}</div>
+            <div class="card-meta">
+                <span>🔥 {{ signal_a.signal_strength }}</span>
+                <span class="sep"></span>
+                <span>{{ signal_a.created_at[:10] }}</span>
+            </div>
+            {% if signal_a.tags %}
+            <div class="card-tags">
+                {% for tag in signal_a.tags[:5] %}
+                <span class="tag-pill">{{ tag }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        <div class="pair-card pair-card-b">
+            <div class="pair-label">B</div>
+            <div class="card-title">{{ signal_b.topic_label }}</div>
+            <div class="card-summary">{{ signal_b.summary }}</div>
+            <div class="card-meta">
+                <span>🔥 {{ signal_b.signal_strength }}</span>
+                <span class="sep"></span>
+                <span>{{ signal_b.created_at[:10] }}</span>
+            </div>
+            {% if signal_b.tags %}
+            <div class="card-tags">
+                {% for tag in signal_b.tags[:5] %}
+                <span class="tag-pill">{{ tag }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% if feed_success %}
+    <div class="feed-toast">已收到投喂</div>
+    {% endif %}
+    <form class="pair-actions"
+          hx-post="/pairwise/vote"
+          hx-target="#pairwise-area"
+          hx-swap="innerHTML">
+        <input type="hidden" name="signal_a_id" value="{{ signal_a.signal_id }}">
+        <input type="hidden" name="signal_b_id" value="{{ signal_b.signal_id }}">
+        <input type="hidden" name="response_time_ms" value="0" id="response-timer">
+        <div class="pair-buttons">
+            <button type="submit" name="winner" value="a" class="btn btn-pick">选 A</button>
+            <button type="submit" name="winner" value="both" class="btn btn-both">都好</button>
+            <button type="submit" name="winner" value="neither" class="btn btn-neither">都不行</button>
+            <button type="submit" name="winner" value="b" class="btn btn-pick">选 B</button>
+        </div>
+        <div class="pair-comment">
+            <input type="text" name="comment" placeholder="说说你的想法（可选）" class="comment-input">
+        </div>
+    </form>
+    <form class="feed-form"
+          hx-post="/pairwise/feed"
+          hx-target="#pairwise-area"
+          hx-swap="innerHTML">
+        <input type="text" name="url" placeholder="投喂链接或话题" class="feed-input">
+        <input type="text" name="note" placeholder="备注（可选）" class="feed-note">
+        <button type="submit" class="btn btn-feed">投喂</button>
+    </form>
+</div>
+<script>
+(function() {
+    var start = Date.now();
+    document.querySelector('.pair-actions').addEventListener('submit', function() {
+        document.getElementById('response-timer').value = Date.now() - start;
+    });
+})();
+</script>
