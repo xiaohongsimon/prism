@@ -247,6 +247,53 @@ def init_db(conn: sqlite3.Connection) -> None:
             model_id TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
         );
+
+        -- Pairwise recommendation system (v2)
+        CREATE TABLE IF NOT EXISTS pairwise_comparisons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            signal_a_id INTEGER NOT NULL REFERENCES signals(id),
+            signal_b_id INTEGER NOT NULL REFERENCES signals(id),
+            winner TEXT NOT NULL CHECK(winner IN ('a', 'b', 'both', 'neither', 'skip')),
+            user_comment TEXT DEFAULT '',
+            pair_strategy TEXT DEFAULT 'exploit',
+            response_time_ms INTEGER,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS signal_scores (
+            signal_id INTEGER PRIMARY KEY REFERENCES signals(id),
+            bt_score REAL NOT NULL DEFAULT 1500.0,
+            comparison_count INTEGER NOT NULL DEFAULT 0,
+            win_count INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS source_weights (
+            source_key TEXT PRIMARY KEY,
+            weight REAL NOT NULL DEFAULT 1.0,
+            win_rate REAL NOT NULL DEFAULT 0.5,
+            total_comparisons INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS decision_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+            layer TEXT NOT NULL CHECK(layer IN ('recall', 'ranking')),
+            action TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            context_json TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE TABLE IF NOT EXISTS external_feeds (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT NOT NULL DEFAULT '' UNIQUE,
+            topic TEXT NOT NULL DEFAULT '',
+            user_note TEXT NOT NULL DEFAULT '',
+            extracted_tags_json TEXT NOT NULL DEFAULT '[]',
+            processed INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
     """)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.commit()

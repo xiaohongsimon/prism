@@ -33,3 +33,25 @@ def test_fts5_triggers_sync_on_insert(db):
                     title="vLLM inference optimization", body="New vLLM release speeds up inference")
     results = db.execute("SELECT * FROM item_search WHERE item_search MATCH 'vLLM'").fetchall()
     assert len(results) == 1
+
+
+def test_pairwise_tables_exist():
+    """All v2 pairwise tables should be created by init_db."""
+    import sqlite3
+    from prism.db import init_db
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    init_db(conn)
+    tables = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()}
+    for t in ["pairwise_comparisons", "signal_scores", "source_weights",
+              "decision_log", "external_feeds"]:
+        assert t in tables, f"Missing table: {t}"
+    # Verify external_feeds has UNIQUE url
+    conn.execute("INSERT INTO external_feeds (url, topic) VALUES ('http://a', 'test')")
+    try:
+        conn.execute("INSERT INTO external_feeds (url, topic) VALUES ('http://a', 'dupe')")
+        assert False, "Should have raised IntegrityError for duplicate URL"
+    except sqlite3.IntegrityError:
+        pass
