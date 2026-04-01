@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader
 
 from prism.web.ranking import compute_feed, update_preferences
@@ -339,6 +339,15 @@ def channel_follow(request: Request, source_key: str):
         f' hx-swap="outerHTML">取消关注</button>'
     )
     return HTMLResponse(html)
+
+
+@web_router.get("/sw.js")
+def service_worker():
+    """Serve service worker from root path (required for SW scope)."""
+    return FileResponse(
+        TEMPLATES_DIR.parent / "static" / "sw.js",
+        media_type="application/javascript",
+    )
 
 
 # ── Pairwise Routes ────────────────────────────────────────────────────────

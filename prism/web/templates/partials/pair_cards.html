@@ -51,6 +51,9 @@
             <button type="submit" name="winner" value="neither" class="btn btn-neither">都不行</button>
             <button type="submit" name="winner" value="b" class="btn btn-pick">选 B</button>
         </div>
+        <div class="pair-voice">
+            <button type="button" id="voice-btn" class="btn btn-voice">🎤 语音</button>
+        </div>
         <div class="pair-comment">
             <input type="text" name="comment" placeholder="说说你的想法（可选）" class="comment-input">
         </div>
@@ -67,8 +70,70 @@
 <script>
 (function() {
     var start = Date.now();
-    document.querySelector('.pair-actions').addEventListener('submit', function() {
+    var form = document.querySelector('.pair-actions');
+    form.addEventListener('submit', function() {
         document.getElementById('response-timer').value = Date.now() - start;
     });
+
+    // Voice input
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    var voiceBtn = document.getElementById('voice-btn');
+    if (!voiceBtn) return;
+
+    var recognition = new SpeechRecognition();
+    recognition.lang = 'zh-CN';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    var isListening = false;
+
+    voiceBtn.addEventListener('click', function() {
+        if (isListening) {
+            recognition.stop();
+            return;
+        }
+        recognition.start();
+        isListening = true;
+        voiceBtn.classList.add('listening');
+        voiceBtn.textContent = '🎙️ 听取中...';
+    });
+
+    recognition.onresult = function(event) {
+        var text = event.results[0][0].transcript.trim().toLowerCase();
+        isListening = false;
+        voiceBtn.classList.remove('listening');
+        voiceBtn.textContent = '🎤 语音';
+
+        // Match vote commands
+        if (text.includes('选a') || text.includes('第一') || text.includes('左边')) {
+            form.querySelector('[name=winner][value=a]').click();
+        } else if (text.includes('选b') || text.includes('第二') || text.includes('右边')) {
+            form.querySelector('[name=winner][value=b]').click();
+        } else if (text.includes('都好') || text.includes('都行') || text.includes('都不错')) {
+            form.querySelector('[name=winner][value=both]').click();
+        } else if (text.includes('都不') || text.includes('不行') || text.includes('跳过') || text.includes('下一')) {
+            form.querySelector('[name=winner][value=neither]').click();
+        } else {
+            // Treat as comment or topic feed
+            var commentInput = form.querySelector('[name=comment]');
+            if (commentInput) {
+                commentInput.value = text;
+                commentInput.focus();
+            }
+        }
+    };
+
+    recognition.onerror = function() {
+        isListening = false;
+        voiceBtn.classList.remove('listening');
+        voiceBtn.textContent = '🎤 语音';
+    };
+
+    recognition.onend = function() {
+        isListening = false;
+        voiceBtn.classList.remove('listening');
+        voiceBtn.textContent = '🎤 语音';
+    };
 })();
 </script>
