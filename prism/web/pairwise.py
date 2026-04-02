@@ -99,9 +99,10 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
             tags = json.loads(s["tags_json"]) if s["tags_json"] else []
         except (json.JSONDecodeError, TypeError):
             pass
-        # Get URLs, source_keys, authors, source_types, published_at for this signal
+        # Get URLs, source_keys, authors, source_types, published_at, raw_json for this signal
         detail_rows = conn.execute(
-            """SELECT ri.url, ri.author, ri.published_at, src.source_key, src.type AS source_type
+            """SELECT ri.url, ri.author, ri.published_at, ri.raw_json,
+                      src.source_key, src.type AS source_type
                FROM cluster_items ci
                JOIN raw_items ri ON ri.id = ci.raw_item_id
                JOIN sources src ON src.id = ri.source_id
@@ -130,6 +131,34 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
             if dr["published_at"] and (published_at is None or dr["published_at"] < published_at):
                 published_at = dr["published_at"]
 
+        # Extract engagement metrics from raw_json (X tweets)
+        engagement = {}
+        for dr in detail_rows:
+            if dr["source_type"] != "x":
+                continue
+            try:
+                raw = json.loads(dr["raw_json"] or "{}")
+            except (json.JSONDecodeError, TypeError):
+                continue
+            tweet = raw.get("tweet", {})
+            if tweet:
+                engagement = {
+                    "likes": tweet.get("favorite_count", 0),
+                    "retweets": tweet.get("retweet_count", 0),
+                    "replies": tweet.get("reply_count", 0),
+                    "quotes": tweet.get("quote_count", 0),
+                }
+                # Fix published_at from tweet's created_at if available
+                tweet_date = tweet.get("created_at", "")
+                if tweet_date and (not published_at or published_at.startswith("2026")):
+                    try:
+                        from email.utils import parsedate_to_datetime
+                        dt = parsedate_to_datetime(tweet_date)
+                        published_at = dt.strftime("%Y-%m-%dT%H:%M:%S")
+                    except Exception:
+                        pass
+                break  # use first tweet's data
+
         pool.append({
             "signal_id": s["signal_id"],
             "cluster_id": s["cluster_id"],
@@ -149,6 +178,7 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
             "authors": authors,
             "source_types": list(source_types),
             "is_video": "youtube" in source_types,
+            "engagement": engagement,
         })
     return pool
 

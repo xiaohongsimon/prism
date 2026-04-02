@@ -32,6 +32,22 @@
         <span>{{ sig.item_count }} 源</span>
         {% endif %}
     </div>
+    {% if sig.engagement %}
+    <div class="card-engagement">
+        {% if sig.engagement.likes %}
+        <span class="eng-item">❤️ {{ sig.engagement.likes }}</span>
+        {% endif %}
+        {% if sig.engagement.retweets %}
+        <span class="eng-item">🔁 {{ sig.engagement.retweets }}</span>
+        {% endif %}
+        {% if sig.engagement.replies %}
+        <span class="eng-item">💬 {{ sig.engagement.replies }}</span>
+        {% endif %}
+        {% if sig.engagement.quotes %}
+        <span class="eng-item">📝 {{ sig.engagement.quotes }}</span>
+        {% endif %}
+    </div>
+    {% endif %}
     {% if sig.urls %}
     <a class="card-original-link" href="{{ sig.urls[0] }}" target="_blank" rel="noopener">
         查看原文 ↗
