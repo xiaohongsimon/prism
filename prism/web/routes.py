@@ -374,10 +374,21 @@ def pairwise_vote(
     comment: str = Form(""),
     response_time_ms: int = Form(0),
 ):
-    """Record vote and return confirmation with 'next pair' button."""
+    """Record vote and return confirmation or next pair (for skip)."""
     conn = _db(request)
     record_vote(conn, signal_a_id, signal_b_id, winner, comment, response_time_ms)
-    labels = {"a": "选了 A", "b": "选了 B", "both": "都好", "neither": "都不行", "skip": "跳过"}
+
+    # Skip → immediately load next pair, no confirmation
+    if winner == "skip":
+        pair = select_pair(conn)
+        if pair is None:
+            tpl = _jinja_env.get_template("partials/pair_empty.html")
+            return HTMLResponse(tpl.render())
+        a, b = pair
+        tpl = _jinja_env.get_template("partials/pair_cards.html")
+        return HTMLResponse(tpl.render(signal_a=a, signal_b=b))
+
+    labels = {"a": "选了 A", "b": "选了 B", "both": "都好", "neither": "都不行"}
     label = labels.get(winner, winner)
     html = (
         f'<div class="vote-confirmed">'

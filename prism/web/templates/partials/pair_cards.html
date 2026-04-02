@@ -1,79 +1,67 @@
+{% macro render_card(sig, label, css_class) %}
+<div class="pair-card {{ css_class }}">
+    <div class="pair-label">{{ label }}</div>
+    {% if sig.authors %}
+    <div class="card-author">
+        {% for a in sig.authors[:2] %}
+        <span class="author-name">{{ a }}</span>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <div class="card-title">{{ sig.topic_label }}</div>
+    {% if sig.is_video %}
+    <div class="video-card">
+        <div class="video-badge">🎬 视频</div>
+        <div class="video-summary">{{ sig.summary }}</div>
+        {% if sig.why_it_matters %}
+        <div class="video-insight">💡 {{ sig.why_it_matters }}</div>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="card-summary">{{ sig.summary }}</div>
+    {% if sig.why_it_matters %}
+    <div class="card-why">{{ sig.why_it_matters }}</div>
+    {% endif %}
+    {% endif %}
+    <div class="card-meta">
+        <span>🔥 {{ sig.signal_strength }}</span>
+        <span class="sep"></span>
+        <span>{{ sig.created_at[:10] }}</span>
+        {% if sig.item_count > 1 %}
+        <span class="sep"></span>
+        <span>{{ sig.item_count }} 源</span>
+        {% endif %}
+    </div>
+    {% if sig.urls %}
+    <a class="card-original-link" href="{{ sig.urls[0] }}" target="_blank" rel="noopener">
+        查看原文 ↗
+    </a>
+    {% endif %}
+    <div class="card-badges">
+        {% if sig.signal_strength >= 4 %}
+        <span class="badge badge-hot">🔥 热度 {{ sig.signal_strength }}/5</span>
+        {% endif %}
+        {% if sig.item_count > 1 %}
+        <span class="badge badge-strength">📡 {{ sig.item_count }} 个来源</span>
+        {% endif %}
+        {% for sk in sig.source_keys[:2] %}
+        <span class="badge badge-source">{{ sk }}</span>
+        {% endfor %}
+    </div>
+    {% if sig.tags %}
+    <div class="card-tags">
+        {% for tag in sig.tags[:5] %}
+        <span class="tag-pill">{{ tag }}</span>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endmacro %}
+
 <div class="pair-container">
     <div class="pair-cards">
-        <div class="pair-card pair-card-a">
-            <div class="pair-label">A</div>
-            <div class="card-title">{{ signal_a.topic_label }}</div>
-            <div class="card-summary">{{ signal_a.summary }}</div>
-            <div class="card-meta">
-                <span>🔥 {{ signal_a.signal_strength }}</span>
-                <span class="sep"></span>
-                <span>{{ signal_a.created_at[:10] }}</span>
-                {% if signal_a.item_count > 1 %}
-                <span class="sep"></span>
-                <span>{{ signal_a.item_count }} 源</span>
-                {% endif %}
-            </div>
-            {% if signal_a.urls %}
-            <a class="card-original-link" href="{{ signal_a.urls[0] }}" target="_blank" rel="noopener">
-                查看原文 ↗
-            </a>
-            {% endif %}
-            <div class="card-badges">
-                {% if signal_a.signal_strength >= 4 %}
-                <span class="badge badge-hot">🔥 热度 {{ signal_a.signal_strength }}/5</span>
-                {% endif %}
-                {% if signal_a.item_count > 1 %}
-                <span class="badge badge-strength">📡 {{ signal_a.item_count }} 个来源</span>
-                {% endif %}
-                {% for sk in signal_a.source_keys[:2] %}
-                <span class="badge badge-source">{{ sk }}</span>
-                {% endfor %}
-            </div>
-            {% if signal_a.tags %}
-            <div class="card-tags">
-                {% for tag in signal_a.tags[:5] %}
-                <span class="tag-pill">{{ tag }}</span>
-                {% endfor %}
-            </div>
-            {% endif %}
-        </div>
-        <div class="pair-card pair-card-b">
-            <div class="pair-label">B</div>
-            <div class="card-title">{{ signal_b.topic_label }}</div>
-            <div class="card-summary">{{ signal_b.summary }}</div>
-            <div class="card-meta">
-                <span>🔥 {{ signal_b.signal_strength }}</span>
-                <span class="sep"></span>
-                <span>{{ signal_b.created_at[:10] }}</span>
-                {% if signal_b.item_count > 1 %}
-                <span class="sep"></span>
-                <span>{{ signal_b.item_count }} 源</span>
-                {% endif %}
-            </div>
-            {% if signal_b.urls %}
-            <a class="card-original-link" href="{{ signal_b.urls[0] }}" target="_blank" rel="noopener">
-                查看原文 ↗
-            </a>
-            {% endif %}
-            <div class="card-badges">
-                {% if signal_b.signal_strength >= 4 %}
-                <span class="badge badge-hot">🔥 热度 {{ signal_b.signal_strength }}/5</span>
-                {% endif %}
-                {% if signal_b.item_count > 1 %}
-                <span class="badge badge-strength">📡 {{ signal_b.item_count }} 个来源</span>
-                {% endif %}
-                {% for sk in signal_b.source_keys[:2] %}
-                <span class="badge badge-source">{{ sk }}</span>
-                {% endfor %}
-            </div>
-            {% if signal_b.tags %}
-            <div class="card-tags">
-                {% for tag in signal_b.tags[:5] %}
-                <span class="tag-pill">{{ tag }}</span>
-                {% endfor %}
-            </div>
-            {% endif %}
-        </div>
+        {{ render_card(signal_a, "A", "pair-card-a") }}
+        {{ render_card(signal_b, "B", "pair-card-b") }}
     </div>
     {% if feed_success %}
     <div class="feed-toast">已收到投喂</div>
@@ -99,6 +87,12 @@
             <input type="text" name="comment" placeholder="说说你的想法（可选）" class="comment-input">
         </div>
     </form>
+    </div>
+    <div class="pair-skip">
+        <button class="btn btn-skip"
+                hx-get="/pairwise/pair" hx-target="#pairwise-area" hx-swap="innerHTML">
+            换一批
+        </button>
     </div>
     <form class="feed-form"
           hx-post="/pairwise/feed"

@@ -76,7 +76,7 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
     # Get current signals within age limit
     signals = conn.execute(
         """SELECT s.id AS signal_id, s.cluster_id, s.summary, s.signal_layer,
-                  s.signal_strength, s.tags_json, s.created_at,
+                  s.signal_strength, s.why_it_matters, s.tags_json, s.created_at,
                   c.topic_label, c.item_count
            FROM signals s JOIN clusters c ON s.cluster_id = c.id
            WHERE s.is_current = 1 AND s.created_at >= ?
@@ -99,9 +99,9 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
             tags = json.loads(s["tags_json"]) if s["tags_json"] else []
         except (json.JSONDecodeError, TypeError):
             pass
-        # Get URLs and source_keys for this signal
-        url_rows = conn.execute(
-            """SELECT ri.url, src.source_key
+        # Get URLs, source_keys, authors, source_types for this signal
+        detail_rows = conn.execute(
+            """SELECT ri.url, ri.author, src.source_key, src.type AS source_type
                FROM cluster_items ci
                JOIN raw_items ri ON ri.id = ci.raw_item_id
                JOIN sources src ON src.id = ri.source_id
@@ -110,17 +110,29 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
         ).fetchall()
         urls = []
         source_keys = []
-        for ur in url_rows:
-            if ur["url"] and ur["url"].startswith("http") and ur["url"] not in urls:
-                urls.append(ur["url"])
-            if ur["source_key"] not in source_keys:
-                source_keys.append(ur["source_key"])
+        authors = []
+        source_types = set()
+        _aggregator_domains = ("news.ycombinator.com", "twitter.com", "x.com", "xcancel.com")
+        for dr in detail_rows:
+            if dr["url"] and dr["url"].startswith("http") and dr["url"] not in urls:
+                # Prioritize real article URLs over aggregator links
+                is_aggregator = any(d in dr["url"] for d in _aggregator_domains)
+                if is_aggregator:
+                    urls.append(dr["url"])  # add at end
+                else:
+                    urls.insert(0, dr["url"])  # real articles first
+            if dr["source_key"] not in source_keys:
+                source_keys.append(dr["source_key"])
+            if dr["author"] and dr["author"].strip() and dr["author"] not in authors:
+                authors.append(dr["author"])
+            source_types.add(dr["source_type"])
 
         pool.append({
             "signal_id": s["signal_id"],
             "cluster_id": s["cluster_id"],
             "topic_label": s["topic_label"],
             "summary": s["summary"],
+            "why_it_matters": s["why_it_matters"] or "",
             "signal_layer": s["signal_layer"],
             "signal_strength": s["signal_strength"],
             "tags": tags,
@@ -130,6 +142,9 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
             "comparison_count": comp_count,
             "urls": urls,
             "source_keys": source_keys,
+            "authors": authors,
+            "source_types": list(source_types),
+            "is_video": "youtube" in source_types,
         })
     return pool
 
