@@ -7,6 +7,51 @@ sources:
     handle: simonw
     depth: thread
 
+  # === X — Claude Code core team & ecosystem ===
+  - type: x
+    handle: bcherny         # Boris Cherny, Claude Code creator
+    depth: thread
+  - type: x
+    handle: alexalbert__    # Alex Albert, Anthropic prompt eng lead
+    depth: thread
+  - type: x
+    handle: _catwu          # Cat Wu, founding PM of Claude Code
+    depth: thread
+  - type: x
+    handle: vasuman          # Vas, Anthropic CC engineer
+    depth: thread
+  - type: x
+    handle: ClaudeAI        # Official Claude account
+    depth: thread
+
+  # === X — Claude Code power users & content creators ===
+  - type: x
+    handle: IndyDevDan      # Advanced CC: worktrees, multi-agent, Karpathy-endorsed
+    depth: thread
+  - type: x
+    handle: mattpocock      # TypeScript educator, CC skills creator
+    depth: thread
+  - type: x
+    handle: t3dotgg         # Theo Browne, honest CC vs Cursor takes
+    depth: thread
+  - type: x
+    handle: skirano         # Riley Goodside, prompt engineering
+    depth: thread
+
+  # === X — Indie builders & interesting people ===
+  - type: x
+    handle: levelsio        # Pieter Levels, indie hacker legend
+    depth: thread
+  - type: x
+    handle: amasad          # Amjad Masad, Replit CEO
+    depth: thread
+  - type: x
+    handle: steipete        # Peter Steinberger, dev tools builder
+    depth: thread
+  - type: x
+    handle: garrytan        # Garry Tan, YC CEO
+    depth: thread
+
   # === HN ===
   - type: hackernews
     key: "hn:best"
@@ -17,6 +62,8 @@ sources:
   - type: github_releases
     key: "github:releases"
     orgs:
+      - anthropics        # Claude Code releases
+      - openai            # Codex, API updates
       - vllm-project
       - sgl-project
       - deepseek-ai
