@@ -374,16 +374,21 @@ def pairwise_vote(
     comment: str = Form(""),
     response_time_ms: int = Form(0),
 ):
-    """Record vote and return next pair."""
+    """Record vote and return confirmation with 'next pair' button."""
     conn = _db(request)
     record_vote(conn, signal_a_id, signal_b_id, winner, comment, response_time_ms)
-    pair = select_pair(conn)
-    if pair is None:
-        tpl = _jinja_env.get_template("partials/pair_empty.html")
-        return HTMLResponse(tpl.render())
-    a, b = pair
-    tpl = _jinja_env.get_template("partials/pair_cards.html")
-    return HTMLResponse(tpl.render(signal_a=a, signal_b=b))
+    labels = {"a": "选了 A", "b": "选了 B", "both": "都好", "neither": "都不行", "skip": "跳过"}
+    label = labels.get(winner, winner)
+    html = (
+        f'<div class="vote-confirmed">'
+        f'<span class="vote-label">✓ {label}</span>'
+        f'{"<span class=\"vote-comment\">💬 " + comment + "</span>" if comment else ""}'
+        f'<button class="btn btn-next" '
+        f'hx-get="/pairwise/pair" hx-target="#pairwise-area" hx-swap="innerHTML">'
+        f'下一对 →</button>'
+        f'</div>'
+    )
+    return HTMLResponse(html)
 
 
 @web_router.post("/pairwise/feed", response_class=HTMLResponse)

@@ -504,3 +504,10 @@ a { color: inherit; text-decoration: none; }
 .btn-voice:hover { border-color: var(--accent, #6c63ff); color: var(--accent, #6c63ff); }
 .btn-voice.listening { background: var(--accent, #6c63ff); color: #fff; border-style: solid; animation: pulse 1.5s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+/* === Vote Confirmation === */
+.vote-confirmed { text-align: center; padding: 1.5rem; }
+.vote-label { display: block; font-size: 1.1rem; font-weight: 700; color: var(--accent, #6c63ff); margin-bottom: 0.5rem; }
+.vote-comment { display: block; font-size: 0.85rem; color: var(--text-secondary, #888); font-style: italic; margin-bottom: 1rem; }
+.btn-next { padding: 0.6rem 2rem; font-size: 1rem; font-weight: 600; background: var(--accent, #6c63ff); color: #fff; border: none; border-radius: 8px; cursor: pointer; transition: opacity 0.2s; }
+.btn-next:hover { opacity: 0.85; }

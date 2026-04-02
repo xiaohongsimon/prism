@@ -78,9 +78,10 @@
     {% if feed_success %}
     <div class="feed-toast">已收到投喂</div>
     {% endif %}
-    <form class="pair-actions"
+    <div id="vote-area">
+    <form class="pair-actions" id="vote-form"
           hx-post="/pairwise/vote"
-          hx-target="#pairwise-area"
+          hx-target="#vote-area"
           hx-swap="innerHTML">
         <input type="hidden" name="signal_a_id" value="{{ signal_a.signal_id }}">
         <input type="hidden" name="signal_b_id" value="{{ signal_b.signal_id }}">
@@ -98,6 +99,7 @@
             <input type="text" name="comment" placeholder="说说你的想法（可选）" class="comment-input">
         </div>
     </form>
+    </div>
     <form class="feed-form"
           hx-post="/pairwise/feed"
           hx-target="#pairwise-area"
