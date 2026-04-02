@@ -18,6 +18,9 @@
         {% endif %}
     </div>
     {% else %}
+    {% if sig.tweet_text %}
+    <div class="tweet-text">{{ sig.tweet_text }}</div>
+    {% endif %}
     <div class="card-summary">{{ sig.summary }}</div>
     {% if sig.why_it_matters %}
     <div class="card-why">{{ sig.why_it_matters }}</div>

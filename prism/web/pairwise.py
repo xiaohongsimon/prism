@@ -60,7 +60,10 @@ def _ensure_signal_score(conn: sqlite3.Connection, signal_id: int) -> float:
 
 def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
     """Get signals eligible for pairwise comparison."""
+    # Content must be published within SIGNAL_MAX_AGE_DAYS (not just synced recently)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=SIGNAL_MAX_AGE_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
+    # Hard floor: never show content older than 30 days
+    hard_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
 
     # Get recently shown signal IDs
     recent_ids = set()
@@ -157,7 +160,18 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
                         published_at = dt.strftime("%Y-%m-%dT%H:%M:%S")
                     except Exception:
                         pass
+                # Also grab tweet text for display
+                tweet_text = tweet.get("full_text", "") or tweet.get("text", "")
                 break  # use first tweet's data
+            else:
+                tweet_text = ""
+        else:
+            tweet_text = ""
+
+        # Filter out old content — skip if published before hard_cutoff
+        effective_date = published_at or s["created_at"]
+        if effective_date < hard_cutoff:
+            continue
 
         pool.append({
             "signal_id": s["signal_id"],
@@ -179,6 +193,7 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
             "source_types": list(source_types),
             "is_video": "youtube" in source_types,
             "engagement": engagement,
+            "tweet_text": tweet_text,
         })
     return pool
 
