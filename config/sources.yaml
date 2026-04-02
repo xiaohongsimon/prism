@@ -38,7 +38,7 @@ sources:
     handle: skirano         # Riley Goodside, prompt engineering
     depth: thread
 
-  # === X — Indie builders & interesting people ===
+  # === X — Indie builders (from follow-builders + manual) ===
   - type: x
     handle: levelsio        # Pieter Levels, indie hacker legend
     depth: thread
@@ -50,6 +50,21 @@ sources:
     depth: thread
   - type: x
     handle: garrytan        # Garry Tan, YC CEO
+    depth: thread
+  - type: x
+    handle: levie           # Aaron Levie, Box CEO
+    depth: thread
+  - type: x
+    handle: rauchg          # Guillermo Rauch, Vercel CEO
+    depth: thread
+  - type: x
+    handle: petergyang      # Peter Yang, product builder
+    depth: thread
+  - type: x
+    handle: thenanyu        # Nan Yu, builder
+    depth: thread
+  - type: x
+    handle: zarazhangrui    # Zara Zhang, follow-builders creator
     depth: thread
 
   # === HN ===

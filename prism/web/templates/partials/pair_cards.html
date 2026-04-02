@@ -26,7 +26,7 @@
     <div class="card-meta">
         <span>🔥 {{ sig.signal_strength }}</span>
         <span class="sep"></span>
-        <span>{{ sig.created_at[:10] }}</span>
+        <span>{{ sig.published_at[:10] if sig.published_at else sig.created_at[:10] }}</span>
         {% if sig.item_count > 1 %}
         <span class="sep"></span>
         <span>{{ sig.item_count }} 源</span>

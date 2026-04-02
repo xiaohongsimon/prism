@@ -99,9 +99,9 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
             tags = json.loads(s["tags_json"]) if s["tags_json"] else []
         except (json.JSONDecodeError, TypeError):
             pass
-        # Get URLs, source_keys, authors, source_types for this signal
+        # Get URLs, source_keys, authors, source_types, published_at for this signal
         detail_rows = conn.execute(
-            """SELECT ri.url, ri.author, src.source_key, src.type AS source_type
+            """SELECT ri.url, ri.author, ri.published_at, src.source_key, src.type AS source_type
                FROM cluster_items ci
                JOIN raw_items ri ON ri.id = ci.raw_item_id
                JOIN sources src ON src.id = ri.source_id
@@ -112,20 +112,23 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
         source_keys = []
         authors = []
         source_types = set()
+        published_at = None
         _aggregator_domains = ("news.ycombinator.com", "twitter.com", "x.com", "xcancel.com")
         for dr in detail_rows:
             if dr["url"] and dr["url"].startswith("http") and dr["url"] not in urls:
-                # Prioritize real article URLs over aggregator links
                 is_aggregator = any(d in dr["url"] for d in _aggregator_domains)
                 if is_aggregator:
-                    urls.append(dr["url"])  # add at end
+                    urls.append(dr["url"])
                 else:
-                    urls.insert(0, dr["url"])  # real articles first
+                    urls.insert(0, dr["url"])
             if dr["source_key"] not in source_keys:
                 source_keys.append(dr["source_key"])
             if dr["author"] and dr["author"].strip() and dr["author"] not in authors:
                 authors.append(dr["author"])
             source_types.add(dr["source_type"])
+            # Use earliest published_at as the real content date
+            if dr["published_at"] and (published_at is None or dr["published_at"] < published_at):
+                published_at = dr["published_at"]
 
         pool.append({
             "signal_id": s["signal_id"],
@@ -138,6 +141,7 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
             "tags": tags,
             "item_count": s["item_count"],
             "created_at": s["created_at"],
+            "published_at": published_at or s["created_at"],  # real content date
             "bt_score": bt_score,
             "comparison_count": comp_count,
             "urls": urls,
