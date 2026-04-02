@@ -8,6 +8,26 @@
                 <span>🔥 {{ signal_a.signal_strength }}</span>
                 <span class="sep"></span>
                 <span>{{ signal_a.created_at[:10] }}</span>
+                {% if signal_a.item_count > 1 %}
+                <span class="sep"></span>
+                <span>{{ signal_a.item_count }} 源</span>
+                {% endif %}
+            </div>
+            {% if signal_a.urls %}
+            <a class="card-original-link" href="{{ signal_a.urls[0] }}" target="_blank" rel="noopener">
+                查看原文 ↗
+            </a>
+            {% endif %}
+            <div class="card-badges">
+                {% if signal_a.signal_strength >= 4 %}
+                <span class="badge badge-hot">🔥 热度 {{ signal_a.signal_strength }}/5</span>
+                {% endif %}
+                {% if signal_a.item_count > 1 %}
+                <span class="badge badge-strength">📡 {{ signal_a.item_count }} 个来源</span>
+                {% endif %}
+                {% for sk in signal_a.source_keys[:2] %}
+                <span class="badge badge-source">{{ sk }}</span>
+                {% endfor %}
             </div>
             {% if signal_a.tags %}
             <div class="card-tags">
@@ -25,6 +45,26 @@
                 <span>🔥 {{ signal_b.signal_strength }}</span>
                 <span class="sep"></span>
                 <span>{{ signal_b.created_at[:10] }}</span>
+                {% if signal_b.item_count > 1 %}
+                <span class="sep"></span>
+                <span>{{ signal_b.item_count }} 源</span>
+                {% endif %}
+            </div>
+            {% if signal_b.urls %}
+            <a class="card-original-link" href="{{ signal_b.urls[0] }}" target="_blank" rel="noopener">
+                查看原文 ↗
+            </a>
+            {% endif %}
+            <div class="card-badges">
+                {% if signal_b.signal_strength >= 4 %}
+                <span class="badge badge-hot">🔥 热度 {{ signal_b.signal_strength }}/5</span>
+                {% endif %}
+                {% if signal_b.item_count > 1 %}
+                <span class="badge badge-strength">📡 {{ signal_b.item_count }} 个来源</span>
+                {% endif %}
+                {% for sk in signal_b.source_keys[:2] %}
+                <span class="badge badge-source">{{ sk }}</span>
+                {% endfor %}
             </div>
             {% if signal_b.tags %}
             <div class="card-tags">

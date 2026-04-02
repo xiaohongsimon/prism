@@ -99,6 +99,23 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
             tags = json.loads(s["tags_json"]) if s["tags_json"] else []
         except (json.JSONDecodeError, TypeError):
             pass
+        # Get URLs and source_keys for this signal
+        url_rows = conn.execute(
+            """SELECT ri.url, src.source_key
+               FROM cluster_items ci
+               JOIN raw_items ri ON ri.id = ci.raw_item_id
+               JOIN sources src ON src.id = ri.source_id
+               WHERE ci.cluster_id = ?""",
+            (s["cluster_id"],),
+        ).fetchall()
+        urls = []
+        source_keys = []
+        for ur in url_rows:
+            if ur["url"] and ur["url"].startswith("http") and ur["url"] not in urls:
+                urls.append(ur["url"])
+            if ur["source_key"] not in source_keys:
+                source_keys.append(ur["source_key"])
+
         pool.append({
             "signal_id": s["signal_id"],
             "cluster_id": s["cluster_id"],
@@ -111,6 +128,8 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
             "created_at": s["created_at"],
             "bt_score": bt_score,
             "comparison_count": comp_count,
+            "urls": urls,
+            "source_keys": source_keys,
         })
     return pool
 
