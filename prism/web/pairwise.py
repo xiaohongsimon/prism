@@ -76,15 +76,19 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
         recent_ids.add(r["signal_a_id"])
         recent_ids.add(r["signal_b_id"])
 
-    # Get current signals within age limit
+    # Get current signals — filter by actual content publish date, not signal creation
     signals = conn.execute(
-        """SELECT s.id AS signal_id, s.cluster_id, s.summary, s.signal_layer,
+        """SELECT DISTINCT s.id AS signal_id, s.cluster_id, s.summary, s.signal_layer,
                   s.signal_strength, s.why_it_matters, s.tags_json, s.created_at,
                   c.topic_label, c.item_count
-           FROM signals s JOIN clusters c ON s.cluster_id = c.id
-           WHERE s.is_current = 1 AND s.created_at >= ?
+           FROM signals s
+           JOIN clusters c ON s.cluster_id = c.id
+           JOIN cluster_items ci ON ci.cluster_id = c.id
+           JOIN raw_items ri ON ri.id = ci.raw_item_id
+           WHERE s.is_current = 1
+             AND COALESCE(ri.published_at, s.created_at) >= ?
            ORDER BY s.created_at DESC""",
-        (cutoff,),
+        (hard_cutoff,),
     ).fetchall()
 
     pool = []
@@ -195,6 +199,23 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
             "engagement": engagement,
             "tweet_text": tweet_text,
         })
+
+    # Cap any single source type at 40% of pool to ensure diversity
+    if pool:
+        from collections import Counter
+        type_counts = Counter()
+        for p in pool:
+            for st in p.get("source_types", []):
+                type_counts[st] += 1
+        max_per_type = max(len(pool) * 4 // 10, 20)
+        for dominant_type, cnt in type_counts.items():
+            if cnt > max_per_type:
+                # Randomly sample down
+                dominant = [p for p in pool if dominant_type in p.get("source_types", [])]
+                others = [p for p in pool if dominant_type not in p.get("source_types", [])]
+                random.shuffle(dominant)
+                pool = others + dominant[:max_per_type]
+
     return pool
 
 
