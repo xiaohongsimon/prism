@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="article-page">
+  <a class="back-link" href="/creator/{{ source_key }}">← {{ article.author or '返回' }}</a>
+
+  <div class="article-header">
+    <h1>{{ article.title }}</h1>
+    {% if article.subtitle %}
+    <div class="article-subtitle">{{ article.subtitle }}</div>
+    {% endif %}
+    <div class="article-meta">
+      {{ (article.published_at or article.item_created or '')[:10] }}
+      · {{ article.word_count }} 字
+      · <a href="{{ article.source_url }}" target="_blank" rel="noopener">观看原视频 ↗</a>
+    </div>
+  </div>
+
+  <div class="article-body">
+    {{ body_html | safe }}
+  </div>
+
+  {% if highlights %}
+  <div class="article-highlights">
+    <h2>关键引用</h2>
+    {% for h in highlights %}
+    <blockquote>{{ h }}</blockquote>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

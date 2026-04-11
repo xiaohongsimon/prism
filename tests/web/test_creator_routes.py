@@ -83,3 +83,29 @@ def test_creator_profile_not_found(client, db):
     """Non-existent source should 404."""
     resp = client.get("/creator/youtube:nonexistent")
     assert resp.status_code == 404
+
+
+def test_article_detail_page(client, db):
+    """Article detail page should render structured content."""
+    _seed_creators(db)
+    # Insert an article for Video 1 (raw_item_id=1)
+    db.execute(
+        """INSERT INTO articles (raw_item_id, title, subtitle, structured_body, highlights_json, word_count, model_id)
+           VALUES (1, 'Video 1', 'Summary of video', '## Section 1\nContent here\n\n## Section 2\nMore content',
+                   '["Key quote 1"]', 200, 'omlx')"""
+    )
+    db.commit()
+
+    article = db.execute("SELECT id FROM articles WHERE raw_item_id = 1").fetchone()
+    resp = client.get(f"/article/{article['id']}")
+    assert resp.status_code == 200
+    assert "Video 1" in resp.text
+    assert "Summary of video" in resp.text
+    assert "Section 1" in resp.text
+    assert "Content here" in resp.text
+
+
+def test_article_not_found(client, db):
+    """Non-existent article should 404."""
+    resp = client.get("/article/99999")
+    assert resp.status_code == 404

@@ -489,6 +489,47 @@ def creator_profile(request: Request, source_key: str):
     )
 
 
+@web_router.get("/article/{article_id}", response_class=HTMLResponse)
+def article_detail(request: Request, article_id: int):
+    """Article detail page — structured content from video subtitles."""
+    conn = _db(request)
+    row = conn.execute(
+        """SELECT a.*, ri.url as source_url, ri.author, ri.published_at, ri.created_at as item_created,
+                  s.source_key, s.type as source_type
+           FROM articles a
+           JOIN raw_items ri ON a.raw_item_id = ri.id
+           JOIN sources s ON ri.source_id = s.id
+           WHERE a.id = ?""",
+        (article_id,),
+    ).fetchone()
+
+    if not row:
+        return HTMLResponse("<div class='empty'>文章不存在</div>", status_code=404)
+
+    import markdown as _md
+    body_html = _md.markdown(
+        row["structured_body"] or "",
+        extensions=["extra", "sane_lists"],
+    )
+
+    import json
+    highlights = []
+    if row["highlights_json"]:
+        try:
+            highlights = json.loads(row["highlights_json"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return _render(
+        "article.html",
+        request=request,
+        article=dict(row),
+        body_html=body_html,
+        highlights=highlights,
+        source_key=row["source_key"],
+    )
+
+
 @web_router.get("/sw.js")
 def service_worker():
     """Serve service worker from root path (required for SW scope)."""
