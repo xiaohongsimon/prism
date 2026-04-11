@@ -244,3 +244,55 @@ async def test_adapter_default_source_key():
         result = await adapter.sync({"channels": ["UCtest"]})
 
     assert result.source_key == "youtube:channels"
+
+
+@pytest.mark.asyncio
+async def test_adapter_sync_single_channel():
+    """Single-channel config using channel_id (not channels list)."""
+    feed = _make_atom_feed([
+        {"video_id": "sc001", "title": "Single Channel Video", "published": _recent_ts()}
+    ])
+    mock_resp = _make_mock_response(feed)
+
+    with patch("httpx.AsyncClient") as MockClient:
+        instance = MockClient.return_value.__aenter__.return_value
+        instance.get = AsyncMock(return_value=mock_resp)
+
+        adapter = YoutubeAdapter()
+        result = await adapter.sync({
+            "key": "youtube:bestpartners",
+            "channel_id": "UCGWYKICLOE8Wxy7q3eYXmPA",
+            "display_name": "最佳拍档",
+        })
+
+    assert result.success is True
+    assert result.source_key == "youtube:bestpartners"
+    assert len(result.items) == 1
+    assert result.items[0].title == "Single Channel Video"
+
+
+@pytest.mark.asyncio
+async def test_adapter_always_enriches_subtitles():
+    """Subtitles should be attempted for ALL videos, not just short bodies."""
+    feed = _make_atom_feed([{
+        "video_id": "enrich1",
+        "title": "Long Description Video",
+        "description": "A" * 500,  # body > 200 chars
+        "published": _recent_ts(),
+    }])
+    mock_resp = _make_mock_response(feed)
+
+    with patch("httpx.AsyncClient") as MockClient:
+        instance = MockClient.return_value.__aenter__.return_value
+        instance.get = AsyncMock(return_value=mock_resp)
+
+        with patch("prism.sources.subtitles.extract_subtitles", return_value="Full transcript text here " * 100) as mock_sub:
+            adapter = YoutubeAdapter()
+            result = await adapter.sync({
+                "key": "youtube:test",
+                "channel_id": "UCtest",
+            })
+
+            # extract_subtitles should be called even though body > 200
+            mock_sub.assert_called_once()
+            assert len(result.items[0].body) > 500

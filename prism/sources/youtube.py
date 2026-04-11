@@ -6,6 +6,7 @@ parses the feed, and filters videos published within the last 48 hours.
 
 import json
 import logging
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 
@@ -13,6 +14,7 @@ import httpx
 
 from prism.models import RawItem
 from prism.sources.base import SyncResult
+import prism.sources.subtitles as _subtitles_mod
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,26 @@ def _parse_dt(dt_str: str) -> datetime | None:
         return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+_YT_BOILERPLATE_PATTERNS = [
+    re.compile(r"付费频道订阅[：:]\s*https?://\S+", re.IGNORECASE),
+    re.compile(r"成为此频道的会员即可获享以下福利[：:]\s*https?://\S+", re.IGNORECASE),
+    re.compile(r"欢迎加入Discord讨论服务器[：:]\s*https?://\S+", re.IGNORECASE),
+    re.compile(r"https?://(?:www\.)?youtube\.com/channel/\S+/join\b"),
+    re.compile(r"https?://(?:www\.)?discord\.gg/\S+"),
+]
+
+
+def _clean_youtube_body(body: str) -> str:
+    """Remove YouTube boilerplate (membership links, Discord links, etc.)."""
+    if not body:
+        return body
+    for pat in _YT_BOILERPLATE_PATTERNS:
+        body = pat.sub("", body)
+    # Collapse whitespace
+    body = re.sub(r"\n{3,}", "\n\n", body).strip()
+    return body
 
 
 def _is_recent(dt_str: str, hours: int = _LOOKBACK_HOURS) -> bool:
@@ -111,11 +133,16 @@ class YoutubeAdapter:
 
         Config keys:
             key (str): source key used in SyncResult
-            channels (list[str]): YouTube channel IDs
+            channel_id (str): single YouTube channel ID (alternative to channels)
+            channels (list[str]): multiple YouTube channel IDs (ignored if channel_id set)
             lookback_hours (int): hours to look back for videos (default: 48)
         """
         source_key = config.get("key", "youtube:channels")
-        channels: list[str] = config.get("channels", [])
+        single_channel = config.get("channel_id")
+        if single_channel:
+            channels = [single_channel]
+        else:
+            channels = config.get("channels", [])
         lookback_hours = int(config.get("lookback_hours", _LOOKBACK_HOURS))
 
         items: list[RawItem] = []
@@ -140,24 +167,31 @@ class YoutubeAdapter:
                         logger.warning("Skipping channel %s: HTTP error", channel_id)
                         continue
 
-            # Enrich items with subtitle transcript
-            enriched = 0
+            # Clean YouTube boilerplate from body (membership links, Discord, etc.)
             for item in items:
-                if item.url and "/shorts/" not in item.url and len(item.body) < 200:
-                    try:
-                        from prism.sources.subtitles import extract_subtitles
-                        transcript = extract_subtitles(item.url)
-                        if transcript and len(transcript) > len(item.body):
-                            item.body = transcript[:4000]  # Cap at 4k chars
-                            enriched += 1
-                    except Exception as exc:
-                        logger.debug("Subtitle extraction failed for %s: %s", item.url, exc)
+                item.body = _clean_youtube_body(item.body)
+
+            # Filter out Shorts (too short for meaningful analysis)
+            regular_items = [i for i in items if i.url and "/shorts/" not in i.url]
+            shorts_count = len(items) - len(regular_items)
+
+            # Enrich regular videos with subtitle transcript
+            enriched = 0
+            for item in regular_items:
+                try:
+                    transcript = _subtitles_mod.extract_subtitles(item.url)
+                    if transcript and len(transcript) > len(item.body):
+                        item.body = transcript[:8000]  # Cap at 8k chars
+                        enriched += 1
+                except Exception as exc:
+                    logger.warning("Subtitle extraction failed for %s: %s", item.url, exc)
 
             return SyncResult(
                 source_key=source_key,
-                items=items,
+                items=regular_items,
                 success=True,
-                stats={"channels": len(channels), "videos_found": len(items), "subtitles_enriched": enriched},
+                stats={"channels": len(channels), "videos_found": len(regular_items),
+                       "shorts_filtered": shorts_count, "subtitles_enriched": enriched},
             )
 
         except Exception as e:
