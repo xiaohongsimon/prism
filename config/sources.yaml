@@ -38,6 +38,46 @@ sources:
     handle: skirano         # Riley Goodside, prompt engineering
     depth: thread
 
+  # === X — AI frontier labs & researchers ===
+  - type: x
+    handle: GoogleDeepMind  # Google DeepMind official — Gemini, Gemma releases
+    depth: thread
+  - type: x
+    handle: AIatMeta        # Meta AI official — Llama, open-source releases
+    depth: thread
+  - type: x
+    handle: ylecun          # Yann LeCun — Meta Chief AI Scientist
+    depth: thread
+  - type: x
+    handle: huggingface     # HF — open model benchmarks, community pulse
+    depth: thread
+  - type: x
+    handle: ArtificialAnlys # Artificial Analysis — model benchmark leaderboard
+    depth: thread
+  - type: x
+    handle: labordepierre   # Clem Delangue, HF CEO — open model advocacy
+    depth: thread
+  - type: x
+    handle: reach_vb        # Vaibhav Srivastav, HF — model release coverage
+    depth: thread
+  - type: x
+    handle: JeffDean        # Jeff Dean — Google AI lead
+    depth: thread
+
+  # === X — Multimodal / Video AI ===
+  - type: x
+    handle: EMostaque       # Emad Mostaque — Stability AI founder, video/image gen
+    depth: thread
+  - type: x
+    handle: _akhaliq        # AK — daily AI paper/model roundups, catches everything
+    depth: thread
+  - type: x
+    handle: op7418          # 歸藏 — Chinese AI news aggregator, covers 36Kr/multimodal
+    depth: thread
+  - type: x
+    handle: xiaohuggg       # 小互 — Chinese AI tool/model tracker
+    depth: thread
+
   # === X — Indie builders (from follow-builders + manual) ===
   - type: x
     handle: levelsio        # Pieter Levels, indie hacker legend
@@ -90,19 +130,49 @@ sources:
       - mistralai
       - apple
       - XiaoMi
+      - google-deepmind    # Gemma models
+      - google             # Google AI releases
 
-  # === YouTube ===
+  # YouTube — 每频道一个 source
   - type: youtube
-    key: "youtube:ai-interviews"
-    channels:
-      - UCGWYKICLOE8Wxy7q3eYXmPA  # @bestpartners
-      - UCkHrq03gWLLx6vjS2DOJ8aA  # @sunriches
-      - UCUGLhcs3-3y_yhZZsgRzrzw  # @StorytellerFan
-      - UCjJklW6MyT2yjHEOrRu-FOA  # @maskfinance447
-      - UCQ1VQj-37kl2yS_VUhfQHsw  # @a16z
-      - UC1Lk6WO-eKuYc6GHYbKVY2g  # @sunlao
-      - UCVThAeUXPZcUfdYBvWGV3UA  # @ltshijie
-      - UCn9_KbNANeyYREePe8YA2DA  # @caijinglengyan
+    key: "youtube:bestpartners"
+    channel_id: UCGWYKICLOE8Wxy7q3eYXmPA
+    display_name: "最佳拍档"
+
+  - type: youtube
+    key: "youtube:sunriches"
+    channel_id: UCkHrq03gWLLx6vjS2DOJ8aA
+    display_name: "孙富贵"
+
+  - type: youtube
+    key: "youtube:storytellerfan"
+    channel_id: UCUGLhcs3-3y_yhZZsgRzrzw
+    display_name: "老范讲故事"
+
+  - type: youtube
+    key: "youtube:maskfinance"
+    channel_id: UCjJklW6MyT2yjHEOrRu-FOA
+    display_name: "蒙面财经MaskFinance"
+
+  - type: youtube
+    key: "youtube:a16z"
+    channel_id: UCQ1VQj-37kl2yS_VUhfQHsw
+    display_name: "a16z Deep Dives"
+
+  - type: youtube
+    key: "youtube:sunlao"
+    channel_id: UC1Lk6WO-eKuYc6GHYbKVY2g
+    display_name: "政經孫老師"
+
+  - type: youtube
+    key: "youtube:ltshijie"
+    channel_id: UCVThAeUXPZcUfdYBvWGV3UA
+    display_name: "LT+"
+
+  - type: youtube
+    key: "youtube:caijinglengyan"
+    channel_id: UCn9_KbNANeyYREePe8YA2DA
+    display_name: "财经冷眼"
 
   # === Model Economics ===
   - type: model_economics
@@ -119,6 +189,46 @@ sources:
     key: "practice:claude"
     memory_dirs:
       - /Users/leehom/.claude/projects
+
+  # === HN Keyword Search (topic-based discovery) ===
+  - type: hn_search
+    key: "hn:search"
+    queries:
+      - "AI agent"
+      - "LLM"
+      - "open source AI"
+      - "Claude"
+      - "GPT"
+      - "coding agent"
+      - "design to code"
+      - "AI startup"
+      - "Gemma"
+      - "Llama"
+      - "benchmark SOTA"
+      - "open weights model"
+      - "video generation"
+      - "text to video"
+      - "image generation"
+      - "multimodal model"
+    max_per_query: 8
+    lookback_hours: 48
+
+  # === Reddit (community signals) ===
+  - type: reddit
+    key: "reddit:ai"
+    subreddits:
+      - MachineLearning
+      - LocalLLaMA
+      - artificial
+      - ClaudeAI
+      - StableDiffusion
+      - aivideo
+    max_per_sub: 8
+
+  # === Product Hunt (new product launches) ===
+  - type: producthunt
+    key: "ph:daily"
+    max_items: 10
 
   # === Deprioritized (kept for coverage) ===
   - type: x
