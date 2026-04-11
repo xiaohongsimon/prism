@@ -294,8 +294,28 @@ def init_db(conn: sqlite3.Connection) -> None:
             processed INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS articles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            raw_item_id INTEGER UNIQUE REFERENCES raw_items(id),
+            title TEXT NOT NULL,
+            subtitle TEXT,
+            structured_body TEXT,
+            highlights_json TEXT,
+            word_count INTEGER,
+            model_id TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT
+        );
     """)
     conn.execute("PRAGMA journal_mode=WAL")
+
+    # Migrations — safe to re-run
+    try:
+        conn.execute("ALTER TABLE signals ADD COLUMN content_zh TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
     conn.commit()
 
 

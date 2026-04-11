@@ -1,3 +1,4 @@
+import pytest
 from prism.db import init_db, insert_source, get_source_by_key, insert_job_run, insert_raw_item
 
 
@@ -33,6 +34,52 @@ def test_fts5_triggers_sync_on_insert(db):
                     title="vLLM inference optimization", body="New vLLM release speeds up inference")
     results = db.execute("SELECT * FROM item_search WHERE item_search MATCH 'vLLM'").fetchall()
     assert len(results) == 1
+
+
+def test_articles_table_exists(db):
+    """articles table should exist after init_db."""
+    row = db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='articles'"
+    ).fetchone()
+    assert row is not None, "articles table not created"
+
+
+def test_articles_insert_and_read(db):
+    """Basic CRUD on articles table."""
+    # Need a source and raw_item first
+    db.execute(
+        "INSERT INTO sources (source_key, type, handle) VALUES (?, ?, ?)",
+        ("youtube:test", "youtube", "test"),
+    )
+    db.execute(
+        "INSERT INTO raw_items (source_id, url, title, body, author) VALUES (?, ?, ?, ?, ?)",
+        (1, "https://youtube.com/watch?v=abc", "Test Video", "transcript...", "TestChannel"),
+    )
+    db.commit()
+
+    db.execute(
+        """INSERT INTO articles (raw_item_id, title, subtitle, structured_body, highlights_json, word_count, model_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (1, "Test Video", "One line summary", "## Section\nContent", '["quote1"]', 100, "qwen3"),
+    )
+    db.commit()
+
+    row = db.execute("SELECT * FROM articles WHERE raw_item_id = 1").fetchone()
+    assert row["title"] == "Test Video"
+    assert row["subtitle"] == "One line summary"
+    assert row["word_count"] == 100
+
+
+def test_articles_unique_raw_item_id(db):
+    """raw_item_id should be unique — one article per raw_item."""
+    import sqlite3 as _sqlite3
+    db.execute("INSERT INTO sources (source_key, type) VALUES ('yt:t', 'youtube')")
+    db.execute("INSERT INTO raw_items (source_id, url, title) VALUES (1, 'https://yt.com/1', 'V1')")
+    db.commit()
+    db.execute("INSERT INTO articles (raw_item_id, title) VALUES (1, 'Article 1')")
+    db.commit()
+    with pytest.raises(_sqlite3.IntegrityError):
+        db.execute("INSERT INTO articles (raw_item_id, title) VALUES (1, 'Article 1 duplicate')")
 
 
 def test_pairwise_tables_exist():
