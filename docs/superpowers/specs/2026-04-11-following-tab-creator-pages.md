@@ -48,7 +48,11 @@
 
 YouTube adapter 相应改为单频道模式。
 
-**迁移策略**: 根据 `raw_items.author` + `raw_items.raw_json` 中的 `channel_id` 将历史数据重新关联到新 source。旧 `youtube:ai-interviews` 标记为 `yaml_removed`。
+**迁移策略**:
+1. **数据质量验证（前置门禁）**：迁移脚本第一步检查 raw_json 中 channel_id 覆盖率。覆盖率 < 90% 则中止，需手动补数据或走其他路径。
+2. 根据 `raw_items.author` + `raw_items.raw_json` 中的 `channel_id` 将历史数据重新关联到新 source。
+3. 旧 `youtube:ai-interviews` 标记为 `yaml_removed`。
+4. **测试环境先行**：在 SQLite 副本上先跑迁移脚本验证，通过后再执行正式迁移。
 
 #### 1.2 新增 articles 表
 
@@ -62,7 +66,8 @@ CREATE TABLE articles (
     highlights_json TEXT,       -- JSON array of key quotes/insights
     word_count INTEGER,
     model_id TEXT,              -- 生成用的模型
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT             -- 支持模型升级后重新生成
 );
 ```
 
@@ -114,10 +119,11 @@ sync → articlize → cluster → analyze
 
 #### 2.3 处理策略
 
-- **长视频（字幕 > 8000 字）**: 分段送 LLM，最后合并
-- **无字幕视频**: 跳过，不生成 article
-- **并发控制**: 串行处理，避免和 Claude Code 抢 omlx 资源
-- **错误重试**: 失败记录日志，下次 articlize 时重试
+- **字数上限**: MVP 设 6000 字上限直接送 LLM，超长视频跳过（不做分段合并，后续迭代再加）
+- **无字幕视频**: 跳过，UI 标记为"暂无字幕"（非"获取中"）
+- **并发控制**: CLI 串行处理（默认行为，无需显式机制）
+- **错误处理**: 失败记录日志，手动 re-run `prism articlize` 即可重试（不做自动重试状态跟踪）
+- **JSON 输出 fallback**: LLM 返回可能不是合法 JSON，解析时用正则提取 ```json 块 + `json.loads` 异常处理 + 基本校验（body 非空、包含至少一个 `##`）
 
 ### 3. Web UI — 三层页面
 
@@ -126,10 +132,11 @@ sync → articlize → cluster → analyze
 改造现有关注 tab，从混合 feed 变为创作者卡片网格。
 
 **按源类型分组显示：**
-- ▶ YouTube 频道 — 频道头像 + 名称 + 文章数 + 最新更新
-- 𝕏 博主 — 头像 + handle + 推文数 + 最新更新
+- ▶ YouTube 频道 — 频道头像 + 名称 + 文章数 + 最新更新 + **最新 2 条内容标题预览**
+- 𝕏 博主 — 头像 + handle + 推文数 + 最新更新 + **最新 2 条推文摘要预览**
 
-每个卡片可点击，进入创作者主页。
+每个卡片包含最新内容预览，减少"盲点击"，用户可快速扫描全部创作者动态后再决定深入哪个。
+点击卡片 → 进入创作者主页。
 
 #### 3.2 创作者主页 (`/creator/{source_key}`)
 
@@ -201,3 +208,26 @@ GET /article/{article_id}     → 文章详情页
 - 不做视频内嵌播放
 - 不做多用户
 - 不做 X 推文的"转文章"（推文本身就短）
+- 不做长视频分段合并（MVP 设字数上限，超长跳过）
+- 不做未读状态系统（Phase 2）
+- 不做阅读时长预估（Phase 2）
+- 不做按需/lazy 文章生成（用户要求"打开就能读"）
+
+## 辩论记录
+
+> 2026-04-11 6 模型辩论（Opus2 + Grok + Gemini + MiMo + Kimi + MiniMax）
+
+### 采纳项
+1. 迁移前做数据质量验证（channel_id 覆盖率门禁）— Opus2/Grok/MiMo/MiniMax
+2. MVP 不做长视频分段，设 6000 字上限 — MiniMax/MiMo
+3. JSON 输出加 fallback 解析 — Opus2/Grok
+4. 创作者卡片增加最新 2 条内容标题预览 — Kimi
+5. 无字幕视频 UI 标"暂无字幕"而非"获取中" — Grok/MiMo
+6. articles 表加 updated_at 支持重新生成 — Opus2
+7. 重试简化为手动 re-run CLI — MiniMax
+
+### 不采纳项
+- 按需生成（Gemini）→ 用户要求打开即读，batch 开销可控
+- 双栏 master-detail（Gemini）→ CSS 复杂度高，不利于移动适配
+- DB creators 表替代 YAML 拆分（Gemini）→ YAML 权威是项目约束
+- 扩展 signals 表（Grok）→ 文章和信号职责不同，不宜混合
