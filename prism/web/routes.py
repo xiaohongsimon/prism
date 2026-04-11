@@ -1,11 +1,13 @@
 """Web frontend routes — HTMX-powered feed, feedback, and channel management."""
 
+import json as _json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader
 
 from prism.web.ranking import compute_feed, update_preferences
@@ -15,10 +17,33 @@ from prism.web.auth import (
 )
 from prism.web.pairwise import (
     select_pair, record_vote, process_external_feed, get_pairwise_history,
+    _get_candidate_pool,
 )
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 _jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
+
+
+def _linkify_clusters(text: str, cluster_urls: dict, cluster_labels: dict) -> str:
+    """Replace (Cluster N) references with HTML links to original sources."""
+    import re
+    from markupsafe import Markup
+
+    def _replace(m):
+        cid = int(m.group(1))
+        url = cluster_urls.get(cid)
+        if not url:
+            return m.group(0)
+        label = cluster_labels.get(cid, f"Cluster {cid}")
+        # Truncate long labels
+        short = label[:30] + "…" if len(label) > 30 else label
+        return f'<a href="{url}" target="_blank" rel="noopener" class="br-ref" title="{label}">↗</a>'
+
+    result = re.sub(r'[（(]Cluster\s+(\d+)[)）]', _replace, text)
+    return Markup(result)
+
+
+_jinja_env.filters["linkify_clusters"] = _linkify_clusters
 
 web_router = APIRouter()
 
@@ -43,6 +68,83 @@ def _get_user(request: Request) -> dict | None:
 def _render(template_name: str, **ctx) -> HTMLResponse:
     tmpl = _jinja_env.get_template(template_name)
     return HTMLResponse(tmpl.render(**ctx))
+
+
+def _build_creator_list(conn) -> dict:
+    """Build grouped creator list for follow tab."""
+    from prism.web.ranking import FOLLOW_SOURCE_TYPES
+    import yaml as _yaml
+
+    groups = {}
+    type_meta = {
+        "youtube": {"icon": "▶", "label": "YouTube 频道"},
+        "x": {"icon": "𝕏", "label": "X 博主"},
+        "follow_builders": {"icon": "𝕏", "label": "Builders"},
+        "github_releases": {"icon": "📦", "label": "GitHub"},
+    }
+
+    sources = conn.execute(
+        """SELECT s.id, s.source_key, s.type, s.handle, s.config_yaml
+           FROM sources s
+           WHERE s.type IN ({}) AND s.enabled = 1
+           ORDER BY s.type, s.source_key""".format(
+            ",".join("?" * len(FOLLOW_SOURCE_TYPES))
+        ),
+        list(FOLLOW_SOURCE_TYPES),
+    ).fetchall()
+
+    for src in sources:
+        src_type = src["type"]
+        config = {}
+        if src["config_yaml"]:
+            try:
+                config = _yaml.safe_load(src["config_yaml"]) or {}
+            except Exception:
+                pass
+
+        display_name = config.get("display_name", src["handle"] or src["source_key"])
+        channel_id = config.get("channel_id", "")
+
+        items_info = conn.execute(
+            """SELECT count(*) as cnt, max(created_at) as latest
+               FROM raw_items WHERE source_id = ?""",
+            (src["id"],),
+        ).fetchone()
+
+        recent = conn.execute(
+            """SELECT title, body, url, created_at
+               FROM raw_items WHERE source_id = ?
+               ORDER BY created_at DESC LIMIT 2""",
+            (src["id"],),
+        ).fetchall()
+
+        if src_type == "youtube":
+            avatar = config.get("avatar", "")
+        elif src_type in ("x", "follow_builders"):
+            handle = src["handle"] or src["source_key"].split(":")[-1]
+            avatar = f"https://unavatar.io/x/{handle}"
+        else:
+            avatar = ""
+
+        creator = {
+            "source_key": src["source_key"],
+            "type": src_type,
+            "display_name": display_name,
+            "avatar": avatar,
+            "item_count": items_info["cnt"] if items_info else 0,
+            "latest": items_info["latest"] if items_info else "",
+            "recent_items": [
+                {"title": r["title"], "body": r["body"][:80], "url": r["url"]}
+                for r in recent
+            ],
+        }
+
+        if src_type not in groups:
+            meta = type_meta.get(src_type, {"icon": "📌", "label": src_type})
+            groups[src_type] = {"icon": meta["icon"], "label": meta["label"], "creators": []}
+        groups[src_type]["creators"].append(creator)
+
+    return groups
 
 
 def _feedback_map(conn: sqlite3.Connection, signal_ids: list[int]) -> dict[int, str]:
@@ -134,23 +236,14 @@ def index(request: Request, tab: str = "recommend", channel: str = ""):
             a, b = pair
             return HTMLResponse(tpl.render(signal_a=a, signal_b=b, tab="recommend"))
         return HTMLResponse(tpl.render(signal_a=None, signal_b=None, tab="recommend"))
+    if tab == "follow":
+        creators = _build_creator_list(conn)
+        return _render("creators.html", request=request, tab=tab, creators=creators)
+
     per_page = 20
     items = compute_feed(conn, tab=tab, page=1, per_page=per_page, channel=channel)
     signal_ids = [item["signal_id"] for item in items]
     feedback_map = _feedback_map(conn, signal_ids)
-
-    # Build source type list for follow tab
-    from prism.web.ranking import FOLLOW_SOURCE_TYPES
-    type_labels = {"x": "X / Twitter", "youtube": "YouTube", "follow_builders": "Builders", "github_releases": "GitHub"}
-    source_types = []
-    if tab == "follow":
-        rows = conn.execute(
-            "SELECT DISTINCT type FROM sources WHERE type IN ({}) ORDER BY type".format(
-                ",".join("?" * len(FOLLOW_SOURCE_TYPES))
-            ),
-            list(FOLLOW_SOURCE_TYPES),
-        ).fetchall()
-        source_types = [{"key": r["type"], "label": type_labels.get(r["type"], r["type"])} for r in rows]
 
     return _render(
         "feed.html",
@@ -159,7 +252,7 @@ def index(request: Request, tab: str = "recommend", channel: str = ""):
         page=1,
         per_page=per_page,
         feedback_map=feedback_map,
-        source_types=source_types,
+        source_types=[],
         current_channel=channel,
     )
 
@@ -350,6 +443,242 @@ def service_worker():
     )
 
 
+# ── Briefing Route ─────────────────────────────────────────────────────────
+
+@web_router.get("/briefing", response_class=HTMLResponse)
+def daily_briefing(request: Request):
+    """Today's must-know signals — top actionable + strategic items."""
+    conn = _db(request)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Get top signals from recent days only (last 2 days to handle timezone gaps)
+    cutoff = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+    rows = conn.execute(
+        """SELECT s.id AS signal_id, s.cluster_id, s.summary, s.content_zh, s.signal_layer,
+                  s.signal_strength, s.why_it_matters, s.action, s.tl_perspective,
+                  s.tags_json, s.created_at, c.topic_label, c.item_count, c.date
+           FROM signals s
+           JOIN clusters c ON s.cluster_id = c.id
+           WHERE s.is_current = 1
+             AND s.signal_layer IN ('actionable', 'strategic')
+             AND s.signal_strength >= 3
+             AND c.date >= ?
+           ORDER BY c.date DESC, s.signal_strength DESC, s.created_at DESC
+           LIMIT 15""",
+        (cutoff,),
+    ).fetchall()
+
+    # Fetch best URL for each signal's cluster
+    _agg_domains = ("news.ycombinator.com", "reddit.com")
+    sig_cluster_ids = [r["cluster_id"] for r in rows]
+    item_urls = {}
+    if sig_cluster_ids:
+        ph2 = ",".join("?" * len(sig_cluster_ids))
+        url_rows2 = conn.execute(
+            f"""SELECT ci.cluster_id, ri.url
+                FROM cluster_items ci
+                JOIN raw_items ri ON ri.id = ci.raw_item_id
+                WHERE ci.cluster_id IN ({ph2}) AND ri.url LIKE 'http%'
+                ORDER BY ci.cluster_id""",
+            sig_cluster_ids,
+        ).fetchall()
+        for ur in url_rows2:
+            cid = ur["cluster_id"]
+            url = ur["url"]
+            is_agg = any(a in url for a in _agg_domains)
+            if cid not in item_urls or (not is_agg and any(a in item_urls[cid] for a in _agg_domains)):
+                item_urls[cid] = url
+
+    items = []
+    for r in rows:
+        tags = []
+        try:
+            tags = _json.loads(r["tags_json"]) if r["tags_json"] else []
+        except Exception:
+            pass
+        items.append({
+            "signal_id": r["signal_id"],
+            "topic_label": r["topic_label"],
+            "summary": r["summary"],
+            "content_zh": r["content_zh"] or "",
+            "signal_layer": r["signal_layer"],
+            "signal_strength": r["signal_strength"],
+            "why_it_matters": r["why_it_matters"] or "",
+            "action": r["action"] or "",
+            "tl_perspective": r["tl_perspective"] or "",
+            "tags": tags,
+            "date": r["date"],
+            "url": item_urls.get(r["cluster_id"], ""),
+        })
+
+    # Get daily narrative from most recent successful daily analysis
+    narrative_row = conn.execute(
+        """SELECT stats_json, started_at FROM job_runs
+           WHERE job_type = 'analyze_daily' AND status = 'ok'
+           ORDER BY id DESC LIMIT 1"""
+    ).fetchone()
+    narrative = ""
+    if narrative_row:
+        try:
+            stats = _json.loads(narrative_row["stats_json"])
+            narrative = stats.get("briefing_narrative", "")
+        except Exception:
+            pass
+
+    # Build cluster_id → best URL map for narrative links
+    import re
+    cluster_ids = [int(m) for m in re.findall(r'Cluster\s+(\d+)', narrative)]
+    cluster_urls = {}
+    if cluster_ids:
+        ph = ",".join("?" * len(cluster_ids))
+        url_rows = conn.execute(
+            f"""SELECT ci.cluster_id, ri.url, src.type
+                FROM cluster_items ci
+                JOIN raw_items ri ON ri.id = ci.raw_item_id
+                JOIN sources src ON src.id = ri.source_id
+                WHERE ci.cluster_id IN ({ph})
+                  AND ri.url LIKE 'http%'
+                ORDER BY ci.cluster_id""",
+            cluster_ids,
+        ).fetchall()
+        # Pick best URL per cluster: prefer non-aggregator
+        _agg = ("news.ycombinator.com", "reddit.com")
+        for r in url_rows:
+            cid = r["cluster_id"]
+            url = r["url"]
+            is_agg = any(a in url for a in _agg)
+            if cid not in cluster_urls or (not is_agg and any(a in cluster_urls[cid] for a in _agg)):
+                cluster_urls[cid] = url
+
+    # Also get topic_label for each cluster (for link title)
+    cluster_labels = {}
+    if cluster_ids:
+        label_rows = conn.execute(
+            f"SELECT id, topic_label FROM clusters WHERE id IN ({ph})",
+            cluster_ids,
+        ).fetchall()
+        cluster_labels = {r["id"]: r["topic_label"] for r in label_rows}
+
+    tpl = _jinja_env.get_template("briefing.html")
+    return HTMLResponse(tpl.render(
+        items=items, narrative=narrative, today=today,
+        cluster_urls=cluster_urls, cluster_labels=cluster_labels,
+    ))
+
+
+# ── Notion Export Route ────────────────────────────────────────────────────
+
+@web_router.post("/api/export-notion/{cluster_id}", response_class=JSONResponse)
+def export_notion_by_cluster(request: Request, cluster_id: int):
+    """Export a cluster's full transcript to Notion."""
+    conn = _db(request)
+    from prism.config import settings as _cfg
+
+    if not _cfg.notion_api_key or not _cfg.notion_parent_page_id:
+        return JSONResponse({"ok": False, "error": "Notion 未配置"}, status_code=400)
+
+    # Get cluster info + longest body
+    row = conn.execute(
+        """SELECT c.topic_label, ri.body, ri.url, ri.author
+           FROM clusters c
+           JOIN cluster_items ci ON ci.cluster_id = c.id
+           JOIN raw_items ri ON ri.id = ci.raw_item_id
+           WHERE c.id = ?
+           ORDER BY length(ri.body) DESC LIMIT 1""",
+        (cluster_id,),
+    ).fetchone()
+
+    if not row or not row["body"] or len(row["body"]) < 50:
+        return JSONResponse({"ok": False, "error": "无全文内容"}, status_code=400)
+
+    # Get signal summary/insights for highlights
+    sig_row = conn.execute(
+        """SELECT s.summary, s.why_it_matters, s.content_zh
+           FROM signals s WHERE s.cluster_id = ? AND s.is_current = 1
+           ORDER BY s.signal_strength DESC LIMIT 1""",
+        (cluster_id,),
+    ).fetchone()
+
+    from prism.output.notion import NOTION_API_URL, NOTION_VERSION
+    import httpx
+
+    title = row["topic_label"]
+    today = datetime.now().strftime("%Y-%m-%d")
+    page_title = f"\U0001f4fa [{today}] {title}"
+
+    def _rich(text, bold=False, color="default"):
+        return {"type": "text", "text": {"content": text[:2000]},
+                "annotations": {"bold": bold, "italic": False, "strikethrough": False,
+                                "underline": False, "code": False, "color": color}}
+
+    blocks = []
+
+    # 1. Metadata (bold)
+    meta_lines = []
+    if row["url"]:
+        meta_lines.append(f"视频链接: {row['url']}")
+    if row["author"]:
+        meta_lines.append(f"频道: {row['author']}")
+    meta_lines.append(f"日期: {today}")
+    blocks.append({"object": "block", "type": "paragraph",
+                   "paragraph": {"rich_text": [_rich("\n".join(meta_lines), bold=True)]}})
+    blocks.append({"object": "block", "type": "divider", "divider": {}})
+
+    # 2. AI Summary as callout (if available)
+    if sig_row and sig_row["summary"]:
+        summary_text = sig_row["content_zh"] or sig_row["summary"]
+        blocks.append({"object": "block", "type": "callout",
+                       "callout": {"icon": {"type": "emoji", "emoji": "\U0001f4a1"},
+                                   "rich_text": [_rich(summary_text[:2000])]}})
+
+    # 3. Why it matters as quote
+    if sig_row and sig_row["why_it_matters"]:
+        blocks.append({"object": "block", "type": "quote",
+                       "quote": {"rich_text": [_rich(sig_row["why_it_matters"][:2000])]}})
+
+    blocks.append({"object": "block", "type": "divider", "divider": {}})
+
+    # 4. Full transcript — split into 2000-char chunks at paragraph boundaries
+    blocks.append({"object": "block", "type": "heading_2",
+                   "heading_2": {"rich_text": [_rich("全文")]}})
+    body = row["body"]
+    for para in body.split("\n\n"):
+        para = para.strip()
+        if not para:
+            continue
+        while len(para) > 2000:
+            blocks.append({"object": "block", "type": "paragraph",
+                           "paragraph": {"rich_text": [_rich(para[:2000])]}})
+            para = para[2000:]
+        blocks.append({"object": "block", "type": "paragraph",
+                       "paragraph": {"rich_text": [_rich(para)]}})
+
+    payload = {
+        "parent": {"page_id": _cfg.notion_parent_page_id},
+        "properties": {
+            "title": {"title": [{"text": {"content": page_title[:100]}}]}
+        },
+        "children": blocks[:100],
+    }
+
+    try:
+        resp = httpx.post(
+            NOTION_API_URL,
+            headers={
+                "Authorization": f"Bearer {_cfg.notion_api_key}",
+                "Content-Type": "application/json",
+                "Notion-Version": NOTION_VERSION,
+            },
+            json=payload,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        notion_url = resp.json().get("url", "")
+        return JSONResponse({"ok": True, "url": notion_url})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
 # ── Pairwise Routes ────────────────────────────────────────────────────────
 
 @web_router.get("/pairwise/pair", response_class=HTMLResponse)
@@ -374,32 +703,41 @@ def pairwise_vote(
     comment: str = Form(""),
     response_time_ms: int = Form(0),
 ):
-    """Record vote and return confirmation or next pair (for skip)."""
+    """Record vote and return next pair immediately.
+
+    - a/b: keep winner at position A, new signal at position B
+    - both/neither/skip: load completely new pair
+    """
     conn = _db(request)
     record_vote(conn, signal_a_id, signal_b_id, winner, comment, response_time_ms)
 
-    # Skip → immediately load next pair, no confirmation
-    if winner == "skip":
+    tpl = _jinja_env.get_template("partials/pair_cards.html")
+    empty_tpl = _jinja_env.get_template("partials/pair_empty.html")
+
+    if winner in ("a", "b"):
+        # Keep winner, replace loser with a new signal
+        winner_id = signal_a_id if winner == "a" else signal_b_id
+        pool = _get_candidate_pool(conn)
+        # Find winner in pool
+        winner_sig = next((s for s in pool if s["signal_id"] == winner_id), None)
+        # Pick a new signal (not the winner, not the loser)
+        exclude = {signal_a_id, signal_b_id}
+        candidates = [s for s in pool if s["signal_id"] not in exclude]
+        if winner_sig and candidates:
+            import random
+            new_sig = random.choice(candidates)
+            return HTMLResponse(tpl.render(signal_a=winner_sig, signal_b=new_sig))
+        # Fallback: if winner not in pool or no candidates, get fresh pair
         pair = select_pair(conn)
         if pair is None:
-            tpl = _jinja_env.get_template("partials/pair_empty.html")
-            return HTMLResponse(tpl.render())
-        a, b = pair
-        tpl = _jinja_env.get_template("partials/pair_cards.html")
-        return HTMLResponse(tpl.render(signal_a=a, signal_b=b))
+            return HTMLResponse(empty_tpl.render())
+        return HTMLResponse(tpl.render(signal_a=pair[0], signal_b=pair[1]))
 
-    labels = {"a": "选了 A", "b": "选了 B", "both": "都好", "neither": "都不行"}
-    label = labels.get(winner, winner)
-    html = (
-        f'<div class="vote-confirmed">'
-        f'<span class="vote-label">✓ {label}</span>'
-        f'{"<span class=\"vote-comment\">💬 " + comment + "</span>" if comment else ""}'
-        f'<button class="btn btn-next" '
-        f'hx-get="/pairwise/pair" hx-target="#pairwise-area" hx-swap="innerHTML">'
-        f'下一对 →</button>'
-        f'</div>'
-    )
-    return HTMLResponse(html)
+    # both / neither / skip → completely new pair
+    pair = select_pair(conn)
+    if pair is None:
+        return HTMLResponse(empty_tpl.render())
+    return HTMLResponse(tpl.render(signal_a=pair[0], signal_b=pair[1]))
 
 
 @web_router.post("/pairwise/feed", response_class=HTMLResponse)
@@ -421,10 +759,257 @@ def pairwise_feed(
     return HTMLResponse(tpl.render(signal_a=a, signal_b=b, feed_success=True))
 
 
-@web_router.get("/pairwise/history", response_class=HTMLResponse)
-def pairwise_history(request: Request, page: int = 1):
-    """Render pairwise history page."""
+@web_router.get("/pairwise/liked", response_class=HTMLResponse)
+def pairwise_liked(request: Request, page: int = 1):
+    """Render liked/saved signals page."""
     conn = _db(request)
-    history = get_pairwise_history(conn, page=page)
-    tpl = _jinja_env.get_template("history.html")
-    return HTMLResponse(tpl.render(history=history, page=page, tab="history"))
+    per_page = 20
+    offset = (page - 1) * per_page
+
+    # Get signal IDs the user chose as winners, most recent first
+    rows = conn.execute(
+        """SELECT DISTINCT
+                  CASE WHEN pc.winner = 'a' THEN pc.signal_a_id
+                       WHEN pc.winner = 'b' THEN pc.signal_b_id END AS signal_id,
+                  MAX(pc.created_at) AS liked_at
+           FROM pairwise_comparisons pc
+           WHERE pc.winner IN ('a', 'b')
+           GROUP BY signal_id
+           ORDER BY liked_at DESC
+           LIMIT ? OFFSET ?""",
+        (per_page, offset),
+    ).fetchall()
+
+    liked = []
+    for r in rows:
+        sid = r["signal_id"]
+        sig = conn.execute(
+            """SELECT s.id AS signal_id, s.cluster_id, s.summary, s.signal_layer,
+                      s.signal_strength, s.why_it_matters, s.tags_json, s.created_at,
+                      s.content_zh, c.topic_label, c.item_count
+               FROM signals s JOIN clusters c ON s.cluster_id = c.id
+               WHERE s.id = ?""", (sid,)
+        ).fetchone()
+        if not sig:
+            continue
+
+        import json as _json
+        tags = []
+        try:
+            tags = _json.loads(sig["tags_json"]) if sig["tags_json"] else []
+        except Exception:
+            pass
+
+        # Get URLs, authors, source_keys, engagement, tweet_text
+        detail_rows = conn.execute(
+            """SELECT ri.url, ri.author, ri.published_at, ri.raw_json,
+                      src.source_key, src.type AS source_type
+               FROM cluster_items ci
+               JOIN raw_items ri ON ri.id = ci.raw_item_id
+               JOIN sources src ON src.id = ri.source_id
+               WHERE ci.cluster_id = ?""", (sig["cluster_id"],)
+        ).fetchall()
+
+        urls, source_keys, authors = [], [], []
+        engagement, tweet_text, published_at = {}, "", None
+        _agg = ("news.ycombinator.com", "twitter.com", "x.com", "xcancel.com")
+        for dr in detail_rows:
+            if dr["url"] and dr["url"].startswith("http") and dr["url"] not in urls:
+                if any(d in dr["url"] for d in _agg):
+                    urls.append(dr["url"])
+                else:
+                    urls.insert(0, dr["url"])
+            if dr["source_key"] not in source_keys:
+                source_keys.append(dr["source_key"])
+            if dr["author"] and dr["author"].strip() and dr["author"] not in authors:
+                authors.append(dr["author"])
+            if dr["published_at"] and (published_at is None or dr["published_at"] < published_at):
+                published_at = dr["published_at"]
+            if dr["source_type"] == "x":
+                try:
+                    raw = _json.loads(dr["raw_json"] or "{}")
+                    tweet = raw.get("tweet", {})
+                    if tweet:
+                        engagement = {
+                            "likes": tweet.get("favorite_count", 0),
+                            "retweets": tweet.get("retweet_count", 0),
+                            "replies": tweet.get("reply_count", 0),
+                            "quotes": tweet.get("quote_count", 0),
+                        }
+                        tweet_text = tweet.get("full_text", "") or tweet.get("text", "")
+                except Exception:
+                    pass
+
+        liked.append({
+            "signal_id": sig["signal_id"],
+            "topic_label": sig["topic_label"],
+            "summary": sig["summary"],
+            "why_it_matters": sig["why_it_matters"] or "",
+            "signal_strength": sig["signal_strength"],
+            "tags": tags,
+            "item_count": sig["item_count"],
+            "created_at": sig["created_at"],
+            "published_at": published_at or sig["created_at"],
+            "urls": urls,
+            "source_keys": source_keys,
+            "authors": authors,
+            "engagement": engagement,
+            "tweet_text": tweet_text,
+            "content_zh": sig["content_zh"] or "",
+            "is_video": False,
+            "liked_at": r["liked_at"],
+        })
+
+    tpl = _jinja_env.get_template("liked.html")
+    return HTMLResponse(tpl.render(liked=liked, page=page))
+
+
+@web_router.get("/pairwise/sources", response_class=HTMLResponse)
+def pairwise_sources(request: Request):
+    """Render sources overview page."""
+    conn = _db(request)
+    rows = conn.execute(
+        """SELECT s.source_key, s.type, s.handle, s.enabled,
+                  COUNT(ri.id) as item_count,
+                  MAX(ri.created_at) as last_item
+           FROM sources s
+           LEFT JOIN raw_items ri ON ri.source_id = s.id
+           GROUP BY s.id
+           ORDER BY item_count DESC"""
+    ).fetchall()
+
+    type_meta = {
+        "x": {"label": "X (Twitter)", "icon": "𝕏"},
+        "follow_builders": {"label": "X (Twitter)", "icon": "𝕏"},
+        "hackernews": {"label": "Hacker News", "icon": "Y"},
+        "hn_search": {"label": "HN Search", "icon": "🔍"},
+        "reddit": {"label": "Reddit", "icon": "💬"},
+        "producthunt": {"label": "Product Hunt", "icon": "🚀"},
+        "arxiv": {"label": "arXiv", "icon": "📄"},
+        "youtube": {"label": "YouTube", "icon": "▶"},
+        "github_trending": {"label": "GitHub Trending", "icon": "⚡"},
+        "github_releases": {"label": "GitHub Releases", "icon": "📦"},
+        "claude_sessions": {"label": "Claude Sessions", "icon": "◇"},
+    }
+
+    # Group sources by type
+    from collections import OrderedDict
+    groups = OrderedDict()
+    for r in rows:
+        t = r["type"]
+        meta = type_meta.get(t, {"label": t, "icon": "•"})
+        group_key = meta["label"]
+        if group_key not in groups:
+            groups[group_key] = {"icon": meta["icon"], "sources": [], "total": 0}
+        handle = r["handle"] or r["source_key"].split(":")[-1]
+        # Avatar for X handles
+        avatar = ""
+        if t in ("x", "follow_builders"):
+            avatar = f"https://unavatar.io/x/{handle}"
+        elif t in ("github_trending", "github_releases"):
+            owner = handle.split("/")[0] if "/" in handle else handle
+            avatar = f"https://github.com/{owner}.png?size=40"
+        groups[group_key]["sources"].append({
+            "key": r["source_key"],
+            "handle": handle,
+            "avatar": avatar,
+            "item_count": r["item_count"],
+            "last_item": (r["last_item"] or "")[:10],
+            "enabled": r["enabled"],
+        })
+        groups[group_key]["total"] += r["item_count"]
+
+    total_items = sum(s["item_count"] for s in (dict(r) for r in rows))
+    total_sources = len(rows)
+    tpl = _jinja_env.get_template("sources.html")
+    return HTMLResponse(tpl.render(groups=groups, total_items=total_items, total_sources=total_sources))
+
+
+@web_router.get("/pairwise/profile", response_class=HTMLResponse)
+def pairwise_profile(request: Request):
+    """Render preference profile page."""
+    conn = _db(request)
+
+    # Top liked tags/topics
+    liked_tags = conn.execute(
+        "SELECT key, weight FROM preference_weights WHERE dimension = 'tag' AND weight > 0 "
+        "ORDER BY weight DESC LIMIT 15"
+    ).fetchall()
+
+    # Disliked tags
+    disliked_tags = conn.execute(
+        "SELECT key, weight FROM preference_weights WHERE dimension = 'tag' AND weight < 0 "
+        "ORDER BY weight ASC LIMIT 10"
+    ).fetchall()
+
+    # Liked sources
+    liked_sources = conn.execute(
+        "SELECT key, weight FROM preference_weights WHERE dimension = 'source' AND weight > 0 "
+        "ORDER BY weight DESC LIMIT 10"
+    ).fetchall()
+
+    # Disliked sources
+    disliked_sources = conn.execute(
+        "SELECT key, weight FROM preference_weights WHERE dimension = 'source' AND weight < 0 "
+        "ORDER BY weight ASC LIMIT 10"
+    ).fetchall()
+
+    # Liked authors
+    liked_authors = conn.execute(
+        "SELECT key, weight FROM preference_weights WHERE dimension = 'author' AND weight > 0 "
+        "ORDER BY weight DESC LIMIT 10"
+    ).fetchall()
+
+    # Stats
+    total_votes = conn.execute("SELECT COUNT(*) FROM pairwise_comparisons").fetchone()[0]
+    total_liked = conn.execute(
+        "SELECT COUNT(*) FROM pairwise_comparisons WHERE winner IN ('a', 'b')"
+    ).fetchone()[0]
+
+    tpl = _jinja_env.get_template("profile.html")
+    return HTMLResponse(tpl.render(
+        liked_tags=[dict(r) for r in liked_tags],
+        disliked_tags=[dict(r) for r in disliked_tags],
+        liked_sources=[dict(r) for r in liked_sources],
+        disliked_sources=[dict(r) for r in disliked_sources],
+        liked_authors=[dict(r) for r in liked_authors],
+        total_votes=total_votes,
+        total_liked=total_liked,
+    ))
+
+
+@web_router.post("/pairwise/profile/delete")
+async def pairwise_profile_delete(request: Request):
+    """Delete or reset a single preference weight."""
+    body = await request.json()
+    dimension = body.get("dimension", "")
+    key = body.get("key", "")
+    if not dimension or not key:
+        return JSONResponse({"ok": False, "error": "missing dimension or key"}, status_code=400)
+
+    conn = _db(request)
+    conn.execute(
+        "DELETE FROM preference_weights WHERE dimension = ? AND key = ?",
+        (dimension, key),
+    )
+    conn.commit()
+    return JSONResponse({"ok": True})
+
+
+@web_router.post("/pairwise/profile/block")
+async def pairwise_profile_block(request: Request):
+    """Hard-block a tag or source — items matching it are fully excluded from feed."""
+    body = await request.json()
+    dimension = body.get("dimension", "")
+    key = body.get("key", "")
+    if not dimension or not key:
+        return JSONResponse({"ok": False, "error": "missing dimension or key"}, status_code=400)
+
+    conn = _db(request)
+    conn.execute(
+        "INSERT OR REPLACE INTO preference_weights (dimension, key, weight, updated_at) "
+        "VALUES (?, ?, -100.0, strftime('%Y-%m-%dT%H:%M:%S', 'now'))",
+        (dimension, key),
+    )
+    conn.commit()
+    return JSONResponse({"ok": True})
