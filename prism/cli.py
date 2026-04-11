@@ -24,6 +24,19 @@ def sync(source):
     click.echo(f"Sync complete: {stats['sources_ok']} ok, {stats['sources_failed']} failed, {stats['items_total']} items")
 
 
+@cli.command()
+def articlize():
+    """Generate structured articles from YouTube video subtitles."""
+    from prism.pipeline.articlize import run_articlize
+    conn = get_connection(settings.db_path)
+    stats = run_articlize(conn)
+    click.echo(
+        f"Articlize complete: {stats['success']} generated, "
+        f"{stats['failed']} failed, {stats['skipped']} skipped "
+        f"(of {stats['total']} eligible)"
+    )
+
+
 @cli.group()
 def source():
     """Manage signal sources."""
@@ -235,7 +248,7 @@ def enrich_youtube(limit):
         JOIN sources s ON s.id = ri.source_id
         WHERE s.type = 'youtube'
           AND ri.url NOT LIKE '%/shorts/%'
-          AND LENGTH(ri.body) < 200
+          AND LENGTH(ri.body) < 500
         ORDER BY ri.id DESC
         LIMIT ?
         """,
@@ -250,7 +263,7 @@ def enrich_youtube(limit):
         if transcript and len(transcript) > row["body_len"]:
             conn.execute(
                 "UPDATE raw_items SET body = ? WHERE id = ?",
-                (transcript[:4000], row["id"]),
+                (transcript[:8000], row["id"]),
             )
             conn.commit()
             enriched += 1
@@ -382,6 +395,232 @@ def publish(notion, date):
         click.echo(f"Published to Notion: {result.get('id', 'ok')}")
     else:
         click.echo("Specify --notion")
+
+
+@cli.command("publish-videos")
+@click.option("--limit", default=10, help="Max videos to publish")
+def publish_videos(limit):
+    """Auto-publish YouTube video transcripts to Notion."""
+    from datetime import datetime, timedelta
+    import httpx
+
+    if not settings.notion_api_key or not settings.notion_parent_page_id:
+        click.echo("Error: Notion not configured")
+        return
+
+    conn = get_connection(settings.db_path)
+    cutoff = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+
+    # Ensure notion_exports table exists
+    conn.execute("""CREATE TABLE IF NOT EXISTS notion_exports (
+        cluster_id INTEGER PRIMARY KEY,
+        notion_url TEXT,
+        exported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+    )""")
+    conn.commit()
+
+    # Find YouTube videos with transcript that haven't been published to Notion
+    rows = conn.execute(
+        """SELECT c.id AS cluster_id, c.topic_label, ri.body, ri.url, ri.author,
+                  ri.published_at, s.summary, s.content_zh, s.why_it_matters
+           FROM clusters c
+           JOIN cluster_items ci ON ci.cluster_id = c.id
+           JOIN raw_items ri ON ri.id = ci.raw_item_id
+           JOIN sources src ON src.id = ri.source_id
+           LEFT JOIN signals s ON s.cluster_id = c.id AND s.is_current = 1
+           WHERE src.type = 'youtube'
+             AND ri.url NOT LIKE '%/shorts/%'
+             AND length(ri.body) >= 500
+             AND c.date >= ?
+             AND c.id NOT IN (SELECT cluster_id FROM notion_exports)
+           GROUP BY c.id
+           HAVING ri.id = (SELECT ci2.raw_item_id FROM cluster_items ci2
+                           JOIN raw_items ri2 ON ri2.id = ci2.raw_item_id
+                           WHERE ci2.cluster_id = c.id
+                           ORDER BY length(ri2.body) DESC LIMIT 1)
+           ORDER BY ri.published_at DESC
+           LIMIT ?""",
+        (cutoff, limit),
+    ).fetchall()
+
+    if not rows:
+        click.echo("No new videos to publish")
+        return
+
+    from prism.output.notion import NOTION_API_URL, NOTION_VERSION
+    from prism.pipeline.llm import call_llm
+    import re as _re
+
+    STRUCTURE_PROMPT = (
+        "你是文本结构化助手。将用户提供的字幕文本分成5-10个章节，每个章节加一个简洁的中文标题。\n"
+        "格式要求：\n"
+        "1. 用 ## 标题 作为章节分隔\n"
+        "2. 每个章节内，将内容整理成通顺的自然段落\n"
+        "3. 保留原文含义，不要翻译，但可以修正明显的语音识别错误\n"
+        "4. 删除口头禅、重复、无意义的填充词\n"
+        "5. 找出直击本质、深刻、反直觉的观点或金句（每篇3-5处），用 <<insight>>这段文字<</insight>> 标记\n"
+        "6. 只返回结构化后的文本，不要解释"
+    )
+
+    def _structure_transcript(body: str) -> str:
+        """Use LLM to add chapter headings + insight markers to raw transcript."""
+        try:
+            # Always use gemma-4-31b for structuring — 26b has repetition issues
+            result = call_llm(body[:6000], system=STRUCTURE_PROMPT,
+                              model="gemma-4-31b-it-8bit",
+                              max_tokens=4096, timeout=600)
+            # Strip thinking tags
+            result = _re.sub(r"<think>.*?</think>", "", result, flags=_re.DOTALL).strip()
+            if "##" in result and len(result) > 200:
+                return result
+        except Exception as exc:
+            click.echo(f"    LLM structuring failed: {exc}")
+        return body  # fallback to raw
+
+    def _markdown_to_notion_blocks(text: str) -> list[dict]:
+        """Convert structured markdown to Notion blocks with insight highlighting."""
+        blocks = []
+        para_buf = []
+
+        def flush():
+            if not para_buf:
+                return
+            content = "\n".join(para_buf).strip()
+            if content:
+                blocks.append({"object": "block", "type": "paragraph",
+                               "paragraph": {"rich_text": _parse_rich(content)}})
+            para_buf.clear()
+
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if stripped == "---":
+                flush()
+                blocks.append({"object": "block", "type": "divider", "divider": {}})
+            elif stripped.startswith("## "):
+                flush()
+                blocks.append({"object": "block", "type": "heading_2",
+                               "heading_2": {"rich_text": [{"type": "text", "text": {"content": stripped[3:][:2000]}}]}})
+            elif stripped.startswith("# "):
+                flush()
+                blocks.append({"object": "block", "type": "heading_1",
+                               "heading_1": {"rich_text": [{"type": "text", "text": {"content": stripped[2:][:2000]}}]}})
+            elif stripped.startswith("- "):
+                flush()
+                blocks.append({"object": "block", "type": "bulleted_list_item",
+                               "bulleted_list_item": {"rich_text": _parse_rich(stripped[2:])}})
+            elif not stripped:
+                flush()
+            else:
+                para_buf.append(line)
+        flush()
+        return blocks
+
+    def _parse_rich(text: str) -> list[dict]:
+        """Parse <<insight>> markers and **bold** into Notion rich_text."""
+        parts = _re.split(r"<<insight>>(.*?)<</insight>>", text, flags=_re.DOTALL)
+        rich = []
+        for i, part in enumerate(parts):
+            if not part:
+                continue
+            if i % 2 == 1:  # insight
+                for chunk in _split_2k(part):
+                    rich.append({"type": "text", "text": {"content": chunk},
+                                 "annotations": {"bold": True, "color": "red"}})
+            else:
+                bold_parts = _re.split(r"\*\*(.+?)\*\*", part)
+                for j, bp in enumerate(bold_parts):
+                    if not bp:
+                        continue
+                    for chunk in _split_2k(bp):
+                        item = {"type": "text", "text": {"content": chunk}}
+                        if j % 2 == 1:
+                            item["annotations"] = {"bold": True}
+                        rich.append(item)
+        return rich or [{"type": "text", "text": {"content": " "}}]
+
+    def _split_2k(text: str) -> list[str]:
+        if len(text) <= 2000:
+            return [text]
+        chunks = []
+        while text:
+            if len(text) <= 2000:
+                chunks.append(text)
+                break
+            sp = text.rfind("\n", 0, 2000)
+            if sp == -1:
+                sp = text.rfind(" ", 0, 2000)
+            if sp == -1:
+                sp = 2000
+            chunks.append(text[:sp])
+            text = text[sp:].lstrip()
+        return chunks
+
+    published = 0
+    for r in rows:
+        title = r["topic_label"]
+        today = datetime.now().strftime("%Y-%m-%d")
+        pub_date = r['published_at'][:10] if r['published_at'] else today
+        page_title = f"\U0001f4fa [{pub_date}] {title}"
+
+        click.echo(f"  Structuring: {title[:50]}...")
+        structured_body = _structure_transcript(r["body"] or "")
+
+        # Build markdown for Notion
+        md_parts = []
+        meta = f"**视频链接:** {r['url'] or ''}\n**频道:** {r['author'] or ''}\n**日期:** {pub_date}"
+        md_parts.append(meta)
+        md_parts.append("---")
+
+        # AI Summary
+        summary = r["content_zh"] or r["summary"] or ""
+        if summary:
+            md_parts.append(f"**💡 核心摘要：** {summary}")
+        if r["why_it_matters"]:
+            md_parts.append(f"**为什么重要：** {r['why_it_matters']}")
+        md_parts.append("---")
+        md_parts.append(structured_body)
+
+        full_md = "\n\n".join(md_parts)
+        blocks = _markdown_to_notion_blocks(full_md)
+
+        payload = {
+            "parent": {"page_id": settings.notion_parent_page_id},
+            "properties": {"title": {"title": [{"text": {"content": page_title[:100]}}]}},
+            "icon": {"emoji": "\U0001f4fa"},
+            "children": blocks[:100],
+        }
+
+        try:
+            resp = httpx.post(NOTION_API_URL,
+                              headers={"Authorization": f"Bearer {settings.notion_api_key}",
+                                       "Content-Type": "application/json",
+                                       "Notion-Version": NOTION_VERSION},
+                              json=payload, timeout=60)
+            resp.raise_for_status()
+            data = resp.json()
+            page_id = data.get("id", "")
+            notion_url = data.get("url", "")
+
+            # Append remaining blocks if > 100
+            remaining = blocks[100:]
+            while remaining:
+                batch = remaining[:100]
+                remaining = remaining[100:]
+                httpx.patch(f"https://api.notion.com/v1/blocks/{page_id}/children",
+                            headers={"Authorization": f"Bearer {settings.notion_api_key}",
+                                     "Content-Type": "application/json",
+                                     "Notion-Version": NOTION_VERSION},
+                            json={"children": batch}, timeout=30)
+
+            conn.execute("INSERT OR REPLACE INTO notion_exports (cluster_id, notion_url) VALUES (?, ?)",
+                         (r["cluster_id"], notion_url))
+            conn.commit()
+            published += 1
+            click.echo(f"  Published: {title[:50]} -> {notion_url}")
+        except Exception as exc:
+            click.echo(f"  Failed: {title[:50]}: {exc}")
+
+    click.echo(f"Published {published}/{len(rows)} videos to Notion")
 
 
 @cli.command()
