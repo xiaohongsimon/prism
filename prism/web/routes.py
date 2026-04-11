@@ -434,6 +434,61 @@ def channel_follow(request: Request, source_key: str):
     return HTMLResponse(html)
 
 
+@web_router.get("/creator/{source_key:path}", response_class=HTMLResponse)
+def creator_profile(request: Request, source_key: str):
+    """Creator profile — list of videos/tweets for a specific source."""
+    conn = _db(request)
+    source = conn.execute(
+        "SELECT * FROM sources WHERE source_key = ?", (source_key,)
+    ).fetchone()
+    if not source:
+        return HTMLResponse("<div class='empty'>创作者不存在</div>", status_code=404)
+
+    import yaml as _yaml
+    config = {}
+    if source["config_yaml"]:
+        try:
+            config = _yaml.safe_load(source["config_yaml"]) or {}
+        except Exception:
+            pass
+
+    display_name = config.get("display_name", source["handle"] or source_key)
+    channel_id = config.get("channel_id", "")
+
+    if source["type"] == "youtube":
+        avatar = config.get("avatar", "")
+        source_url = f"https://www.youtube.com/channel/{channel_id}" if channel_id else ""
+    elif source["type"] in ("x", "follow_builders"):
+        handle = source["handle"] or source_key.split(":")[-1]
+        avatar = f"https://unavatar.io/x/{handle}"
+        source_url = f"https://x.com/{handle}"
+    else:
+        avatar = ""
+        source_url = ""
+
+    items = conn.execute(
+        """SELECT ri.id, ri.url, ri.title, ri.body, ri.author, ri.created_at, ri.published_at,
+                  a.id as article_id, a.subtitle as article_subtitle, a.word_count
+           FROM raw_items ri
+           LEFT JOIN articles a ON a.raw_item_id = ri.id
+           WHERE ri.source_id = ?
+           ORDER BY ri.created_at DESC
+           LIMIT 100""",
+        (source["id"],),
+    ).fetchall()
+
+    return _render(
+        "creator_profile.html",
+        request=request,
+        source=source,
+        display_name=display_name,
+        avatar=avatar,
+        source_url=source_url,
+        source_type=source["type"],
+        items=[dict(r) for r in items],
+    )
+
+
 @web_router.get("/sw.js")
 def service_worker():
     """Serve service worker from root path (required for SW scope)."""

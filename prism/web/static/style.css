@@ -778,4 +778,23 @@ details[open] > .source-group-header::before { content: "▾"; }
 .creator-meta { font-size: 12px; color: #999; margin-top: 2px; }
 .creator-preview { list-style: none; padding: 0; margin: 10px 0 0; }
 .creator-preview-item { font-size: 13px; color: #666; line-height: 1.4; padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Creator profile page */
+.creator-profile { padding: 0 16px; }
+.creator-header { display: flex; align-items: center; gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--border, #e5e5e5); margin-bottom: 16px; }
+.creator-header .creator-avatar { width: 56px; height: 56px; }
+.creator-header-info { flex: 1; }
+.creator-header-info h1 { font-size: 20px; margin: 0; }
+.creator-source-link { font-size: 13px; color: #0066cc; text-decoration: none; }
+.back-link { display: inline-block; padding: 8px 0; font-size: 14px; color: #666; text-decoration: none; }
+.back-link:hover { color: #333; }
+.item-list { display: flex; flex-direction: column; gap: 10px; }
+.item-card { display: block; background: var(--card-bg, #fff); border: 1px solid var(--border, #e5e5e5); border-radius: 10px; padding: 14px; text-decoration: none; color: inherit; transition: background 0.15s; }
+.item-card:hover { background: var(--card-hover, #f8f8f8); }
+.item-card-title { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+.item-card-subtitle { font-size: 13px; color: #666; line-height: 1.5; margin-bottom: 6px; }
+.item-card-meta { font-size: 12px; color: #999; }
+.item-card-status { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; }
+.item-card-status.has-article { background: #e8f5e9; color: #2e7d32; }
+.item-card-status.no-subtitle { background: #fff3e0; color: #e65100; }
 .creator-preview-item::before { content: "·"; margin-right: 6px; color: #ccc; }

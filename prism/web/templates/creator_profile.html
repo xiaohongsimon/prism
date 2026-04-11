@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="creator-profile">
+  <a class="back-link" href="/?tab=follow">← 关注</a>
+
+  <div class="creator-header">
+    {% if avatar %}
+    <img class="creator-avatar" src="{{ avatar }}" alt="{{ display_name }}" onerror="this.style.display='none'">
+    {% endif %}
+    <div class="creator-header-info">
+      <h1>{{ display_name }}</h1>
+      {% if source_url %}
+      <a class="creator-source-link" href="{{ source_url }}" target="_blank" rel="noopener">
+        {% if source_type == 'youtube' %}打开 YouTube 频道{% else %}打开 X 主页{% endif %} ↗
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="item-list">
+  {% for item in items %}
+    {% if source_type == 'youtube' %}
+    <a class="item-card" href="{% if item.article_id %}/article/{{ item.article_id }}{% else %}{{ item.url }}{% endif %}">
+      <div class="item-card-title">{{ item.title }}</div>
+      {% if item.article_subtitle %}
+      <div class="item-card-subtitle">{{ item.article_subtitle }}</div>
+      {% endif %}
+      <div class="item-card-meta">
+        {{ (item.published_at or item.created_at or '')[:10] }}
+        {% if item.article_id %}
+          · {{ item.word_count }} 字
+          <span class="item-card-status has-article">已转文章</span>
+        {% elif item.body %}
+          <span class="item-card-status">待转换</span>
+        {% else %}
+          <span class="item-card-status no-subtitle">暂无字幕</span>
+        {% endif %}
+      </div>
+    </a>
+    {% else %}
+    <a class="item-card" href="{{ item.url }}" target="_blank" rel="noopener">
+      <div class="item-card-subtitle">{{ item.body[:280] }}</div>
+      <div class="item-card-meta">
+        {{ (item.published_at or item.created_at or '')[:10] }}
+        · {{ item.author }}
+      </div>
+    </a>
+    {% endif %}
+  {% endfor %}
+  </div>
+</div>
+{% endblock %}

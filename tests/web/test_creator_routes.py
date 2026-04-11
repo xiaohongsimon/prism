@@ -59,3 +59,27 @@ def test_follow_tab_shows_creators(client, db):
     assert resp.status_code == 200
     assert "Test Channel" in resp.text
     assert "karpathy" in resp.text
+
+
+def test_creator_profile_youtube(client, db):
+    """Creator profile should show video list."""
+    _seed_creators(db)
+    resp = client.get("/creator/youtube:testchannel")
+    assert resp.status_code == 200
+    assert "Video 1" in resp.text
+    assert "Video 2" in resp.text
+    assert "Test Channel" in resp.text
+
+
+def test_creator_profile_x(client, db):
+    """Creator profile for X should show tweets."""
+    _seed_creators(db)
+    resp = client.get("/creator/x:karpathy")
+    assert resp.status_code == 200
+    assert "Tweet content here" in resp.text
+
+
+def test_creator_profile_not_found(client, db):
+    """Non-existent source should 404."""
+    resp = client.get("/creator/youtube:nonexistent")
+    assert resp.status_code == 404
