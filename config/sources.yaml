@@ -2,109 +2,141 @@ sources:
   # === X (Twitter) — priority follows ===
   - type: x
     handle: karpathy
+    display_name: "Andrej Karpathy"
     depth: thread
   - type: x
     handle: simonw
+    display_name: "Simon Willison"
     depth: thread
 
   # === X — Claude Code core team & ecosystem ===
   - type: x
-    handle: bcherny         # Boris Cherny, Claude Code creator
+    handle: bcherny
+    display_name: "Boris Cherny"
     depth: thread
   - type: x
-    handle: alexalbert__    # Alex Albert, Anthropic prompt eng lead
+    handle: alexalbert__
+    display_name: "Alex Albert"
     depth: thread
   - type: x
-    handle: _catwu          # Cat Wu, founding PM of Claude Code
+    handle: _catwu
+    display_name: "Cat Wu"
     depth: thread
   - type: x
-    handle: vasuman          # Vas, Anthropic CC engineer
+    handle: vasuman
+    display_name: "Vas"
     depth: thread
   - type: x
-    handle: ClaudeAI        # Official Claude account
+    handle: ClaudeAI
+    display_name: "Claude"
     depth: thread
 
   # === X — Claude Code power users & content creators ===
   - type: x
-    handle: IndyDevDan      # Advanced CC: worktrees, multi-agent, Karpathy-endorsed
+    handle: IndyDevDan
+    display_name: "IndyDevDan"
     depth: thread
   - type: x
-    handle: mattpocock      # TypeScript educator, CC skills creator
+    handle: mattpocock
+    display_name: "Matt Pocock"
     depth: thread
   - type: x
-    handle: t3dotgg         # Theo Browne, honest CC vs Cursor takes
+    handle: t3dotgg
+    display_name: "Theo Browne"
     depth: thread
   - type: x
-    handle: skirano         # Riley Goodside, prompt engineering
+    handle: skirano
+    display_name: "Riley Goodside"
     depth: thread
 
   # === X — AI frontier labs & researchers ===
   - type: x
-    handle: GoogleDeepMind  # Google DeepMind official — Gemini, Gemma releases
+    handle: GoogleDeepMind
+    display_name: "Google DeepMind"
     depth: thread
   - type: x
-    handle: AIatMeta        # Meta AI official — Llama, open-source releases
+    handle: AIatMeta
+    display_name: "Meta AI"
     depth: thread
   - type: x
-    handle: ylecun          # Yann LeCun — Meta Chief AI Scientist
+    handle: ylecun
+    display_name: "Yann LeCun"
     depth: thread
   - type: x
-    handle: huggingface     # HF — open model benchmarks, community pulse
+    handle: huggingface
+    display_name: "Hugging Face"
     depth: thread
   - type: x
-    handle: ArtificialAnlys # Artificial Analysis — model benchmark leaderboard
+    handle: ArtificialAnlys
+    display_name: "Artificial Analysis"
     depth: thread
   - type: x
-    handle: labordepierre   # Clem Delangue, HF CEO — open model advocacy
+    handle: labordepierre
+    display_name: "Clem Delangue"
     depth: thread
   - type: x
-    handle: reach_vb        # Vaibhav Srivastav, HF — model release coverage
+    handle: reach_vb
+    display_name: "Vaibhav Srivastav"
     depth: thread
   - type: x
-    handle: JeffDean        # Jeff Dean — Google AI lead
+    handle: JeffDean
+    display_name: "Jeff Dean"
     depth: thread
 
   # === X — Multimodal / Video AI ===
   - type: x
-    handle: EMostaque       # Emad Mostaque — Stability AI founder, video/image gen
+    handle: EMostaque
+    display_name: "Emad Mostaque"
     depth: thread
   - type: x
-    handle: _akhaliq        # AK — daily AI paper/model roundups, catches everything
+    handle: _akhaliq
+    display_name: "AK"
     depth: thread
   - type: x
-    handle: op7418          # 歸藏 — Chinese AI news aggregator, covers 36Kr/multimodal
+    handle: op7418
+    display_name: "歸藏"
     depth: thread
   - type: x
-    handle: xiaohuggg       # 小互 — Chinese AI tool/model tracker
+    handle: xiaohuggg
+    display_name: "小互"
     depth: thread
 
   # === X — Indie builders (from follow-builders + manual) ===
   - type: x
-    handle: levelsio        # Pieter Levels, indie hacker legend
+    handle: levelsio
+    display_name: "Pieter Levels"
     depth: thread
   - type: x
-    handle: amasad          # Amjad Masad, Replit CEO
+    handle: amasad
+    display_name: "Amjad Masad"
     depth: thread
   - type: x
-    handle: steipete        # Peter Steinberger, dev tools builder
+    handle: steipete
+    display_name: "Peter Steinberger"
     depth: thread
   - type: x
-    handle: garrytan        # Garry Tan, YC CEO
+    handle: garrytan
+    display_name: "Garry Tan"
     depth: thread
   - type: x
-    handle: levie           # Aaron Levie, Box CEO
+    handle: levie
+    display_name: "Aaron Levie"
     depth: thread
   - type: x
-    handle: rauchg          # Guillermo Rauch, Vercel CEO
+    handle: rauchg
+    display_name: "Guillermo Rauch"
     depth: thread
   - type: x
-    handle: petergyang      # Peter Yang, product builder
+    handle: petergyang
+    display_name: "Peter Yang"
     depth: thread
   - type: x
-    handle: thenanyu        # Nan Yu, builder
+    handle: thenanyu
+    display_name: "Nan Yu"
     depth: thread
   - type: x
-    handle: zarazhangrui    # Zara Zhang, follow-builders creator
+    handle: zarazhangrui
+    display_name: "Zara Zhang"
     depth: thread
 
   # === HN ===
@@ -233,6 +265,7 @@ sources:
   # === Deprioritized (kept for coverage) ===
   - type: x
     handle: swyx
+    display_name: "swyx"
     depth: thread
 
   - type: arxiv
