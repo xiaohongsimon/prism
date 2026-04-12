@@ -101,8 +101,7 @@ def _build_creator_list(conn) -> dict:
         else:
             pref_by_author[row["key"]] = row["weight"]
 
-    youtube_list = []
-    timeline_list = []
+    all_creators = []
 
     for src in sources:
         src_type = src["type"]
@@ -137,10 +136,14 @@ def _build_creator_list(conn) -> dict:
         else:
             avatar = ""
 
-        # Preference score: combine source_key weight + author/handle weight
-        pref_score = pref_by_source.get(src["source_key"], 0.0) + pref_by_author.get(handle, 0.0)
+        # Author pref stored under display_name (e.g. "最佳拍档") or handle (e.g. "karpathy")
+        author_score = max(
+            pref_by_author.get(handle, 0.0),
+            pref_by_author.get(display_name, 0.0),
+        )
+        pref_score = pref_by_source.get(src["source_key"], 0.0) + author_score
 
-        creator = {
+        all_creators.append({
             "source_key": src["source_key"],
             "type": src_type,
             "icon": type_icons.get(src_type, "📌"),
@@ -150,18 +153,10 @@ def _build_creator_list(conn) -> dict:
             "latest": items_info["latest"] if items_info else "",
             "recent_items": [dict(r) for r in recent],
             "pref_score": round(pref_score, 1),
-        }
+        })
 
-        if src_type == "youtube":
-            youtube_list.append(creator)
-        else:
-            timeline_list.append(creator)
-
-    # Sort by preference score (desc), then latest update (desc)
-    youtube_list.sort(key=lambda c: (c["pref_score"], c["latest"] or ""), reverse=True)
-    timeline_list.sort(key=lambda c: (c["pref_score"], c["latest"] or ""), reverse=True)
-
-    return {"youtube": youtube_list, "timeline": timeline_list}
+    all_creators.sort(key=lambda c: (c["pref_score"], c["latest"] or ""), reverse=True)
+    return all_creators
 
 
 def _feedback_map(conn: sqlite3.Connection, signal_ids: list[int]) -> dict[int, str]:
@@ -255,7 +250,7 @@ def index(request: Request, tab: str = "recommend", channel: str = ""):
         return HTMLResponse(tpl.render(signal_a=None, signal_b=None, tab="recommend"))
     if tab == "follow":
         creators = _build_creator_list(conn)
-        return _render("creators.html", request=request, tab=tab, creators=creators)
+        return _render("creators.html", request=request, tab=tab, creators=creators, total=len(creators))
 
     per_page = 20
     items = compute_feed(conn, tab=tab, page=1, per_page=per_page, channel=channel)
