@@ -71,27 +71,27 @@ def _render(template_name: str, **ctx) -> HTMLResponse:
 
 
 def _build_creator_list(conn) -> dict:
-    """Build grouped creator list for follow tab."""
+    """Build creator list for follow tab: YouTube channels + timeline of others.
+
+    Returns {"youtube": [creators sorted by latest], "timeline": [creators sorted by latest]}
+    YouTube gets a prominent section; X/builders/github merge into a single timeline.
+    """
     from prism.web.ranking import FOLLOW_SOURCE_TYPES
     import yaml as _yaml
 
-    groups = {}
-    type_meta = {
-        "youtube": {"icon": "▶", "label": "YouTube 频道"},
-        "x": {"icon": "𝕏", "label": "X 博主"},
-        "follow_builders": {"icon": "𝕏", "label": "Builders"},
-        "github_releases": {"icon": "📦", "label": "GitHub"},
-    }
+    type_icons = {"youtube": "▶", "x": "𝕏", "follow_builders": "𝕏", "github_releases": "📦"}
 
     sources = conn.execute(
         """SELECT s.id, s.source_key, s.type, s.handle, s.config_yaml
            FROM sources s
-           WHERE s.type IN ({}) AND s.enabled = 1
-           ORDER BY s.type, s.source_key""".format(
+           WHERE s.type IN ({}) AND s.enabled = 1""".format(
             ",".join("?" * len(FOLLOW_SOURCE_TYPES))
         ),
         list(FOLLOW_SOURCE_TYPES),
     ).fetchall()
+
+    youtube_list = []
+    timeline_list = []
 
     for src in sources:
         src_type = src["type"]
@@ -103,18 +103,18 @@ def _build_creator_list(conn) -> dict:
                 pass
 
         display_name = config.get("display_name", src["handle"] or src["source_key"])
-        channel_id = config.get("channel_id", "")
 
         items_info = conn.execute(
-            """SELECT count(*) as cnt, max(created_at) as latest
-               FROM raw_items WHERE source_id = ?""",
+            "SELECT count(*) as cnt, max(created_at) as latest FROM raw_items WHERE source_id = ?",
             (src["id"],),
         ).fetchone()
 
         recent = conn.execute(
-            """SELECT title, body, url, created_at
-               FROM raw_items WHERE source_id = ?
-               ORDER BY created_at DESC LIMIT 2""",
+            """SELECT ri.id as item_id, ri.title, ri.body, ri.url, ri.created_at,
+                      a.id as article_id, a.subtitle as article_subtitle
+               FROM raw_items ri LEFT JOIN articles a ON a.raw_item_id = ri.id
+               WHERE ri.source_id = ?
+               ORDER BY ri.created_at DESC LIMIT 3""",
             (src["id"],),
         ).fetchall()
 
@@ -129,22 +129,24 @@ def _build_creator_list(conn) -> dict:
         creator = {
             "source_key": src["source_key"],
             "type": src_type,
+            "icon": type_icons.get(src_type, "📌"),
             "display_name": display_name,
             "avatar": avatar,
             "item_count": items_info["cnt"] if items_info else 0,
             "latest": items_info["latest"] if items_info else "",
-            "recent_items": [
-                {"title": r["title"], "body": r["body"][:80], "url": r["url"]}
-                for r in recent
-            ],
+            "recent_items": [dict(r) for r in recent],
         }
 
-        if src_type not in groups:
-            meta = type_meta.get(src_type, {"icon": "📌", "label": src_type})
-            groups[src_type] = {"icon": meta["icon"], "label": meta["label"], "creators": []}
-        groups[src_type]["creators"].append(creator)
+        if src_type == "youtube":
+            youtube_list.append(creator)
+        else:
+            timeline_list.append(creator)
 
-    return groups
+    # Sort both by latest update descending
+    youtube_list.sort(key=lambda c: c["latest"] or "", reverse=True)
+    timeline_list.sort(key=lambda c: c["latest"] or "", reverse=True)
+
+    return {"youtube": youtube_list, "timeline": timeline_list}
 
 
 def _feedback_map(conn: sqlite3.Connection, signal_ids: list[int]) -> dict[int, str]:
@@ -607,11 +609,14 @@ def daily_briefing(request: Request):
             "url": item_urls.get(r["cluster_id"], ""),
         })
 
-    # Get daily narrative from most recent successful daily analysis
+    # Get daily narrative from recent successful daily analysis (last 2 days only)
+    narrative_cutoff = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
     narrative_row = conn.execute(
         """SELECT stats_json, started_at FROM job_runs
            WHERE job_type = 'analyze_daily' AND status = 'ok'
-           ORDER BY id DESC LIMIT 1"""
+             AND date(started_at) >= ?
+           ORDER BY id DESC LIMIT 1""",
+        (narrative_cutoff,),
     ).fetchone()
     narrative = ""
     if narrative_row:

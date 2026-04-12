@@ -11,44 +11,61 @@
     </div>
 </nav>
 
-<div class="creators-page">
-{% for type_key, group in creators.items() %}
-  <section class="creator-group" style="animation-delay: {{ loop.index0 * 0.08 }}s">
-    <div class="creator-section-header">
-      <span class="creator-section-icon">{{ group.icon }}</span>
-      <span class="creator-section-label">{{ group.label }}</span>
-      <span class="creator-section-count">{{ group.creators | length }}</span>
-    </div>
-    <div class="creator-grid">
-    {% for c in group.creators %}
-      <a class="creator-card" href="/creator/{{ c.source_key }}">
-        <div class="creator-card-header">
-          {% if c.avatar %}
-          <img class="creator-avatar" src="{{ c.avatar }}" alt="{{ c.display_name }}" loading="lazy"
-               onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-          <div class="creator-avatar-fallback" style="display:none">{{ c.display_name[0] if c.display_name else '?' }}</div>
-          {% else %}
-          <div class="creator-avatar-fallback">{{ c.display_name[0] if c.display_name else '?' }}</div>
-          {% endif %}
-          <div class="creator-info">
-            <span class="creator-name">{{ c.display_name }}</span>
-            <span class="creator-meta">
-              <span class="creator-count">{{ c.item_count }}</span> 条
-              {% if c.latest %}· {{ c.latest[:10] }}{% endif %}
-            </span>
-          </div>
+<div class="follow-page">
+
+{# ── YouTube: horizontal scroll cards ── #}
+{% if creators.youtube %}
+<section class="yt-section">
+  <div class="section-label">▶ YouTube 频道</div>
+  <div class="yt-scroll">
+  {% for c in creators.youtube %}
+    <a class="yt-card" href="/creator/{{ c.source_key }}">
+      <div class="yt-card-top">
+        {% if c.avatar %}
+        <img class="yt-avatar" src="{{ c.avatar }}" alt="" loading="lazy" onerror="this.style.display='none'">
+        {% endif %}
+        <div class="yt-name">{{ c.display_name }}</div>
+        <div class="yt-meta">{{ c.item_count }} 条</div>
+      </div>
+      {% for ri in c.recent_items[:2] %}
+      <div class="yt-item {% if ri.article_id %}has-article{% endif %}">
+        {{ ri.article_subtitle or ri.title or ri.body[:40] }}
+      </div>
+      {% endfor %}
+    </a>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{# ── X / Builders / GitHub: compact timeline ── #}
+{% if creators.timeline %}
+<section class="tl-section">
+  <div class="section-label">𝕏 动态</div>
+  <div class="tl-list">
+  {% for c in creators.timeline %}
+    <a class="tl-row" href="/creator/{{ c.source_key }}">
+      {% if c.avatar %}
+      <img class="tl-avatar" src="{{ c.avatar }}" alt="" loading="lazy" onerror="this.outerHTML='<div class=tl-avatar-fb>{{ c.display_name[0] }}</div>'">
+      {% else %}
+      <div class="tl-avatar-fb">{{ c.display_name[0] if c.display_name else '?' }}</div>
+      {% endif %}
+      <div class="tl-body">
+        <div class="tl-header">
+          <span class="tl-name">{{ c.display_name }}</span>
+          <span class="tl-icon">{{ c.icon }}</span>
+          <span class="tl-time">{{ c.latest[:10] if c.latest else '' }}</span>
         </div>
         {% if c.recent_items %}
-        <ul class="creator-preview">
-          {% for ri in c.recent_items[:3] %}
-          <li class="creator-preview-item">{{ ri.title if ri.title else ri.body }}</li>
-          {% endfor %}
-        </ul>
+        <div class="tl-preview">{{ c.recent_items[0].title or c.recent_items[0].body[:60] }}</div>
         {% endif %}
-      </a>
-    {% endfor %}
-    </div>
-  </section>
-{% endfor %}
+      </div>
+      <span class="tl-count">{{ c.item_count }}</span>
+    </a>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 </div>
 {% endblock %}
