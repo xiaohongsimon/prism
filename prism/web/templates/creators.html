@@ -1,24 +1,46 @@
 {% extends "base.html" %}
 {% block content %}
+<nav class="top-nav">
+    <a class="logo" href="/" onclick="location.reload();return false;">⬡ Prism</a>
+    <div class="tabs">
+        <a class="tab" href="/?tab=recommend">推荐</a>
+        <a class="tab" href="/briefing">必看</a>
+        <a class="tab active" href="/?tab=follow">关注</a>
+        <a class="tab" href="/pairwise/sources">来源</a>
+        <a class="tab" href="/pairwise/liked">收藏</a>
+    </div>
+</nav>
+
 <div class="creators-page">
 {% for type_key, group in creators.items() %}
-  <div class="creator-group">
-    <h2 class="creator-group-title">{{ group.icon }} {{ group.label }}</h2>
+  <section class="creator-group" style="animation-delay: {{ loop.index0 * 0.08 }}s">
+    <div class="creator-section-header">
+      <span class="creator-section-icon">{{ group.icon }}</span>
+      <span class="creator-section-label">{{ group.label }}</span>
+      <span class="creator-section-count">{{ group.creators | length }}</span>
+    </div>
     <div class="creator-grid">
     {% for c in group.creators %}
       <a class="creator-card" href="/creator/{{ c.source_key }}">
         <div class="creator-card-header">
           {% if c.avatar %}
-          <img class="creator-avatar" src="{{ c.avatar }}" alt="{{ c.display_name }}" loading="lazy" onerror="this.style.display='none'">
+          <img class="creator-avatar" src="{{ c.avatar }}" alt="{{ c.display_name }}" loading="lazy"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <div class="creator-avatar-fallback" style="display:none">{{ c.display_name[0] if c.display_name else '?' }}</div>
+          {% else %}
+          <div class="creator-avatar-fallback">{{ c.display_name[0] if c.display_name else '?' }}</div>
           {% endif %}
           <div class="creator-info">
             <span class="creator-name">{{ c.display_name }}</span>
-            <span class="creator-meta">{{ c.item_count }} 条 · {{ c.latest[:10] if c.latest else '—' }}</span>
+            <span class="creator-meta">
+              <span class="creator-count">{{ c.item_count }}</span> 条
+              {% if c.latest %}· {{ c.latest[:10] }}{% endif %}
+            </span>
           </div>
         </div>
         {% if c.recent_items %}
         <ul class="creator-preview">
-          {% for ri in c.recent_items %}
+          {% for ri in c.recent_items[:3] %}
           <li class="creator-preview-item">{{ ri.title if ri.title else ri.body }}</li>
           {% endfor %}
         </ul>
@@ -26,7 +48,7 @@
       </a>
     {% endfor %}
     </div>
-  </div>
+  </section>
 {% endfor %}
 </div>
 {% endblock %}
