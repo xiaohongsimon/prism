@@ -59,10 +59,10 @@ def test_find_eligible_items_skips_existing_article(db):
 
 
 def test_find_eligible_items_skips_long_body(db):
-    """Items with body > 6000 chars should be skipped (MVP limit)."""
+    """Items with body > 8000 chars should be skipped."""
     from prism.pipeline.articlize import find_eligible_items
 
-    _insert_youtube_item(db, body="x" * 6001)
+    _insert_youtube_item(db, body="x" * 8001)
     items = find_eligible_items(db)
     assert len(items) == 0
 

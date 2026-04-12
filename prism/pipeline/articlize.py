@@ -8,7 +8,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-MAX_BODY_LENGTH = 6000  # MVP: skip videos with body > this
+MAX_BODY_LENGTH = 8000  # YouTube adapter caps at 8000 chars
 
 ARTICLIZE_SYSTEM = """你是一个专业的内容编辑。将视频字幕转化为结构化文章。"""
 
