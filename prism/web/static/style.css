@@ -799,6 +799,9 @@ details[open] > .source-group-header::before { content: "▾"; }
 .tl-time { font-size: 11px; color: var(--text-tertiary); margin-left: auto; flex-shrink: 0; }
 .tl-preview { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 .tl-count { font-size: 11px; font-weight: 600; color: var(--text-tertiary); background: rgba(255,255,255,0.04); padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
+.tl-score { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.tl-score.positive { color: #4caf50; background: rgba(76,175,80,0.1); }
+.tl-score.negative { color: #999; background: rgba(255,255,255,0.03); }
 
 /* ── Creator Profile Page ──────────────────────────────────── */
 .creator-profile { padding: 0 16px; }

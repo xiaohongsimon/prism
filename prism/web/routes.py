@@ -90,6 +90,17 @@ def _build_creator_list(conn) -> dict:
         list(FOLLOW_SOURCE_TYPES),
     ).fetchall()
 
+    # Load preference scores: source_key → weight, author/handle → weight
+    pref_by_source = {}
+    pref_by_author = {}
+    for row in conn.execute(
+        "SELECT dimension, key, weight FROM preference_weights WHERE dimension IN ('source', 'author')"
+    ).fetchall():
+        if row["dimension"] == "source":
+            pref_by_source[row["key"]] = row["weight"]
+        else:
+            pref_by_author[row["key"]] = row["weight"]
+
     youtube_list = []
     timeline_list = []
 
@@ -103,6 +114,7 @@ def _build_creator_list(conn) -> dict:
                 pass
 
         display_name = config.get("display_name", src["handle"] or src["source_key"])
+        handle = src["handle"] or src["source_key"].split(":")[-1]
 
         items_info = conn.execute(
             "SELECT count(*) as cnt, max(created_at) as latest FROM raw_items WHERE source_id = ?",
@@ -121,10 +133,12 @@ def _build_creator_list(conn) -> dict:
         if src_type == "youtube":
             avatar = config.get("avatar", "")
         elif src_type in ("x", "follow_builders"):
-            handle = src["handle"] or src["source_key"].split(":")[-1]
             avatar = f"https://unavatar.io/x/{handle}"
         else:
             avatar = ""
+
+        # Preference score: combine source_key weight + author/handle weight
+        pref_score = pref_by_source.get(src["source_key"], 0.0) + pref_by_author.get(handle, 0.0)
 
         creator = {
             "source_key": src["source_key"],
@@ -135,6 +149,7 @@ def _build_creator_list(conn) -> dict:
             "item_count": items_info["cnt"] if items_info else 0,
             "latest": items_info["latest"] if items_info else "",
             "recent_items": [dict(r) for r in recent],
+            "pref_score": round(pref_score, 1),
         }
 
         if src_type == "youtube":
@@ -142,9 +157,9 @@ def _build_creator_list(conn) -> dict:
         else:
             timeline_list.append(creator)
 
-    # Sort both by latest update descending
-    youtube_list.sort(key=lambda c: c["latest"] or "", reverse=True)
-    timeline_list.sort(key=lambda c: c["latest"] or "", reverse=True)
+    # Sort by preference score (desc), then latest update (desc)
+    youtube_list.sort(key=lambda c: (c["pref_score"], c["latest"] or ""), reverse=True)
+    timeline_list.sort(key=lambda c: (c["pref_score"], c["latest"] or ""), reverse=True)
 
     return {"youtube": youtube_list, "timeline": timeline_list}
 

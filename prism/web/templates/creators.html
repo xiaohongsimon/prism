@@ -25,7 +25,7 @@
         <img class="yt-avatar" src="{{ c.avatar }}" alt="" loading="lazy" onerror="this.style.display='none'">
         {% endif %}
         <div class="yt-name">{{ c.display_name }}</div>
-        <div class="yt-meta">{{ c.item_count }} 条</div>
+        <div class="yt-meta">{% if c.pref_score > 0 %}+{{ c.pref_score }}{% elif c.pref_score < 0 %}{{ c.pref_score }}{% endif %}</div>
       </div>
       {% for ri in c.recent_items[:2] %}
       <div class="yt-item {% if ri.article_id %}has-article{% endif %}">
@@ -60,7 +60,9 @@
         <div class="tl-preview">{{ c.recent_items[0].title or c.recent_items[0].body[:60] }}</div>
         {% endif %}
       </div>
-      <span class="tl-count">{{ c.item_count }}</span>
+      {% if c.pref_score != 0 %}
+      <span class="tl-score {% if c.pref_score > 0 %}positive{% else %}negative{% endif %}">{{ '%+.1f'|format(c.pref_score) }}</span>
+      {% endif %}
     </a>
   {% endfor %}
   </div>
