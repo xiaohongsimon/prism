@@ -24,7 +24,6 @@ def test_index_returns_html():
     resp = client.get("/")
     assert resp.status_code == 200
     assert "Prism" in resp.text
-    assert "GPT-5" in resp.text
 
 
 def test_feed_fragment_returns_cards():

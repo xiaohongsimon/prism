@@ -179,8 +179,9 @@ def analyze(incremental, daily, date, workers):
         click.echo(f"Incremental analysis: {count} signals created")
 
     if daily:
-        from datetime import date as date_cls
-        analysis_date = date or date_cls.today().isoformat()
+        from datetime import date as date_cls, timedelta
+        # Default to yesterday: daily.sh runs early morning before today's clusters exist
+        analysis_date = date or (date_cls.today() - timedelta(days=1)).isoformat()
         stats = run_daily_analysis(conn, dt=analysis_date, model=settings.llm_model)
         click.echo(f"Daily analysis: {stats.get('signals_created', 0)} signals, "
                     f"{stats.get('cross_links', 0)} cross-links")

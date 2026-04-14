@@ -205,7 +205,7 @@ def run_daily_analysis(conn: sqlite3.Connection, dt: Optional[str] = None,
 
     clusters = _get_clusters_for_date(conn, analysis_date)
     if not clusters:
-        return {"signals_created": 0}
+        logger.warning("No clusters for %s, will generate narrative from recent signals", analysis_date)
 
     job_id = insert_job_run(conn, job_type="analyze_daily")
 

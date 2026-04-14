@@ -76,10 +76,12 @@ def _load_cross_links(conn: sqlite3.Connection, date: str) -> list[dict]:
 
 
 def _load_narrative(conn: sqlite3.Connection, date: str) -> str:
-    """Load briefing narrative from daily analysis job_run."""
+    """Load briefing narrative from daily analysis job_run (within 2 days of date)."""
     row = conn.execute(
         "SELECT stats_json FROM job_runs WHERE job_type = 'analyze_daily' "
-        "ORDER BY started_at DESC LIMIT 1"
+        "AND status = 'ok' AND date(started_at) >= date(?, '-2 days') "
+        "ORDER BY started_at DESC LIMIT 1",
+        (date,),
     ).fetchone()
     if row:
         try:
