@@ -6,12 +6,20 @@ source .venv/bin/activate
 LOG=data/daily.log
 mkdir -p data
 echo "=== $(date) ===" >> "$LOG"
+# Health check + auto-repair before sync (reset stuck sources, detect issues)
+python scripts/health_check.py >> "$LOG" 2>&1 || true
+# Fresh sync before daily analysis to ensure latest content
+prism sync >> "$LOG" 2>&1
+prism cluster >> "$LOG" 2>&1
+prism analyze --incremental >> "$LOG" 2>&1
 prism enrich-youtube --limit 20 >> "$LOG" 2>&1
+prism articlize >> "$LOG" 2>&1
 prism analyze --daily >> "$LOG" 2>&1
 prism trends >> "$LOG" 2>&1
 prism generate-slides --limit 50 >> "$LOG" 2>&1
 prism briefing --save >> "$LOG" 2>&1
 prism publish --notion >> "$LOG" 2>&1
+prism publish-videos --limit 10 >> "$LOG" 2>&1
 prism cleanup >> "$LOG" 2>&1
 
 # Adjust source weights based on pairwise win rates

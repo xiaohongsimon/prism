@@ -4,7 +4,7 @@ from prism.api.app import create_app
 
 def test_get_signals(db):
     # Seed data
-    db.execute("INSERT INTO clusters (id, date, topic_label, item_count) VALUES (1, '2026-03-24', 'test', 1)")
+    db.execute("INSERT INTO clusters (id, date, topic_label, item_count) VALUES (1, '2026-04-10', 'test', 1)")
     db.execute("INSERT INTO signals (cluster_id, summary, signal_layer, signal_strength, analysis_type, is_current) VALUES (1, 'summary', 'actionable', 4, 'daily', 1)")
     db.commit()
     app = create_app(db)

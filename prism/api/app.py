@@ -27,8 +27,8 @@ def create_app(conn: Optional[sqlite3.Connection] = None) -> FastAPI:
         from prism.db import get_connection
         app.state.db = get_connection(settings.db_path)
 
-    # Check if auth is enabled (PRISM_ADMIN_PASSWORD set)
-    auth_enabled = bool(os.environ.get("PRISM_ADMIN_PASSWORD"))
+    # Check if auth is enabled (PRISM_ADMIN_PASSWORD set, disabled in test mode when conn is injected)
+    auth_enabled = bool(os.environ.get("PRISM_ADMIN_PASSWORD")) and conn is None
 
     if auth_enabled and conn is None:
         # Auto-create admin on first run
