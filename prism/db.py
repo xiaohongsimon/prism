@@ -316,6 +316,11 @@ def init_db(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass  # column already exists
 
+    try:
+        conn.execute("ALTER TABLE raw_items ADD COLUMN body_zh TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
     conn.commit()
 
 
