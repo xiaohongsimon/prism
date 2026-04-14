@@ -65,18 +65,31 @@ _AI_KEYWORD_RE = re.compile(
 
 
 def parse_rss(xml_text: str) -> list[RawItem]:
-    """Parse arXiv RSS (RDF format) XML into a list of RawItem."""
+    """Parse arXiv RSS XML into a list of RawItem.
+
+    Supports both RSS 2.0 (<rss><channel><item>) and legacy RDF format.
+    """
     root = ET.fromstring(xml_text)
     items: list[RawItem] = []
 
-    for item_el in root.findall("rss:item", _NS):
-        title = (item_el.findtext("rss:title", "", _NS) or "").strip()
-        link = (item_el.findtext("rss:link", "", _NS) or "").strip()
-        description = (item_el.findtext("rss:description", "", _NS) or "").strip()
-        creator = (item_el.findtext("dc:creator", "", _NS) or "").strip()
+    # RSS 2.0 format: <rss><channel><item>
+    item_els = []
+    channel = root.find("channel")
+    if channel is not None:
+        item_els = channel.findall("item")
 
-        # Clean up title — arXiv sometimes includes markup like (arXiv:XXXX.XXXXX ...)
-        # Keep it as-is for now, just strip whitespace
+    # Fallback: legacy RDF format
+    if not item_els:
+        item_els = root.findall("rss:item", _NS)
+
+    for item_el in item_els:
+        # Try RSS 2.0 tags first, then RDF namespaced tags
+        title = (item_el.findtext("title") or item_el.findtext("rss:title", "", _NS) or "").strip()
+        link = (item_el.findtext("link") or item_el.findtext("rss:link", "", _NS) or "").strip()
+        description = (item_el.findtext("description") or item_el.findtext("rss:description", "", _NS) or "").strip()
+        creator = (item_el.findtext("{http://purl.org/dc/elements/1.1/}creator")
+                   or item_el.findtext("dc:creator", "", _NS) or "").strip()
+
         title = re.sub(r"\s+", " ", title).strip()
 
         items.append(
@@ -186,8 +199,11 @@ class ArxivAdapter:
                     seen_urls.add(item.url)
                     unique_items.append(item)
 
-            # Apply filtering
-            if filter_mode == "keyword":
+            # Apply filtering — support "keyword+llm" combo
+            if "keyword" in filter_mode and "llm" in filter_mode:
+                filtered = keyword_filter(unique_items)
+                filtered = llm_relevance_filter(filtered)
+            elif filter_mode == "keyword":
                 filtered = keyword_filter(unique_items)
             elif filter_mode == "llm":
                 filtered = llm_relevance_filter(unique_items)

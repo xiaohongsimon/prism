@@ -4,6 +4,7 @@ Fetches timeline from syndication.twitter.com, parses __NEXT_DATA__ JSON,
 extracts tweets, detects self-reply threads, and optionally expands them.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -207,7 +208,15 @@ class XAdapter:
                 headers={"User-Agent": "Mozilla/5.0"},
             ) as client:
                 url = SYNDICATION_URL.format(handle=handle)
-                resp = await client.get(url)
+                # Retry with exponential backoff on 429
+                max_retries = 3
+                for attempt in range(max_retries + 1):
+                    resp = await client.get(url)
+                    if resp.status_code != 429 or attempt == max_retries:
+                        break
+                    wait = 5 * (2 ** attempt)  # 5s, 10s, 20s
+                    logger.info("Rate limited for %s, retrying in %ds", handle, wait)
+                    await asyncio.sleep(wait)
                 resp.raise_for_status()
                 html = resp.text
 

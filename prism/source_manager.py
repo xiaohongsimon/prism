@@ -100,11 +100,20 @@ def reconcile_sources(conn: sqlite3.Connection, yaml_path: Path) -> None:
             )
 
     # 2. Re-enable sources that reappeared in YAML after being yaml_removed
-    for key in yaml_keys:
-        if key in db_keys and db_keys[key]["disabled_reason"] == "yaml_removed":
+    #    Also sync config_yaml for existing YAML-origin sources
+    for key, entry in yaml_keys.items():
+        if key in db_keys:
+            if db_keys[key]["disabled_reason"] == "yaml_removed":
+                conn.execute(
+                    "UPDATE sources SET enabled=1, origin='yaml', disabled_reason=NULL WHERE source_key=?",
+                    (key,),
+                )
+            # Sync config_yaml from YAML → DB for YAML-origin sources
+            config_snapshot = {k: v for k, v in entry.items() if k != "key"}
+            config_yaml_str = yaml.dump(config_snapshot, default_flow_style=True).strip()
             conn.execute(
-                "UPDATE sources SET enabled=1, origin='yaml', disabled_reason=NULL WHERE source_key=?",
-                (key,),
+                "UPDATE sources SET config_yaml = ? WHERE source_key = ? AND origin IN ('yaml', 'cli')",
+                (config_yaml_str, key),
             )
 
     # 3. Disable DB sources that were removed from YAML (only if not auto-disabled)
