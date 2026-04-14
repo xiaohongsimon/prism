@@ -1,5 +1,6 @@
 """Sync pipeline: fetch from enabled sources, store items, track failures."""
 
+import asyncio
 import json
 import logging
 import sqlite3
@@ -14,6 +15,9 @@ logger = logging.getLogger(__name__)
 HARD_FAIL_THRESHOLD = 2
 SOFT_FAIL_THRESHOLD = 6
 HARD_FAIL_PATTERNS = ("403", "404", "not found", "forbidden")
+
+# Per-source-type rate limiting (seconds between requests)
+SOURCE_TYPE_DELAY = {"x": 3.0}
 
 
 def get_adapter(source_type: str):
@@ -120,10 +124,20 @@ async def run_sync(conn: sqlite3.Connection, source_key: str | None = None) -> d
     sources_ok = 0
     sources_failed = 0
     items_total = 0
+    last_type: str | None = None
+    type_throttled: dict[str, float] = {}  # escalated delay after 429
 
     for src in sources:
+        # Rate limit: delay between consecutive requests to the same source type
+        src_type = src["type"]
+        base_delay = SOURCE_TYPE_DELAY.get(src_type, 0)
+        delay = type_throttled.get(src_type, base_delay)
+        if delay and last_type == src_type:
+            await asyncio.sleep(delay)
+        last_type = src_type
+
         try:
-            adapter = get_adapter(src["type"])
+            adapter = get_adapter(src_type)
             # Build config from DB fields + parsed config_yaml
             config = {"handle": src["handle"], "source_key": src["source_key"]}
             if src["config_yaml"]:
@@ -143,6 +157,10 @@ async def run_sync(conn: sqlite3.Connection, source_key: str | None = None) -> d
         else:
             _handle_failure(conn, src, result)
             sources_failed += 1
+            # Escalate delay on 429 to avoid burning remaining sources
+            if result.error and "429" in result.error:
+                current = type_throttled.get(src_type, base_delay)
+                type_throttled[src_type] = min(current * 2, 30.0)
 
     status = "ok" if sources_failed == 0 else ("partial" if sources_ok > 0 else "failed")
     stats = {"sources_ok": sources_ok, "sources_failed": sources_failed, "items_total": items_total}

@@ -9,13 +9,23 @@ from typing import Optional
 
 from prism.db import insert_job_run, finish_job_run
 from prism.pipeline.llm import (
-    call_llm_json, PROMPT_VERSION,
+    call_llm, call_llm_json, call_claude_json, PROMPT_VERSION,
     INCREMENTAL_SYSTEM, INCREMENTAL_USER_TEMPLATE,
     VIDEO_SYSTEM, VIDEO_USER_TEMPLATE,
     DAILY_BATCH_SYSTEM, DAILY_BATCH_USER_TEMPLATE,
+    NARRATIVE_SYSTEM, NARRATIVE_USER_TEMPLATE,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _to_str(val) -> str:
+    """Coerce LLM output to string — handles list/dict returns gracefully."""
+    if isinstance(val, str):
+        return val
+    if isinstance(val, list):
+        return "\n".join(str(v) for v in val)
+    return str(val) if val else ""
 
 
 def _get_unanalyzed_clusters(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -93,13 +103,21 @@ def _analyze_one_cluster(cluster_data: dict, model: Optional[str] = None) -> Opt
     )
     try:
         result = call_llm_json(prompt, system=system, model=model)
-        # For video analysis, merge key_insights into summary for display
+        # LLM sometimes returns a list instead of dict — take first element
+        if isinstance(result, list):
+            result = result[0] if result else {}
+        if not isinstance(result, dict):
+            logger.error("LLM returned non-dict for cluster %d: %s", cluster_data["id"], type(result))
+            return None
+        # For video analysis, merge key_insights into summary and content_zh
         if is_video and "key_insights" in result:
             insights = result.get("key_insights", [])
             if insights:
-                result["summary"] = result.get("summary", "") + "\n\n💡 核心洞察：\n" + "\n".join(
-                    f"• {ins}" for ins in insights
-                )
+                insights_text = "\n".join(f"• {ins}" for ins in insights)
+                result["summary"] = result.get("summary", "") + "\n\n💡 核心洞察：\n" + insights_text
+                # Ensure content_zh is populated for video cards
+                if not result.get("content_zh"):
+                    result["content_zh"] = result.get("summary", "")
         return result
     except Exception as exc:
         logger.error("Incremental analysis failed for cluster %d: %s", cluster_data["id"], exc)
@@ -150,18 +168,19 @@ def run_incremental_analysis(conn: sqlite3.Connection, model: Optional[str] = No
 
             conn.execute(
                 "INSERT INTO signals (cluster_id, summary, signal_layer, signal_strength, "
-                "why_it_matters, action, tl_perspective, tags_json, analysis_type, "
+                "why_it_matters, action, tl_perspective, tags_json, content_zh, analysis_type, "
                 "model_id, prompt_version, job_run_id, is_current) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'incremental', ?, ?, ?, 1)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'incremental', ?, ?, ?, 1)",
                 (
                     cd["id"],
-                    result.get("summary", ""),
-                    result.get("signal_layer", "noise"),
+                    _to_str(result.get("summary", "")),
+                    _to_str(result.get("signal_layer", "noise")),
                     result.get("signal_strength", 1),
-                    result.get("why_it_matters", ""),
-                    result.get("action", ""),
-                    result.get("tl_perspective", ""),
+                    _to_str(result.get("why_it_matters", "")),
+                    _to_str(result.get("action", "")),
+                    _to_str(result.get("tl_perspective", "")),
                     json.dumps(result.get("tags", []), ensure_ascii=False),
+                    _to_str(result.get("content_zh", "")),
                     model or "",
                     PROMPT_VERSION,
                     job_id,
@@ -189,111 +208,65 @@ def run_daily_analysis(conn: sqlite3.Connection, dt: Optional[str] = None,
         return {"signals_created": 0}
 
     job_id = insert_job_run(conn, job_type="analyze_daily")
-    yesterday_summary = _get_yesterday_summary(conn, analysis_date)
 
-    # Build batch prompt
-    main_batch, supplementary = _split_batches(clusters)
+    # ── Step 1: Generate narrative from existing incremental signals ──
+    # (Signals already created by hourly incremental analysis — no need to redo)
+    from prism.config import settings as _cfg
+    daily_model = model or _cfg.llm_premium_model or None
 
-    clusters_text = ""
-    for c in main_batch:
-        clusters_text += f"\n### 聚类 {c['id']}: {c['topic_label']} ({c['item_count']} 条)\n"
-        clusters_text += c["merged_context"][:2000] + "\n"
+    # Get top signals from last 2 days (not just one date, to handle timezone gaps)
+    from datetime import timedelta
+    cutoff = (datetime.strptime(analysis_date, "%Y-%m-%d") - timedelta(days=2)).strftime("%Y-%m-%d")
+    top_signals = conn.execute(
+        """SELECT s.summary, s.why_it_matters, s.signal_layer, s.signal_strength,
+                  c.id AS cluster_id, c.topic_label, c.date
+           FROM signals s JOIN clusters c ON s.cluster_id = c.id
+           WHERE c.date >= ? AND s.is_current = 1
+           ORDER BY c.date DESC, s.signal_strength DESC, s.created_at DESC
+           LIMIT 20""",
+        (cutoff,),
+    ).fetchall()
 
-    prompt = DAILY_BATCH_USER_TEMPLATE.format(
-        date=analysis_date,
-        yesterday_summary=yesterday_summary,
-        cluster_count=len(main_batch),
-        clusters_text=clusters_text,
-    )
+    narrative = ""
+    if top_signals:
+        signals_text = ""
+        for s in top_signals:
+            signals_text += (
+                f"\n- (Cluster {s['cluster_id']}) {s['topic_label']}"
+                f" [{s['signal_layer']}, strength={s['signal_strength']}]"
+                f"\n  摘要: {s['summary'][:200]}"
+            )
+            if s["why_it_matters"]:
+                signals_text += f"\n  重要性: {s['why_it_matters'][:100]}"
 
-    try:
-        result = call_llm_json(prompt, system=DAILY_BATCH_SYSTEM, model=model)
-    except Exception as exc:
-        logger.error("Daily analysis failed: %s", exc)
-        finish_job_run(conn, job_id, status="failed", stats_json=json.dumps({"error": str(exc)}))
-        return {"signals_created": 0, "error": str(exc)}
-
-    # Invalidate incremental signals for this date
-    conn.execute(
-        "UPDATE signals SET is_current = 0 "
-        "WHERE cluster_id IN (SELECT id FROM clusters WHERE date = ?) "
-        "AND analysis_type = 'incremental' AND is_current = 1",
-        (analysis_date,),
-    )
-
-    # Insert daily signals
-    signals_created = 0
-    for cs in result.get("clusters", []):
-        conn.execute(
-            "INSERT INTO signals (cluster_id, summary, signal_layer, signal_strength, "
-            "why_it_matters, action, tl_perspective, tags_json, analysis_type, "
-            "model_id, prompt_version, job_run_id, is_current) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'daily', ?, ?, ?, 1)",
-            (
-                cs["cluster_id"],
-                cs.get("summary", ""),
-                cs.get("signal_layer", "noise"),
-                cs.get("signal_strength", 1),
-                cs.get("why_it_matters", ""),
-                cs.get("action", ""),
-                cs.get("tl_perspective", ""),
-                json.dumps(cs.get("tags", []), ensure_ascii=False),
-                model or "",
-                PROMPT_VERSION,
-                job_id,
-            ),
-        )
-        signals_created += 1
-
-    # Insert cross_links
-    for cl in result.get("cross_links", []):
-        conn.execute(
-            "INSERT INTO cross_links (cluster_a_id, cluster_b_id, relation_type, reason, job_run_id, is_current) "
-            "VALUES (?, ?, ?, ?, ?, 1)",
-            (cl["cluster_a_id"], cl["cluster_b_id"], cl["relation_type"], cl.get("reason", ""), job_id),
-        )
-
-    conn.commit()
-
-    # Store briefing_narrative in job_run stats
-    stats = {
-        "signals_created": signals_created,
-        "cross_links": len(result.get("cross_links", [])),
-        "briefing_narrative": result.get("briefing_narrative", ""),
-    }
-    finish_job_run(conn, job_id, status="ok", stats_json=json.dumps(stats, ensure_ascii=False))
-
-    # Handle supplementary batch (single-cluster analysis, no cross_links)
-    for c in supplementary:
-        sup_prompt = INCREMENTAL_USER_TEMPLATE.format(
-            topic_label=c["topic_label"],
-            item_count=c["item_count"],
-            merged_context=c["merged_context"],
+        narrative_prompt = NARRATIVE_USER_TEMPLATE.format(
+            date=analysis_date,
+            signal_count=len(top_signals),
+            signals_text=signals_text,
         )
         try:
-            sup_result = call_llm_json(sup_prompt, system=INCREMENTAL_SYSTEM, model=model)
-            conn.execute(
-                "INSERT INTO signals (cluster_id, summary, signal_layer, signal_strength, "
-                "why_it_matters, action, tl_perspective, tags_json, analysis_type, "
-                "model_id, prompt_version, job_run_id, is_current) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'daily', ?, ?, ?, 1)",
-                (
-                    c["id"],
-                    sup_result.get("summary", ""),
-                    sup_result.get("signal_layer", "noise"),
-                    sup_result.get("signal_strength", 1),
-                    sup_result.get("why_it_matters", ""),
-                    sup_result.get("action", ""),
-                    sup_result.get("tl_perspective", ""),
-                    json.dumps(sup_result.get("tags", []), ensure_ascii=False),
-                    model or "",
-                    PROMPT_VERSION,
-                    job_id,
-                ),
-            )
-            conn.commit()
-            signals_created += 1
+            narrative = call_llm(narrative_prompt, system=NARRATIVE_SYSTEM,
+                                model=daily_model, max_tokens=2048)
+            # Strip thinking tags if present
+            import re
+            narrative = re.sub(r"<think>.*?</think>", "", narrative, flags=re.DOTALL).strip()
+            # QA: check for repetition
+            if re.search(r'(.{2,})\1{2,}', narrative):
+                logger.warning("Narrative has repetition, retrying...")
+                retry = call_llm(narrative_prompt, system=NARRATIVE_SYSTEM,
+                                model=daily_model, max_tokens=2048)
+                retry = re.sub(r"<think>.*?</think>", "", retry, flags=re.DOTALL).strip()
+                if not re.search(r'(.{2,})\1{2,}', retry):
+                    narrative = retry
         except Exception as exc:
-            logger.error("Supplementary analysis failed for cluster %d: %s", c["id"], exc)
+            logger.error("Narrative generation failed: %s", exc)
+            narrative = ""
+
+    stats = {
+        "signals_created": len(top_signals),
+        "cross_links": 0,
+        "briefing_narrative": narrative,
+    }
+    finish_job_run(conn, job_id, status="ok", stats_json=json.dumps(stats, ensure_ascii=False))
 
     return stats

@@ -8,6 +8,7 @@ Clustering rules applied in order:
 """
 
 import re
+from collections import Counter
 from prism.models import RawItem
 
 _REPO_RE = re.compile(r"(?<!\w)[\w.-]+/[\w.-]+(?!\w)")
@@ -46,6 +47,51 @@ def _jaccard_bigrams(a: str, b: str) -> float:
     intersection = ba & bb
     union = ba | bb
     return len(intersection) / len(union)
+
+
+_STOP_WORDS = frozenset(
+    "a an the is are was were be been being have has had do does did will would "
+    "shall should may might can could of in to for on with at by from as into "
+    "about between through after before above below and or but not no nor so "
+    "if then than that this these those it its i we you he she they me us him "
+    "her them my our your his their what which who whom how when where why all "
+    "each every both few more most other some such".split()
+)
+
+
+def _extract_keywords(text: str, top_n: int = 5) -> list[str]:
+    """Extract top keywords from text by frequency, excluding stop words."""
+    words = re.findall(r"[a-zA-Z][a-zA-Z0-9-]{2,}", text.lower())
+    words = [w for w in words if w not in _STOP_WORDS]
+    return [w for w, _ in Counter(words).most_common(top_n)]
+
+
+def _generate_topic_label(item_ids: list[int], items_by_id: dict[int, RawItem]) -> str:
+    """Generate a topic label for a cluster.
+
+    Strategy:
+    - Pick the longest non-empty title among cluster items (most informative).
+    - If all titles are empty, extract keywords from body text.
+    - Truncate to 120 chars.
+    """
+    items = [items_by_id[i] for i in item_ids if i in items_by_id]
+    if not items:
+        return ""
+
+    # Pick the best title (longest non-empty, most informative)
+    titles = [it.title.strip() for it in items if it.title and it.title.strip()]
+    if titles:
+        best = max(titles, key=len)
+        return best[:120]
+
+    # Fallback: extract keywords from body
+    combined = " ".join(it.body or "" for it in items)
+    if not combined.strip():
+        # Last resort: use URL
+        return items[0].url[:120] if items[0].url else ""
+
+    keywords = _extract_keywords(combined)
+    return ", ".join(keywords)[:120] if keywords else items[0].url[:120]
 
 
 def _find_cluster(item: RawItem, clusters: list[dict], items_by_id: dict[int, RawItem]) -> int | None:
@@ -94,7 +140,11 @@ def cluster_items(items: list[RawItem], existing_clusters: list[dict], entities:
             if item.id not in clusters[target]["item_ids"]:
                 clusters[target]["item_ids"].append(item.id)
         else:
-            clusters.append({"item_ids": [item.id], "topic_label": item.title})
+            clusters.append({"item_ids": [item.id], "topic_label": ""})
+
+    # Assign topic labels: pick the best title from cluster items
+    for c in clusters:
+        c["topic_label"] = _generate_topic_label(c["item_ids"], items_by_id)
 
     return clusters
 
