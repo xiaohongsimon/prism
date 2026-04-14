@@ -1,0 +1,59 @@
+{
+  "generatedAt": "2026-03-25T07:00:14.590Z",
+  "lookbackHours": 24,
+  "x": [
+    {
+      "source": "x",
+      "name": "Andrej Karpathy",
+      "handle": "karpathy",
+      "bio": "I like to train large deep neural nets.",
+      "tweets": [
+        {
+          "id": "2036487306585268612",
+          "text": "Software horror: litellm PyPI supply chain attack. Simple pip install litellm was enough to exfiltrate SSH keys, AWS/GCP/Azure creds.",
+          "createdAt": "2026-03-25T04:15:00.000Z",
+          "url": "https://x.com/karpathy/status/2036487306585268612",
+          "likes": 5432,
+          "retweets": 1200,
+          "replies": 300,
+          "isQuote": false,
+          "quotedTweetId": null
+        }
+      ]
+    },
+    {
+      "source": "x",
+      "name": "Swyx",
+      "handle": "swyx",
+      "bio": "achieve ambition with intentionality",
+      "tweets": [
+        {
+          "id": "2036565584515899445",
+          "text": "seriously @walden_yan cooked, this thing legitimately saves my ass 3-8x a day",
+          "createdAt": "2026-03-24T22:07:27.000Z",
+          "url": "https://x.com/swyx/status/2036565584515899445",
+          "likes": 109,
+          "retweets": 3,
+          "replies": 20,
+          "isQuote": true,
+          "quotedTweetId": "2035142942009270405"
+        },
+        {
+          "id": "2036533647659143630",
+          "text": "first casualty of OpenAI's crackdown on Side Quests: Sora is dead :(",
+          "createdAt": "2026-03-24T20:00:33.000Z",
+          "url": "https://x.com/swyx/status/2036533647659143630",
+          "likes": 122,
+          "retweets": 1,
+          "replies": 24,
+          "isQuote": false,
+          "quotedTweetId": null
+        }
+      ]
+    }
+  ],
+  "stats": {
+    "xBuilders": 2,
+    "totalTweets": 3
+  }
+}
