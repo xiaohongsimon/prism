@@ -39,7 +39,13 @@
     </a>
     {% else %}
     <a class="item-card" href="{{ item.url }}" target="_blank" rel="noopener">
-      <div class="item-card-subtitle">{{ item.body[:280] }}</div>
+      {% if item.body_zh %}
+      <div class="item-card-subtitle">{{ item.body_zh }}</div>
+      {% else %}
+      <div hx-get="/translate/{{ item.id }}" hx-trigger="intersect once" hx-swap="outerHTML">
+        <div class="item-card-subtitle">{{ item.body[:280] }}</div>
+      </div>
+      {% endif %}
       <div class="item-card-meta">
         {{ (item.published_at or item.created_at or '')[:10] }}
         · {{ item.author }}

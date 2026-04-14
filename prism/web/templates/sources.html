@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<nav class="top-nav">
+    <a class="logo" href="/" onclick="location.reload();return false;">⬡ Prism</a>
+    <div class="tabs">
+        <a class="tab" href="/?tab=recommend">推荐</a>
+        <a class="tab" href="/briefing">必看</a>
+        <a class="tab" href="/?tab=follow">关注</a>
+        <a class="tab active" href="/pairwise/sources">来源</a>
+        <a class="tab" href="/pairwise/liked">收藏</a>
+    </div>
+</nav>
+<div class="sources-page">
+    <div class="sources-summary">
+        <span class="stat-num">{{ total_sources }}</span> 个来源
+        <span class="sources-sep">/</span>
+        <span class="stat-num">{{ total_items }}</span> 条内容
+    </div>
+
+    {% for group_name, group in groups.items() %}
+    <details class="source-group" open>
+        <summary class="source-group-header">
+            <span class="source-group-icon">{{ group.icon }}</span>
+            <span class="source-group-name">{{ group_name }}</span>
+            <span class="source-group-count">{{ group.sources|length }} 个 · {{ group.total }} 条</span>
+        </summary>
+        <div class="source-group-list">
+            {% for s in group.sources %}
+            <div class="source-row {% if not s.enabled %}source-disabled{% endif %}">
+                <div class="source-info">
+                    {% if s.avatar %}
+                    <img class="source-avatar" src="{{ s.avatar }}" alt=""
+                         onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                    <div class="source-avatar-fallback" style="display:none">{{ s.handle[:1] | upper }}</div>
+                    {% else %}
+                    <div class="source-avatar-fallback">{{ s.handle[:1] | upper }}</div>
+                    {% endif %}
+                    <span class="source-handle">{{ s.handle }}</span>
+                </div>
+                <div class="source-stats">
+                    <span class="source-count">{{ s.item_count }}</span>
+                    {% if s.last_item %}
+                    <span class="source-date">{{ s.last_item }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </details>
+    {% endfor %}
+</div>
+{% endblock %}

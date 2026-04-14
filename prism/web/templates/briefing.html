@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block content %}
+<nav class="top-nav">
+    <a class="logo" href="/" onclick="location.reload();return false;">⬡ Prism</a>
+    <div class="tabs">
+        <a class="tab" href="/?tab=recommend">推荐</a>
+        <a class="tab active" href="/briefing">必看</a>
+        <a class="tab" href="/?tab=follow">关注</a>
+        <a class="tab" href="/pairwise/sources">来源</a>
+        <a class="tab" href="/pairwise/liked">收藏</a>
+    </div>
+</nav>
+
+<div class="br">
+    {# ── Hero ── #}
+    <header class="br-hero">
+        <h1 class="br-title">今日必看</h1>
+        <div class="br-meta">
+            <time class="br-date">{{ today }}</time>
+            <span class="br-sep"></span>
+            {% set n_act = items|selectattr('signal_layer','equalto','actionable')|list|length %}
+            {% set n_str = items|selectattr('signal_layer','equalto','strategic')|list|length %}
+            <span class="br-count">{{ n_act }} 需行动</span>
+            <span class="br-sep"></span>
+            <span class="br-count">{{ n_str }} 值得关注</span>
+        </div>
+    </header>
+
+    {# ── Narrative ── #}
+    {% if narrative %}
+    <section class="br-sect br-anim" style="--i:0">
+        <h2 class="br-sect-label">全局概览</h2>
+        <div class="br-narrative">
+            {% for para in narrative.split('\n\n') %}{% if para.strip() %}
+            <p>{{ para.strip()|linkify_clusters(cluster_urls, cluster_labels) }}</p>
+            {% endif %}{% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    {# ── Actionable ── #}
+    {% set actionable = items|selectattr('signal_layer','equalto','actionable')|list %}
+    {% if actionable %}
+    <section class="br-sect br-anim" style="--i:1">
+        <h2 class="br-sect-label"><span class="br-dot br-dot-err"></span>需要行动 <span class="br-badge-count">{{ actionable|length }}</span></h2>
+        <ol class="br-list">
+            {% for item in actionable %}
+            <li class="br-item br-item--act">
+                <div class="br-item-head">
+                    <h3 class="br-item-title">{% if item.url %}<a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.topic_label }} <span class="br-extlink">&#8599;</span></a>{% else %}{{ item.topic_label }}{% endif %}</h3>
+                    <span class="br-stars">{% for _ in range(item.signal_strength) %}&#9733;{% endfor %}</span>
+                </div>
+                <p class="br-item-body">{{ (item.content_zh or item.summary)|truncate(220, True) }}</p>
+                {% if item.why_it_matters %}
+                <p class="br-item-why">{{ item.why_it_matters }}</p>
+                {% endif %}
+                {% if item.action and item.action != '无' %}
+                <p class="br-item-act">&#8594; {{ item.action }}</p>
+                {% endif %}
+                {% if item.tags %}
+                <div class="br-tags">{% for t in item.tags[:3] %}<span class="br-tag">{{ t }}</span>{% endfor %}</div>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ol>
+    </section>
+    {% endif %}
+
+    {# ── Strategic ── #}
+    {% set strategic = items|selectattr('signal_layer','equalto','strategic')|list %}
+    {% if strategic %}
+    <section class="br-sect br-anim" style="--i:2">
+        <h2 class="br-sect-label"><span class="br-dot br-dot-warn"></span>值得关注 <span class="br-badge-count">{{ strategic|length }}</span></h2>
+        <ol class="br-list">
+            {% for item in strategic %}
+            <li class="br-item">
+                <div class="br-item-head">
+                    <h3 class="br-item-title">{% if item.url %}<a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.topic_label }} <span class="br-extlink">&#8599;</span></a>{% else %}{{ item.topic_label }}{% endif %}</h3>
+                    <span class="br-stars">{% for _ in range(item.signal_strength) %}&#9733;{% endfor %}</span>
+                </div>
+                <p class="br-item-body">{{ (item.content_zh or item.summary)|truncate(180, True) }}</p>
+                {% if item.why_it_matters %}
+                <p class="br-item-why">{{ item.why_it_matters }}</p>
+                {% endif %}
+                {% if item.tags %}
+                <div class="br-tags">{% for t in item.tags[:3] %}<span class="br-tag">{{ t }}</span>{% endfor %}</div>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ol>
+    </section>
+    {% endif %}
+
+    {% if not items %}
+    <div class="empty" style="margin-top:64px;">今日暂无高优信号</div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -6,9 +6,10 @@
     <title>Prism</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="/static/style.css?v=7">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=19">
     <link rel="manifest" href="/static/manifest.json">
-    <meta name="theme-color" content="#6c63ff">
+    <meta name="theme-color" content="#0a0a0f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="/static/icon-192.png">
@@ -21,6 +22,23 @@
     <script>
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js');
+    }
+    function exportNotion(btn, clusterId) {
+        btn.disabled = true;
+        btn.textContent = '搬运中...';
+        fetch('/api/export-notion/' + clusterId, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.ok) {
+                    btn.textContent = '已搬运 ✓';
+                    btn.classList.add('btn-notion-done');
+                    if (data.url) { window.open(data.url, '_blank'); }
+                } else {
+                    btn.textContent = '失败: ' + (data.error || '未知错误');
+                    btn.disabled = false;
+                }
+            })
+            .catch(() => { btn.textContent = '网络错误'; btn.disabled = false; });
     }
     </script>
 </body>

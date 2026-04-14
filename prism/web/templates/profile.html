@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block content %}
+<nav class="top-nav">
+    <a class="logo" href="/" onclick="location.reload();return false;">⬡ Prism</a>
+    <div class="tabs">
+        <a class="tab" href="/?tab=recommend">推荐</a>
+        <a class="tab" href="/briefing">必看</a>
+        <a class="tab" href="/?tab=follow">关注</a>
+        <a class="tab active" href="/pairwise/sources">来源</a>
+        <a class="tab" href="/pairwise/liked">收藏</a>
+    </div>
+</nav>
+<div class="profile-page">
+    <div class="profile-stats">
+        <div class="stat-item">
+            <span class="stat-num">{{ total_votes }}</span>
+            <span class="stat-label">总选择</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-num">{{ total_liked }}</span>
+            <span class="stat-label">喜欢</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-num">{{ total_votes - total_liked }}</span>
+            <span class="stat-label">跳过</span>
+        </div>
+    </div>
+
+    {% if liked_tags %}
+    <div class="profile-section">
+        <div class="profile-section-title">感兴趣的话题</div>
+        <div class="profile-tags">
+            {% for t in liked_tags %}
+            <span class="profile-tag liked" style="opacity: {{ [0.5 + t.weight / 6, 1.0] | min }}" data-dim="tag" data-key="{{ t.key }}">{{ t.key }}<button class="tag-del" onclick="delPref(this.parentElement)">&times;</button></span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if disliked_tags %}
+    <div class="profile-section">
+        <div class="profile-section-title">不太感兴趣</div>
+        <div class="profile-tags">
+            {% for t in disliked_tags %}
+            <span class="profile-tag disliked" data-dim="tag" data-key="{{ t.key }}">{{ t.key }}<button class="tag-del" onclick="delPref(this.parentElement)">&times;</button>{% if t.weight <= -3 %}<span class="blocked-badge">已屏蔽</span>{% else %}<button class="tag-block" onclick="blockPref(this.parentElement)">屏蔽</button>{% endif %}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if liked_authors %}
+    <div class="profile-section">
+        <div class="profile-section-title">关注的人</div>
+        <div class="profile-list">
+            {% for a in liked_authors %}
+            <div class="profile-list-item" data-dim="author" data-key="{{ a.key }}">
+                <span class="profile-list-name">{{ a.key }}</span>
+                <div class="profile-list-right">
+                    <span class="profile-list-weight">+{{ a.weight | round(1) }}</span>
+                    <button class="list-del" onclick="delPref(this.closest('.profile-list-item'))">&times;</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if liked_sources %}
+    <div class="profile-section">
+        <div class="profile-section-title">偏好的来源</div>
+        <div class="profile-list">
+            {% for s in liked_sources %}
+            <div class="profile-list-item" data-dim="source" data-key="{{ s.key }}">
+                <span class="profile-list-name">{{ s.key }}</span>
+                <div class="profile-list-right">
+                    <span class="profile-list-weight">+{{ s.weight | round(1) }}</span>
+                    <button class="list-del" onclick="delPref(this.closest('.profile-list-item'))">&times;</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if disliked_sources %}
+    <div class="profile-section">
+        <div class="profile-section-title">不太喜欢的来源</div>
+        <div class="profile-list">
+            {% for s in disliked_sources %}
+            <div class="profile-list-item" data-dim="source" data-key="{{ s.key }}">
+                <span class="profile-list-name">{{ s.key }}</span>
+                <div class="profile-list-right">
+                    <span class="profile-list-weight dim">{{ s.weight | round(1) }}</span>
+                    {% if s.weight <= -3 %}<span class="blocked-badge">已屏蔽</span>{% else %}<button class="list-block" onclick="blockPref(this.closest('.profile-list-item'))">屏蔽</button>{% endif %}
+                    <button class="list-del" onclick="delPref(this.closest('.profile-list-item'))">&times;</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+async function delPref(el) {
+    const dim = el.dataset.dim;
+    const key = el.dataset.key;
+    if (!dim || !key) return;
+    try {
+        const res = await fetch('/pairwise/profile/delete', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({dimension: dim, key: key})
+        });
+        if (res.ok) {
+            el.style.transition = 'opacity 0.3s';
+            el.style.opacity = '0';
+            setTimeout(() => el.remove(), 300);
+        }
+    } catch(e) { console.error(e); }
+}
+async function blockPref(el) {
+    const dim = el.dataset.dim;
+    const key = el.dataset.key;
+    if (!dim || !key) return;
+    try {
+        const res = await fetch('/pairwise/profile/block', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({dimension: dim, key: key})
+        });
+        if (res.ok) {
+            el.style.transition = 'background 0.3s';
+            el.style.background = 'rgba(244,33,46,0.2)';
+            const btn = el.querySelector('.tag-block, .list-block');
+            if (btn) { btn.outerHTML = '<span class="blocked-badge">已屏蔽</span>'; }
+        }
+    } catch(e) { console.error(e); }
+}
+</script>
+{% endblock %}

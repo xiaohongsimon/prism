@@ -1,79 +1,86 @@
 {% macro render_card(sig, label, css_class) %}
 <div class="pair-card {{ css_class }}">
     <div class="pair-label">{{ label }}</div>
-    {% if sig.authors %}
-    <div class="card-author">
-        {% for a in sig.authors[:2] %}
-        <span class="author-name">{{ a }}</span>
+    <div class="card-header">
+        {% if sig.card_avatar %}
+        <img class="card-header-avatar" src="{{ sig.card_avatar }}" alt=""
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div class="card-header-avatar-fallback" style="display:none">{{ sig.card_name[:1] }}</div>
+        {% else %}
+        <div class="card-header-avatar-fallback">{{ sig.card_name[:1] if sig.card_name else '?' }}</div>
+        {% endif %}
+        <div class="card-header-info">
+            {% if sig.source_keys %}<a href="/creator/{{ sig.source_keys[0] }}" class="card-header-name">{{ sig.card_name }}{% if sig.tweet_verified %} <span class="verified">&#10003;</span>{% endif %}</a>
+            {% else %}<span class="card-header-name">{{ sig.card_name }}{% if sig.tweet_verified %} <span class="verified">&#10003;</span>{% endif %}</span>{% endif %}
+            <span class="card-header-channel">{{ sig.card_channel }}{% if sig.tweet_handle %} · @{{ sig.tweet_handle }}{% endif %}</span>
+        </div>
+    </div>
+    {% if not sig.tweet_avatar %}
+    <div class="card-title">{{ sig.topic_label }}</div>
+    {% endif %}
+    {% if sig.is_video %}
+    <div class="video-badge">🎬 视频</div>
+    <div class="card-summary video-summary">{{ sig.content_zh or sig.summary }}</div>
+    {% if sig.why_it_matters %}
+    <div class="video-why">💡 {{ sig.why_it_matters }}</div>
+    {% endif %}
+    {% elif sig.tweet_text or sig.tweet_avatar %}
+    <div class="card-summary">{{ sig.content_zh or sig.tweet_text }}</div>
+    {% else %}
+    <div class="card-summary">{{ sig.content_zh or sig.summary }}</div>
+    {% endif %}
+    {% if sig.full_body and sig.full_body|length > 100 %}
+    <details class="card-fulltext">
+        <summary class="card-fulltext-toggle">展开全文 ({{ sig.full_body|length }} 字)</summary>
+        <div class="card-fulltext-body">{{ sig.full_body }}</div>
+        <button class="btn-notion" onclick="exportNotion(this, {{ sig.cluster_id }})">搬运到 Notion</button>
+    </details>
+    {% endif %}
+    {% if sig.quoted_tweet and sig.quoted_tweet.text %}
+    <div class="quoted-tweet">
+        <div class="quoted-tweet-author">
+            {% if sig.quoted_tweet.avatar %}
+            <img class="quoted-tweet-avatar" src="{{ sig.quoted_tweet.avatar }}" alt="">
+            {% endif %}
+            <span class="quoted-tweet-name">{{ sig.quoted_tweet.name }}</span>
+            <span class="quoted-tweet-handle">@{{ sig.quoted_tweet.handle }}</span>
+        </div>
+        <div class="quoted-tweet-text">{{ sig.quoted_tweet.text_zh or sig.quoted_tweet.text }}</div>
+    </div>
+    {% endif %}
+    {% if sig.tweet_media %}
+    <div class="tweet-media">
+        {% for m in sig.tweet_media[:2] %}
+        <img class="tweet-media-img" src="{{ m.url }}" alt="" loading="lazy">
         {% endfor %}
     </div>
     {% endif %}
-    <div class="card-title">{{ sig.topic_label }}</div>
-    {% if sig.is_video %}
-    <div class="video-card">
-        <div class="video-badge">🎬 视频</div>
-        <div class="video-summary">{{ sig.summary }}</div>
-        {% if sig.why_it_matters %}
-        <div class="video-insight">💡 {{ sig.why_it_matters }}</div>
-        {% endif %}
-    </div>
-    {% else %}
-    {% if sig.tweet_text %}
-    <div class="tweet-text">{{ sig.tweet_text }}</div>
-    {% endif %}
-    <div class="card-summary">{{ sig.summary }}</div>
-    {% if sig.why_it_matters %}
-    <div class="card-why">{{ sig.why_it_matters }}</div>
-    {% endif %}
-    {% endif %}
     <div class="card-meta">
-        <span>🔥 {{ sig.signal_strength }}</span>
-        <span class="sep"></span>
         <span>{{ sig.published_at[:10] if sig.published_at else sig.created_at[:10] }}</span>
-        {% if sig.item_count > 1 %}
-        <span class="sep"></span>
-        <span>{{ sig.item_count }} 源</span>
-        {% endif %}
     </div>
     {% if sig.engagement %}
     <div class="card-engagement">
         {% if sig.engagement.likes %}
-        <span class="eng-item">❤️ {{ sig.engagement.likes }}</span>
+        <span class="eng-item">&#10084;&#65039; {{ sig.engagement.likes }}</span>
         {% endif %}
         {% if sig.engagement.retweets %}
-        <span class="eng-item">🔁 {{ sig.engagement.retweets }}</span>
+        <span class="eng-item">&#128257; {{ sig.engagement.retweets }}</span>
         {% endif %}
         {% if sig.engagement.replies %}
-        <span class="eng-item">💬 {{ sig.engagement.replies }}</span>
-        {% endif %}
-        {% if sig.engagement.quotes %}
-        <span class="eng-item">📝 {{ sig.engagement.quotes }}</span>
+        <span class="eng-item">&#128172; {{ sig.engagement.replies }}</span>
         {% endif %}
     </div>
     {% endif %}
     {% if sig.urls %}
     <a class="card-original-link" href="{{ sig.urls[0] }}" target="_blank" rel="noopener">
-        查看原文 ↗
+        查看原文 &#8599;
     </a>
     {% endif %}
     <div class="card-badges">
-        {% if sig.signal_strength >= 4 %}
-        <span class="badge badge-hot">🔥 热度 {{ sig.signal_strength }}/5</span>
-        {% endif %}
-        {% if sig.item_count > 1 %}
-        <span class="badge badge-strength">📡 {{ sig.item_count }} 个来源</span>
-        {% endif %}
         {% for sk in sig.source_keys[:2] %}
         <span class="badge badge-source">{{ sk }}</span>
         {% endfor %}
     </div>
-    {% if sig.tags %}
-    <div class="card-tags">
-        {% for tag in sig.tags[:5] %}
-        <span class="tag-pill">{{ tag }}</span>
-        {% endfor %}
-    </div>
-    {% endif %}
 </div>
 {% endmacro %}
 
@@ -88,7 +95,7 @@
     <div id="vote-area">
     <form class="pair-actions" id="vote-form"
           hx-post="/pairwise/vote"
-          hx-target="#vote-area"
+          hx-target="#pairwise-area"
           hx-swap="innerHTML">
         <input type="hidden" name="signal_a_id" value="{{ signal_a.signal_id }}">
         <input type="hidden" name="signal_b_id" value="{{ signal_b.signal_id }}">
@@ -98,9 +105,6 @@
             <button type="submit" name="winner" value="both" class="btn btn-both">都好</button>
             <button type="submit" name="winner" value="neither" class="btn btn-neither">都不行</button>
             <button type="submit" name="winner" value="b" class="btn btn-pick">选 B</button>
-        </div>
-        <div class="pair-voice">
-            <button type="button" id="voice-btn" class="btn btn-voice">🎤 语音</button>
         </div>
         <div class="pair-comment">
             <input type="text" name="comment" placeholder="说说你的想法（可选）" class="comment-input">
@@ -126,69 +130,10 @@
 (function() {
     var start = Date.now();
     var form = document.querySelector('.pair-actions');
-    form.addEventListener('submit', function() {
+    form.addEventListener('submit', function(e) {
         document.getElementById('response-timer').value = Date.now() - start;
+        var btn = e.submitter;
+        if (btn) { btn.classList.add('btn-selected'); }
     });
-
-    // Voice input
-    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-
-    var voiceBtn = document.getElementById('voice-btn');
-    if (!voiceBtn) return;
-
-    var recognition = new SpeechRecognition();
-    recognition.lang = 'zh-CN';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    var isListening = false;
-
-    voiceBtn.addEventListener('click', function() {
-        if (isListening) {
-            recognition.stop();
-            return;
-        }
-        recognition.start();
-        isListening = true;
-        voiceBtn.classList.add('listening');
-        voiceBtn.textContent = '🎙️ 听取中...';
-    });
-
-    recognition.onresult = function(event) {
-        var text = event.results[0][0].transcript.trim().toLowerCase();
-        isListening = false;
-        voiceBtn.classList.remove('listening');
-        voiceBtn.textContent = '🎤 语音';
-
-        // Match vote commands
-        if (text.includes('选a') || text.includes('第一') || text.includes('左边')) {
-            form.querySelector('[name=winner][value=a]').click();
-        } else if (text.includes('选b') || text.includes('第二') || text.includes('右边')) {
-            form.querySelector('[name=winner][value=b]').click();
-        } else if (text.includes('都好') || text.includes('都行') || text.includes('都不错')) {
-            form.querySelector('[name=winner][value=both]').click();
-        } else if (text.includes('都不') || text.includes('不行') || text.includes('跳过') || text.includes('下一')) {
-            form.querySelector('[name=winner][value=neither]').click();
-        } else {
-            // Treat as comment or topic feed
-            var commentInput = form.querySelector('[name=comment]');
-            if (commentInput) {
-                commentInput.value = text;
-                commentInput.focus();
-            }
-        }
-    };
-
-    recognition.onerror = function() {
-        isListening = false;
-        voiceBtn.classList.remove('listening');
-        voiceBtn.textContent = '🎤 语音';
-    };
-
-    recognition.onend = function() {
-        isListening = false;
-        voiceBtn.classList.remove('listening');
-        voiceBtn.textContent = '🎤 语音';
-    };
 })();
 </script>

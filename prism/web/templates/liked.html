@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block content %}
+<nav class="top-nav">
+    <a class="logo" href="/" onclick="location.reload();return false;">⬡ Prism</a>
+    <div class="tabs">
+        <a class="tab" href="/?tab=recommend">推荐</a>
+        <a class="tab" href="/briefing">必看</a>
+        <a class="tab" href="/?tab=follow">关注</a>
+        <a class="tab" href="/pairwise/sources">来源</a>
+        <a class="tab active" href="/pairwise/liked">收藏</a>
+    </div>
+</nav>
+<div class="liked-list">
+{% for sig in liked %}
+<div class="pair-card liked-card">
+    {% if sig.authors %}
+    <div class="card-author">
+        {% for a in sig.authors[:2] %}
+        <span class="author-name">{{ a }}</span>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <div class="card-title">{{ sig.topic_label }}</div>
+    {% if sig.content_zh %}
+    <div class="card-summary">{{ sig.content_zh }}</div>
+    {% elif sig.tweet_text %}
+    <div class="tweet-text">{{ sig.tweet_text }}</div>
+    <div class="card-summary">{{ sig.summary }}</div>
+    {% else %}
+    <div class="card-summary">{{ sig.summary }}</div>
+    {% endif %}
+    {% if sig.why_it_matters %}
+    <div class="card-why">{{ sig.why_it_matters }}</div>
+    {% endif %}
+    <div class="card-meta">
+        <span>{{ sig.published_at[:10] if sig.published_at else sig.created_at[:10] }}</span>
+        {% if sig.item_count > 1 %}
+        <span class="sep"></span>
+        <span>{{ sig.item_count }} 源</span>
+        {% endif %}
+    </div>
+    {% if sig.engagement %}
+    <div class="card-engagement">
+        {% if sig.engagement.likes %}
+        <span class="eng-item">&#10084;&#65039; {{ sig.engagement.likes }}</span>
+        {% endif %}
+        {% if sig.engagement.retweets %}
+        <span class="eng-item">&#128257; {{ sig.engagement.retweets }}</span>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if sig.urls %}
+    <a class="card-original-link" href="{{ sig.urls[0] }}" target="_blank" rel="noopener">
+        查看原文 &#8599;
+    </a>
+    {% endif %}
+    <div class="card-badges">
+        {% for sk in sig.source_keys[:2] %}
+        <span class="badge badge-source">{{ sk }}</span>
+        {% endfor %}
+    </div>
+    {% if sig.tags %}
+    <div class="card-tags">
+        {% for tag in sig.tags[:5] %}
+        <span class="tag-pill">{{ tag }}</span>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+{% if not liked %}
+<div class="empty" style="text-align:center;padding:3rem 1rem;color:var(--text-secondary);">
+    还没有收藏，去推荐页选择你喜欢的内容吧
+</div>
+{% endif %}
+{% if liked|length >= 20 %}
+<div style="text-align:center;padding:1rem;">
+    <a class="btn" href="/pairwise/liked?page={{ page + 1 }}">加载更多</a>
+</div>
+{% endif %}
+</div>
+{% endblock %}
