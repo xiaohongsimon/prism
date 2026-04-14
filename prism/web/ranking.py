@@ -18,6 +18,10 @@ HALF_LIFE_HOURS = 24.0
 # Feedback deltas per action
 ACTION_DELTAS = {"like": 1.0, "dislike": -1.0, "save": 2.0}
 
+# Preference weight at or below this threshold means hard-block:
+# the item is completely excluded from the feed, not just down-weighted.
+BLOCK_THRESHOLD = -3.0
+
 # "Follow" tab source types: personal/curated channels (not aggregators)
 FOLLOW_SOURCE_TYPES = {"x", "youtube", "follow_builders", "github_releases"}
 
@@ -77,7 +81,7 @@ def compute_feed(
     # Load signals joined with cluster info
     rows = conn.execute(
         """
-        SELECT s.id AS signal_id, s.cluster_id, s.summary, s.signal_layer,
+        SELECT s.id AS signal_id, s.cluster_id, s.summary, s.content_zh, s.signal_layer,
                s.signal_strength, s.why_it_matters, s.tags_json, s.created_at,
                c.topic_label, c.item_count, c.date AS cluster_date
         FROM signals s
@@ -91,12 +95,24 @@ def compute_feed(
         return []
 
     # Max heat for normalization
+    def _safe_int(v, default=0):
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            return default
+
     max_heat = max(
-        (r["signal_strength"] * r["item_count"] for r in rows), default=1.0
+        (_safe_int(r["signal_strength"]) * _safe_int(r["item_count"]) for r in rows), default=1.0
     ) or 1.0
 
     # Load preference map
-    pref_map = _load_preference_map(conn) if w_pref > 0 else {}
+    pref_map = _load_preference_map(conn) if (w_pref > 0 or tab == "recommend") else {}
+
+    # Build blocked sets — items matching any blocked dimension are excluded
+    blocked: dict[str, set[str]] = {"tag": set(), "source": set(), "layer": set()}
+    for (dim, key), weight in pref_map.items():
+        if dim in blocked and weight <= BLOCK_THRESHOLD:
+            blocked[dim].add(key)
 
     # Load cached slides set
     slides_set = {r["signal_id"] for r in conn.execute(
@@ -108,9 +124,10 @@ def compute_feed(
     cluster_source_types: dict[int, set[str]] = {}
     cluster_authors: dict[int, list[str]] = {}
     cluster_urls: dict[int, list[str]] = {}
+    cluster_bodies: dict[int, str] = {}
     source_rows = conn.execute(
         """
-        SELECT ci.cluster_id, src.source_key, src.type, src.enabled, ri.author, ri.url
+        SELECT ci.cluster_id, src.source_key, src.type, src.enabled, ri.author, ri.url, ri.body, ri.body_zh
         FROM cluster_items ci
         JOIN raw_items ri ON ri.id = ci.raw_item_id
         JOIN sources src ON src.id = ri.source_id
@@ -138,6 +155,9 @@ def compute_feed(
             cluster_urls.setdefault(cid, [])
             if sr["url"] not in cluster_urls[cid]:
                 cluster_urls[cid].append(sr["url"])
+        body_text = sr["body_zh"] or sr["body"]
+        if body_text and len(body_text) > len(cluster_bodies.get(cid, "")):
+            cluster_bodies[cid] = body_text
 
     # Load Bradley-Terry scores
     bt_scores = {}
@@ -166,6 +186,14 @@ def compute_feed(
             if channel and channel not in cluster_source_types.get(r["cluster_id"], set()):
                 continue
 
+        # Hard-block: skip items where ALL source types are blocked, or any tag is blocked
+        if blocked["source"] and source_keys and all(sk in blocked["source"] for sk in source_keys):
+            continue
+        if blocked["tag"] and tags and any(t in blocked["tag"] for t in tags):
+            continue
+        if blocked["layer"] and r["signal_layer"] in blocked["layer"]:
+            continue
+
         authors = cluster_authors.get(r["cluster_id"], [])
         urls = cluster_urls.get(r["cluster_id"], [])
         has_slides = r["signal_id"] in slides_set
@@ -174,7 +202,7 @@ def compute_feed(
             "signal_id": r["signal_id"],
             "cluster_id": r["cluster_id"],
             "topic_label": r["topic_label"],
-            "summary": r["summary"],
+            "summary": r["content_zh"] or r["summary"],
             "signal_layer": r["signal_layer"],
             "signal_strength": r["signal_strength"],
             "why_it_matters": r["why_it_matters"],
@@ -184,6 +212,7 @@ def compute_feed(
             "authors": authors,
             "urls": urls,
             "has_slides": has_slides,
+            "full_body": cluster_bodies.get(r["cluster_id"], ""),
             "cluster_date": r["cluster_date"],
             "created_at": r["created_at"],
         }

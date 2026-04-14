@@ -6,6 +6,7 @@ Background worker processes queue continuously.
 
 import json
 import logging
+import os
 import re
 import sqlite3
 import threading
@@ -15,7 +16,7 @@ from prism.pipeline.llm import call_llm_json
 
 logger = logging.getLogger(__name__)
 
-FAST_MODEL = "MiMo-V2-Flash-4bit"
+FAST_MODEL = os.getenv("PRISM_LLM_MODEL", "gemma-4-31b-it-8bit")
 
 EXTRACT_PROMPT = """分析以下内容，选择最合适的可视化格式来展示核心信息。
 
@@ -52,11 +53,12 @@ method 格式：
 """
 
 CARD_CSS = """*{margin:0;padding:0;box-sizing:border-box}
-html,body{min-height:100%;font-family:'Inter',-apple-system,"PingFang SC",sans-serif;
-  background:radial-gradient(ellipse at top center,#12122a 0%,#0a0a0f 55%);color:#ebebf0;font-size:14px}
+html,body{min-height:100%;font-family:'Outfit','PingFang SC',system-ui,sans-serif;
+  background:radial-gradient(ellipse at top center,#10101e 0%,#0a0a0f 55%);color:#ebebf0;font-size:14px}
 .c{max-width:680px;margin:20px auto;padding:24px 28px;
   background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:16px}
-.hd{font-size:clamp(16px,3vw,20px);font-weight:800;letter-spacing:-.02em;line-height:1.3;
+.hd{font-size:clamp(16px,3vw,20px);font-weight:600;letter-spacing:-.02em;line-height:1.3;
+  font-family:'Noto Serif SC','Songti SC',Georgia,serif;
   margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.06)}
 .hl{color:#6366f1}.gr{color:#34d399}.rd{color:#f87171}.yl{color:#fbbf24}
 .sub{font-size:13px;color:#8b8b9e;margin-bottom:14px}
@@ -87,8 +89,8 @@ html,body{min-height:100%;font-family:'Inter',-apple-system,"PingFang SC",sans-s
 .tl-text{color:#c0c0d0}
 /* quote */
 .qt{padding:20px 24px;background:rgba(99,102,241,.04);border-left:3px solid #6366f1;
-  border-radius:0 12px 12px 0;margin-bottom:14px;font-size:16px;font-weight:600;
-  line-height:1.5;color:#ebebf0;font-style:italic}
+  border-radius:0 12px 12px 0;margin-bottom:14px;font-size:16px;font-weight:500;
+  line-height:1.6;color:#ebebf0;font-style:italic;font-family:'Noto Serif SC','Songti SC',Georgia,serif}
 .qt-src{font-size:12px;color:#8b8b9e;font-style:normal;margin-top:8px;font-weight:400}
 .imp{list-style:none;display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
 .imp li{padding:8px 14px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);

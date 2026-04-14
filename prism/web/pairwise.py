@@ -16,9 +16,9 @@ NEITHER_BREAK_THRESHOLD = 3
 
 # Pairwise feedback deltas for preference_weights
 WINNER_DELTA = 1.0
-LOSER_DELTA = -0.3
+LOSER_DELTA = -0.5
 BOTH_DELTA = 0.3
-NEITHER_DELTA = -0.5
+NEITHER_DELTA = -0.8
 EXTERNAL_FEED_DELTA = 3.0
 
 
@@ -62,8 +62,6 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
     """Get signals eligible for pairwise comparison."""
     # Content must be published within SIGNAL_MAX_AGE_DAYS (not just synced recently)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=SIGNAL_MAX_AGE_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
-    # Hard floor: never show content older than 30 days
-    hard_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
 
     # Get recently shown signal IDs
     recent_ids = set()
@@ -80,15 +78,15 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
     signals = conn.execute(
         """SELECT DISTINCT s.id AS signal_id, s.cluster_id, s.summary, s.signal_layer,
                   s.signal_strength, s.why_it_matters, s.tags_json, s.created_at,
-                  c.topic_label, c.item_count
+                  s.content_zh, c.topic_label, c.item_count
            FROM signals s
            JOIN clusters c ON s.cluster_id = c.id
            JOIN cluster_items ci ON ci.cluster_id = c.id
            JOIN raw_items ri ON ri.id = ci.raw_item_id
            WHERE s.is_current = 1
-             AND COALESCE(ri.published_at, s.created_at) >= ?
+             AND COALESCE(NULLIF(ri.published_at, ''), s.created_at) >= ?
            ORDER BY s.created_at DESC""",
-        (hard_cutoff,),
+        (cutoff,),
     ).fetchall()
 
     pool = []
@@ -109,7 +107,8 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
         # Get URLs, source_keys, authors, source_types, published_at, raw_json for this signal
         detail_rows = conn.execute(
             """SELECT ri.url, ri.author, ri.published_at, ri.raw_json,
-                      src.source_key, src.type AS source_type
+                      src.source_key, src.type AS source_type,
+                      COALESCE(ri.body_zh, ri.body) AS raw_body
                FROM cluster_items ci
                JOIN raw_items ri ON ri.id = ci.raw_item_id
                JOIN sources src ON src.id = ri.source_id
@@ -121,8 +120,11 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
         authors = []
         source_types = set()
         published_at = None
+        full_body = ""
         _aggregator_domains = ("news.ycombinator.com", "twitter.com", "x.com", "xcancel.com")
         for dr in detail_rows:
+            if dr["raw_body"] and len(dr["raw_body"]) > len(full_body):
+                full_body = dr["raw_body"]
             if dr["url"] and dr["url"].startswith("http") and dr["url"] not in urls:
                 is_aggregator = any(d in dr["url"] for d in _aggregator_domains)
                 if is_aggregator:
@@ -138,43 +140,101 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
             if dr["published_at"] and (published_at is None or dr["published_at"] < published_at):
                 published_at = dr["published_at"]
 
-        # Extract engagement metrics from raw_json (X tweets)
+        # Extract engagement metrics, avatar, media from raw_json (any source with tweet data)
         engagement = {}
         for dr in detail_rows:
-            if dr["source_type"] != "x":
-                continue
             try:
                 raw = json.loads(dr["raw_json"] or "{}")
             except (json.JSONDecodeError, TypeError):
                 continue
             tweet = raw.get("tweet", {})
             if tweet:
-                engagement = {
-                    "likes": tweet.get("favorite_count", 0),
-                    "retweets": tweet.get("retweet_count", 0),
-                    "replies": tweet.get("reply_count", 0),
-                    "quotes": tweet.get("quote_count", 0),
-                }
-                # Fix published_at from tweet's created_at if available
-                tweet_date = tweet.get("created_at", "")
-                if tweet_date and (not published_at or published_at.startswith("2026")):
-                    try:
-                        from email.utils import parsedate_to_datetime
-                        dt = parsedate_to_datetime(tweet_date)
-                        published_at = dt.strftime("%Y-%m-%dT%H:%M:%S")
-                    except Exception:
-                        pass
-                # Also grab tweet text for display
-                tweet_text = tweet.get("full_text", "") or tweet.get("text", "")
+                # Two tweet formats: syndication API (has user obj) vs follow-builders (flat)
+                user = tweet.get("user", {})
+                if user:
+                    # Syndication API format
+                    engagement = {
+                        "likes": tweet.get("favorite_count", 0),
+                        "retweets": tweet.get("retweet_count", 0),
+                        "replies": tweet.get("reply_count", 0),
+                        "quotes": tweet.get("quote_count", 0),
+                    }
+                    tweet_text = tweet.get("full_text", "") or tweet.get("text", "")
+                    tweet_avatar = user.get("profile_image_url_https", "").replace("_normal.", "_200x200.")
+                    tweet_name = user.get("name", "")
+                    tweet_handle = user.get("screen_name", "")
+                    tweet_verified = user.get("is_blue_verified", False)
+                    # Fix published_at
+                    tweet_date = tweet.get("created_at", "")
+                    if tweet_date and (not published_at or published_at.startswith("2026")):
+                        try:
+                            from email.utils import parsedate_to_datetime
+                            dt = parsedate_to_datetime(tweet_date)
+                            published_at = dt.strftime("%Y-%m-%dT%H:%M:%S")
+                        except Exception:
+                            pass
+                else:
+                    # Follow-builders flat format
+                    engagement = {
+                        "likes": tweet.get("likes", 0),
+                        "retweets": tweet.get("retweets", 0),
+                        "replies": tweet.get("replies", 0),
+                        "quotes": 0,
+                    }
+                    tweet_text = tweet.get("text", "")
+                    # Extract handle from tweet URL
+                    tweet_url = tweet.get("url", "")
+                    tweet_handle = tweet_url.split("x.com/")[-1].split("/")[0] if "x.com/" in tweet_url else ""
+                    tweet_name = raw.get("builder_name", tweet_handle)
+                    tweet_avatar = f"https://unavatar.io/x/{tweet_handle}" if tweet_handle else ""
+                    tweet_verified = False
+                    # Fix published_at
+                    tweet_date = tweet.get("createdAt", "")
+                    if tweet_date and (not published_at or published_at.startswith("2026")):
+                        published_at = tweet_date.replace("Z", "").split(".")[0]
+                # Media images
+                tweet_media = []
+                ext_media = tweet.get("extended_entities", {}).get("media", []) if "extended_entities" in tweet else []
+                ent_media = tweet.get("entities", {}).get("media", [])
+                for m in (ext_media or ent_media):
+                    murl = m.get("media_url_https", "")
+                    if murl:
+                        tweet_media.append({"type": m.get("type", "photo"), "url": murl})
+                # Check quoted tweet
+                qt = tweet.get("quoted_status", {})
+                quoted_tweet = {}
+                if qt:
+                    qt_user = qt.get("user", {})
+                    quoted_tweet = {
+                        "name": qt_user.get("name", ""),
+                        "handle": qt_user.get("screen_name", ""),
+                        "avatar": qt_user.get("profile_image_url_https", "").replace("_normal.", "_200x200."),
+                        "text": qt.get("full_text", "") or qt.get("text", ""),
+                        "verified": qt_user.get("is_blue_verified", False),
+                    }
+                    if not tweet_media:
+                        qt_media = qt.get("entities", {}).get("media", [])
+                        for m in qt_media:
+                            murl = m.get("media_url_https", "")
+                            if murl:
+                                tweet_media.append({"type": m.get("type", "photo"), "url": murl})
                 break  # use first tweet's data
             else:
                 tweet_text = ""
+                tweet_avatar = tweet_name = tweet_handle = ""
+                tweet_verified = False
+                tweet_media = []
+                quoted_tweet = {}
         else:
             tweet_text = ""
+            tweet_avatar = tweet_name = tweet_handle = ""
+            tweet_verified = False
+            tweet_media = []
+            quoted_tweet = {}
 
-        # Filter out old content — skip if published before hard_cutoff
-        effective_date = published_at or s["created_at"]
-        if effective_date < hard_cutoff:
+        # Filter out old content — skip if published before cutoff
+        effective_date = published_at or s["created_at"] or ""
+        if effective_date and effective_date < cutoff:
             continue
 
         pool.append({
@@ -198,23 +258,70 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
             "is_video": "youtube" in source_types,
             "engagement": engagement,
             "tweet_text": tweet_text,
+            "tweet_avatar": tweet_avatar,
+            "tweet_name": tweet_name,
+            "tweet_handle": tweet_handle,
+            "tweet_verified": tweet_verified,
+            "tweet_media": tweet_media,
+            "quoted_tweet": quoted_tweet,
+            "content_zh": s["content_zh"] or "",
+            "full_body": full_body,
+            # Universal card header
+            "card_avatar": "",
+            "card_name": "",
+            "card_channel": "",
         })
+        # Build universal card header from best available data
+        p = pool[-1]
+        st_list = p["source_types"]
+        if p["tweet_avatar"]:
+            p["card_avatar"] = p["tweet_avatar"]
+            p["card_name"] = p["tweet_name"]
+            p["card_channel"] = "X"
+        elif "github_trending" in st_list or "github_releases" in st_list:
+            owner = ""
+            for u in p["urls"]:
+                if "github.com/" in u:
+                    parts = u.split("github.com/")[-1].split("/")
+                    if parts:
+                        owner = parts[0]
+                        break
+            if owner:
+                p["card_avatar"] = f"https://github.com/{owner}.png?size=80"
+                p["card_name"] = p["authors"][0] if p["authors"] else owner
+            p["card_channel"] = "GitHub"
+        elif "youtube" in st_list:
+            p["card_name"] = p["authors"][0] if p["authors"] else ""
+            p["card_channel"] = "YouTube"
+        elif "arxiv" in st_list:
+            p["card_name"] = ", ".join(p["authors"][:2]) if p["authors"] else ""
+            p["card_channel"] = "arXiv"
+        elif "hn" in st_list:
+            p["card_name"] = p["authors"][0] if p["authors"] else ""
+            p["card_channel"] = "Hacker News"
+        else:
+            p["card_name"] = p["authors"][0] if p["authors"] else ""
+            p["card_channel"] = p["source_keys"][0] if p["source_keys"] else ""
 
-    # Cap any single source type at 40% of pool to ensure diversity
+    # Cap any single source type to ensure diversity — repeat until stable
     if pool:
         from collections import Counter
-        type_counts = Counter()
-        for p in pool:
-            for st in p.get("source_types", []):
-                type_counts[st] += 1
-        max_per_type = max(len(pool) * 4 // 10, 20)
-        for dominant_type, cnt in type_counts.items():
-            if cnt > max_per_type:
-                # Randomly sample down
-                dominant = [p for p in pool if dominant_type in p.get("source_types", [])]
-                others = [p for p in pool if dominant_type not in p.get("source_types", [])]
-                random.shuffle(dominant)
-                pool = others + dominant[:max_per_type]
+        for _ in range(3):  # iterate to stabilize
+            type_counts = Counter()
+            for p in pool:
+                for st in p.get("source_types", []):
+                    type_counts[st] += 1
+            max_per_type = max(len(pool) // 3, 6)
+            changed = False
+            for dominant_type, cnt in type_counts.most_common():
+                if cnt > max_per_type:
+                    dominant = [p for p in pool if dominant_type in p.get("source_types", [])]
+                    others = [p for p in pool if dominant_type not in p.get("source_types", [])]
+                    random.shuffle(dominant)
+                    pool = others + dominant[:max_per_type]
+                    changed = True
+            if not changed:
+                break
 
     return pool
 

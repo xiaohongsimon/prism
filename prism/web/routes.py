@@ -479,12 +479,12 @@ def creator_profile(request: Request, source_key: str):
         source_url = ""
 
     items = conn.execute(
-        """SELECT ri.id, ri.url, ri.title, ri.body, ri.author, ri.created_at, ri.published_at,
+        """SELECT ri.id, ri.url, ri.title, ri.body, ri.body_zh, ri.author, ri.created_at, ri.published_at,
                   a.id as article_id, a.subtitle as article_subtitle, a.word_count
            FROM raw_items ri
            LEFT JOIN articles a ON a.raw_item_id = ri.id
            WHERE ri.source_id = ?
-           ORDER BY ri.created_at DESC
+           ORDER BY ri.published_at DESC, ri.created_at DESC
            LIMIT 100""",
         (source["id"],),
     ).fetchall()
@@ -499,6 +499,35 @@ def creator_profile(request: Request, source_key: str):
         source_type=source["type"],
         items=[dict(r) for r in items],
     )
+
+
+@web_router.get("/translate/{item_id}", response_class=HTMLResponse)
+def translate_item(request: Request, item_id: int):
+    """Translate a raw_item body to Chinese, cache in body_zh column."""
+    conn = _db(request)
+    row = conn.execute("SELECT body, body_zh FROM raw_items WHERE id = ?", (item_id,)).fetchone()
+    if not row:
+        return HTMLResponse("")
+    if row["body_zh"]:
+        return HTMLResponse(f'<span class="item-card-subtitle">{row["body_zh"]}</span>')
+    body = (row["body"] or "")[:1500]
+    if not body:
+        return HTMLResponse("")
+    from prism.pipeline.llm import call_llm
+    try:
+        zh = call_llm(
+            prompt=f"将以下英文推文翻译为简洁流畅的中文，只输出译文，不要解释：\n\n{body}",
+            system="你是翻译助手。忠实翻译，语言简洁自然。",
+            max_tokens=512,
+        ).strip()
+        # strip think tags if present
+        import re
+        zh = re.sub(r"<think>.*?</think>", "", zh, flags=re.DOTALL).strip()
+        conn.execute("UPDATE raw_items SET body_zh = ? WHERE id = ?", (zh, item_id))
+        conn.commit()
+    except Exception:
+        zh = body  # fallback to original
+    return HTMLResponse(f'<span class="item-card-subtitle">{zh}</span>')
 
 
 @web_router.get("/article/{article_id}", response_class=HTMLResponse)
