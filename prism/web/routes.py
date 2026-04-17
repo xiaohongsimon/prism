@@ -10,6 +10,8 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader
 
+import markdown as _md
+
 from prism.web.ranking import compute_feed, update_preferences
 from prism.web.auth import (
     COOKIE_NAME, validate_session, login, create_admin,
@@ -547,7 +549,6 @@ def article_detail(request: Request, article_id: int):
     if not row:
         return HTMLResponse("<div class='empty'>文章不存在</div>", status_code=404)
 
-    import markdown as _md
     body_html = _md.markdown(
         row["structured_body"] or "",
         extensions=["extra", "sane_lists"],
