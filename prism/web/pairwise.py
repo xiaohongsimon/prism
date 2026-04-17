@@ -58,10 +58,24 @@ def _ensure_signal_score(conn: sqlite3.Connection, signal_id: int) -> float:
 
 # --- Pair Selection ---
 
+PREF_BLOCK_THRESHOLD = -10.0  # sources/tags below this are excluded from pairwise pool
+
+
+def _load_pref_weights(conn: sqlite3.Connection) -> dict[tuple[str, str], float]:
+    """Load preference weights as {(dimension, key): weight}."""
+    rows = conn.execute("SELECT dimension, key, weight FROM preference_weights").fetchall()
+    return {(r["dimension"], r["key"]): r["weight"] for r in rows}
+
+
 def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
     """Get signals eligible for pairwise comparison."""
     # Content must be published within SIGNAL_MAX_AGE_DAYS (not just synced recently)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=SIGNAL_MAX_AGE_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    # Load preference weights for filtering
+    pref_map = _load_pref_weights(conn)
+    blocked_sources = {k for (d, k), w in pref_map.items() if d == "source" and w <= PREF_BLOCK_THRESHOLD}
+    blocked_tags = {k for (d, k), w in pref_map.items() if d == "tag" and w <= PREF_BLOCK_THRESHOLD}
 
     # Get recently shown signal IDs
     recent_ids = set()
@@ -115,6 +129,14 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
                WHERE ci.cluster_id = ?""",
             (s["cluster_id"],),
         ).fetchall()
+        # Skip signals from blocked sources (learned from pairwise history)
+        dr_source_keys = {dr["source_key"] for dr in detail_rows}
+        if blocked_sources and dr_source_keys and dr_source_keys.issubset(blocked_sources):
+            continue
+        # Skip signals with only blocked tags
+        if blocked_tags and tags and all(t in blocked_tags for t in tags):
+            continue
+
         urls = []
         source_keys = []
         authors = []
@@ -360,7 +382,8 @@ def select_pair(conn: sqlite3.Connection) -> tuple[dict, dict] | None:
 
 def _pick_exploit(pool: list[dict]) -> tuple[dict, dict]:
     """One high-score signal + one low-comparison signal, different topics."""
-    sorted_by_score = sorted(pool, key=lambda x: x["bt_score"], reverse=True)
+    # Prefer high signal_strength (LLM quality score) alongside bt_score
+    sorted_by_score = sorted(pool, key=lambda x: (x["bt_score"] + x.get("signal_strength", 0) * 50), reverse=True)
     top_n = max(1, len(sorted_by_score) * 30 // 100)
     high = random.choice(sorted_by_score[:top_n])
 
