@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-cd /Users/leehom/work/prism
+cd "$(dirname "$0")/../.."
 source .venv/bin/activate
 [ -f .env ] && source .env
 LOG=data/sync.log

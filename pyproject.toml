@@ -1,8 +1,18 @@
 [project]
 name = "prism"
 version = "0.1.0"
-description = "AI Signal Intelligence System"
+description = "AI-powered personal recommendation engine using pairwise comparison"
+readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.10"
+keywords = ["ai", "recommendation", "pairwise", "preference-learning", "signal-intelligence"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: Chinese (Simplified)",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "fastapi>=0.100",
     "httpx>=0.25",
@@ -16,6 +26,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 thread = ["playwright>=1.40"]
+
+[project.urls]
+Homepage = "https://github.com/xiaohongsimon/prism"
+Repository = "https://github.com/xiaohongsimon/prism"
+Issues = "https://github.com/xiaohongsimon/prism/issues"
 
 [project.scripts]
 prism = "prism.cli:cli"

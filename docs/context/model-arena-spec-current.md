@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-26
 **Status:** Draft (reviewed)
-**Author:** leehom + Claude
+**Author:** Prism Team
 
 ## Problem
 

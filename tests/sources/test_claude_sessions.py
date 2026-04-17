@@ -42,15 +42,15 @@ def test_project_name_from_path(tmp_path):
 def test_sync_memory_dir_reads_content(tmp_path):
     """sync_memory_dir returns RawItems with MEMORY.md content."""
     content = "# Project Memory\n\n- Learned that X is better than Y\n- Next: implement Z"
-    _make_project(tmp_path, "-Users-leehom-work-prism", content)
+    _make_project(tmp_path, "-Users-testuser-work-prism", content)
 
     items = sync_memory_dir(str(tmp_path))
 
     assert len(items) == 1
     item = items[0]
-    assert item.title == "[Practice] Claude Code memory update — -Users-leehom-work-prism"
+    assert item.title == "[Practice] Claude Code memory update — -Users-testuser-work-prism"
     assert content in item.body
-    assert "claude:-Users-leehom-work-prism:" in item.url
+    assert "claude:-Users-testuser-work-prism:" in item.url
 
 
 def test_sync_memory_dir_multiple_projects(tmp_path):

@@ -145,7 +145,7 @@ sync → cluster → analyze → [entity_link] → trends → briefing
 - type: git_practice
   key: "practice:git"
   repos:
-    - /Users/leehom/work/prism
+    - $PROJECT_ROOT
     # 可扩展更多本地 repos
   lookback_hours: 24
 ```
@@ -163,7 +163,7 @@ sync → cluster → analyze → [entity_link] → trends → briefing
 - type: claude_sessions
   key: "practice:claude"
   memory_dirs:
-    - /Users/leehom/.claude/projects
+    - $HOME/.claude/projects
 ```
 
 **流程:**

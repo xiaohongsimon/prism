@@ -7,7 +7,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/leehom/work/prism/prism/scheduling/daily.sh</string>
+        <string>$HOME/work/prism/prism/scheduling/daily.sh</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>
@@ -17,13 +17,13 @@
         <integer>0</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/leehom/work/prism/data/launchd-daily.log</string>
+    <string>$HOME/work/prism/data/launchd-daily.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/leehom/work/prism/data/launchd-daily.err</string>
+    <string>$HOME/work/prism/data/launchd-daily.err</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/Users/leehom/work/prism/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>$HOME/work/prism/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 </dict>
 </plist>

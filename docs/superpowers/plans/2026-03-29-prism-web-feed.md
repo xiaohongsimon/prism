@@ -1337,25 +1337,25 @@ Create `prism/scheduling/com.prism.web.plist`:
     <string>com.prism.web</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/leehom/work/prism/.venv/bin/prism</string>
+        <string>$PROJECT_ROOT/.venv/bin/prism</string>
         <string>serve</string>
         <string>--port</string>
         <string>8000</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/leehom/work/prism</string>
+    <string>$PROJECT_ROOT</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/Users/leehom/work/prism/data/web.log</string>
+    <string>$PROJECT_ROOT/data/web.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/leehom/work/prism/data/web.err</string>
+    <string>$PROJECT_ROOT/data/web.err</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/Users/leehom/work/prism/.venv/bin:/usr/bin:/bin</string>
+        <string>$PROJECT_ROOT/.venv/bin:/usr/bin:/bin</string>
     </dict>
 </dict>
 </plist>

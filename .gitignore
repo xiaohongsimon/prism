@@ -1,7 +1,35 @@
+# Python
 __pycache__/
 *.egg-info/
+*.py[cod]
+dist/
+build/
+
+# Environment
 .env
 .venv/
+
+# Database & Data
+*.sqlite3
+*.db
 data/
 briefings/
-*.sqlite3
+
+# AI tooling
+.claude/
+.superpowers/
+
+# Design artifacts
+design/
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/

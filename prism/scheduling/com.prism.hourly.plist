@@ -7,20 +7,20 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/leehom/work/prism/prism/scheduling/hourly.sh</string>
+        <string>$HOME/work/prism/prism/scheduling/hourly.sh</string>
     </array>
     <key>StartInterval</key>
     <integer>3600</integer>
     <key>RunAtLoad</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/Users/leehom/work/prism/data/launchd-hourly.log</string>
+    <string>$HOME/work/prism/data/launchd-hourly.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/leehom/work/prism/data/launchd-hourly.err</string>
+    <string>$HOME/work/prism/data/launchd-hourly.err</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/Users/leehom/work/prism/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>$HOME/work/prism/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 </dict>
 </plist>

@@ -124,7 +124,7 @@ def test_category_check_constraint(tmp_path):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/leehom/work/prism && python -m pytest tests/test_entity_schema.py -v`
+Run: `cd $PROJECT_ROOT && python -m pytest tests/test_entity_schema.py -v`
 Expected: FAIL — tables don't exist
 
 - [ ] **Step 3: Add entity tables to db.py init_db()**
@@ -262,7 +262,7 @@ class EntityEvent:
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cd /Users/leehom/work/prism && python -m pytest tests/test_entity_schema.py -v`
+Run: `cd $PROJECT_ROOT && python -m pytest tests/test_entity_schema.py -v`
 Expected: all PASS
 
 - [ ] **Step 6: Commit**
@@ -384,7 +384,7 @@ def test_upsert_alias(tmp_path):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/leehom/work/prism && python -m pytest tests/test_entity_normalize.py -v`
+Run: `cd $PROJECT_ROOT && python -m pytest tests/test_entity_normalize.py -v`
 Expected: FAIL — module doesn't exist
 
 - [ ] **Step 3: Implement entity_normalize.py**
@@ -524,7 +524,7 @@ def upsert_alias(conn: sqlite3.Connection, entity_id: int, surface_form: str,
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/leehom/work/prism && python -m pytest tests/test_entity_normalize.py -v`
+Run: `cd $PROJECT_ROOT && python -m pytest tests/test_entity_normalize.py -v`
 Expected: all PASS
 
 - [ ] **Step 5: Commit**
@@ -609,7 +609,7 @@ def test_stoplist_filters():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/leehom/work/prism && python -m pytest tests/test_entity_extract.py -v`
+Run: `cd $PROJECT_ROOT && python -m pytest tests/test_entity_extract.py -v`
 Expected: FAIL
 
 - [ ] **Step 3: Implement deterministic_candidates()**
@@ -762,7 +762,7 @@ def extract_entities_llm(signal: dict, candidates: list[dict],
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/leehom/work/prism && python -m pytest tests/test_entity_extract.py -v`
+Run: `cd $PROJECT_ROOT && python -m pytest tests/test_entity_extract.py -v`
 Expected: all PASS
 
 - [ ] **Step 5: Commit**
@@ -875,7 +875,7 @@ def test_event_counts_updated(tmp_path):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/leehom/work/prism && python -m pytest tests/test_entity_lifecycle.py -v`
+Run: `cd $PROJECT_ROOT && python -m pytest tests/test_entity_lifecycle.py -v`
 Expected: FAIL
 
 - [ ] **Step 3: Implement entity_lifecycle.py**
@@ -1024,7 +1024,7 @@ def update_entity_statuses(conn: sqlite3.Connection) -> int:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/leehom/work/prism && python -m pytest tests/test_entity_lifecycle.py -v`
+Run: `cd $PROJECT_ROOT && python -m pytest tests/test_entity_lifecycle.py -v`
 Expected: all PASS
 
 - [ ] **Step 5: Commit**
@@ -1139,7 +1139,7 @@ def test_run_entity_link_with_mock_llm(tmp_path):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/leehom/work/prism && python -m pytest tests/test_entity_link.py -v`
+Run: `cd $PROJECT_ROOT && python -m pytest tests/test_entity_link.py -v`
 Expected: FAIL
 
 - [ ] **Step 3: Implement entity_link.py**
@@ -1406,7 +1406,7 @@ def run_entity_link(conn: sqlite3.Connection, dt: str,
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/leehom/work/prism && python -m pytest tests/test_entity_link.py -v`
+Run: `cd $PROJECT_ROOT && python -m pytest tests/test_entity_link.py -v`
 Expected: all PASS
 
 - [ ] **Step 5: Commit**
@@ -1499,7 +1499,7 @@ def test_tag_entities_from_db(tmp_path):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/leehom/work/prism && python -m pytest tests/test_entity_migration.py -v`
+Run: `cd $PROJECT_ROOT && python -m pytest tests/test_entity_migration.py -v`
 Expected: FAIL
 
 - [ ] **Step 3: Update entities.py with migration + DB-backed functions**
@@ -1629,12 +1629,12 @@ def tag_entities_from_db(conn: sqlite3.Connection, title: str, body: str) -> set
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/leehom/work/prism && python -m pytest tests/test_entity_migration.py -v`
+Run: `cd $PROJECT_ROOT && python -m pytest tests/test_entity_migration.py -v`
 Expected: all PASS
 
 - [ ] **Step 5: Also verify existing entity tests still pass**
 
-Run: `cd /Users/leehom/work/prism && python -m pytest tests/test_entities.py -v`
+Run: `cd $PROJECT_ROOT && python -m pytest tests/test_entities.py -v`
 Expected: all PASS (backward compatible)
 
 - [ ] **Step 6: Commit**
@@ -1787,7 +1787,7 @@ def practice(note):
 
 Run:
 ```bash
-cd /Users/leehom/work/prism
+cd $PROJECT_ROOT
 python -m prism.cli entity list
 python -m prism.cli entity-link --help
 python -m prism.cli practice --help
@@ -1918,12 +1918,12 @@ def test_full_entity_pipeline(tmp_path):
 
 - [ ] **Step 2: Run integration test**
 
-Run: `cd /Users/leehom/work/prism && python -m pytest tests/test_entity_integration.py -v`
+Run: `cd $PROJECT_ROOT && python -m pytest tests/test_entity_integration.py -v`
 Expected: all PASS
 
 - [ ] **Step 3: Run full test suite to verify no regressions**
 
-Run: `cd /Users/leehom/work/prism && python -m pytest tests/ -v --tb=short`
+Run: `cd $PROJECT_ROOT && python -m pytest tests/ -v --tb=short`
 Expected: all PASS
 
 - [ ] **Step 4: Commit**

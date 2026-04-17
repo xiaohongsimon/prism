@@ -214,13 +214,13 @@ sources:
   - type: git_practice
     key: "practice:git"
     repos:
-      - /Users/leehom/work/prism
+      - .  # project root (relative path)
     lookback_hours: 24
 
   - type: claude_sessions
     key: "practice:claude"
     memory_dirs:
-      - /Users/leehom/.claude/projects
+      - ~/.claude/projects
 
   # === HN Keyword Search (topic-based discovery) ===
   - type: hn_search
