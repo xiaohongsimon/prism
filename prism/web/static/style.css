@@ -75,6 +75,9 @@ a { color: inherit; text-decoration: none; }
   border-left: 1px solid var(--border);
   border-right: 1px solid var(--border);
 }
+@media (min-width: 768px) {
+  .container { max-width: 860px; }
+}
 
 /* ── Header ───────────────────────────────────────────────── */
 .top-nav {
@@ -827,7 +830,7 @@ details[open] > .source-group-header::before { content: "▾"; }
 /* old creator bullet — replaced by new dot style above */
 
 /* Article detail page */
-.article-page { padding: 0 16px; max-width: 720px; margin: 0 auto; }
+.article-page { padding: 0 16px; max-width: 780px; margin: 0 auto; }
 .article-header { padding: 24px 0 16px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
 .article-header h1 { font-size: 22px; font-weight: 700; line-height: 1.35; margin: 0 0 8px; color: var(--text); }
 .article-subtitle { font-size: 15px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 10px; }

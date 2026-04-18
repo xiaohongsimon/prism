@@ -50,7 +50,7 @@ _jinja_env.filters["linkify_clusters"] = _linkify_clusters
 web_router = APIRouter()
 
 # Public paths that don't need auth
-_PUBLIC_PATHS = {"/login", "/register", "/auth/login", "/auth/register", "/static"}
+_PUBLIC_PATHS = {"/login", "/register", "/auth/login", "/auth/register", "/static", "/article", "/briefing", "/sw.js"}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
