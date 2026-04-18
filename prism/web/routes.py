@@ -595,6 +595,12 @@ def article_detail(request: Request, article_id: int):
             (signal_id,),
         ).fetchone()
         liked = fb["action"] == "save" if fb else False
+    else:
+        # No signal — check external_feeds for this URL as a proxy for "liked"
+        ef = conn.execute(
+            "SELECT id FROM external_feeds WHERE url = ?", (row["source_url"],)
+        ).fetchone()
+        liked = ef is not None
 
     return _render(
         "article.html",
@@ -604,8 +610,33 @@ def article_detail(request: Request, article_id: int):
         highlights=highlights,
         source_key=row["source_key"],
         signal_id=signal_id,
+        article_id=article_id,
+        source_url=row["source_url"],
         liked=liked,
     )
+
+
+@web_router.post("/article/{article_id}/like", response_class=HTMLResponse)
+def article_like(request: Request, article_id: int):
+    """Like an article via external feed mechanism (for articles without signals)."""
+    conn = _db(request)
+    row = conn.execute(
+        "SELECT a.raw_item_id, ri.url FROM articles a JOIN raw_items ri ON a.raw_item_id = ri.id WHERE a.id = ?",
+        (article_id,),
+    ).fetchone()
+    if not row:
+        return HTMLResponse("Not found", status_code=404)
+
+    # Use external feed to record as strong positive feedback (weight 3.0)
+    process_external_feed(conn, url=row["url"], note="liked from article page")
+
+    html = (
+        '<div class="article-actions">'
+        f'<form method="POST" action="/article/{article_id}/like" hx-post="/article/{article_id}/like" hx-swap="outerHTML" hx-target="closest .article-actions">'
+        '<button type="submit" class="btn-article-like liked">❤️ 已喜欢</button>'
+        '</form></div>'
+    )
+    return HTMLResponse(html)
 
 
 @web_router.get("/sw.js")
