@@ -27,5 +27,17 @@
     {% endfor %}
   </div>
   {% endif %}
+
+  {% if signal_id %}
+  <div class="article-actions">
+    <form method="POST" action="/feedback" hx-post="/feedback" hx-swap="outerHTML" hx-target="closest .article-actions">
+      <input type="hidden" name="signal_id" value="{{ signal_id }}">
+      <input type="hidden" name="action" value="save">
+      <button type="submit" class="btn-article-like {{ 'liked' if liked else '' }}">
+        {{ '❤️ 已喜欢' if liked else '🤍 喜欢这篇' }}
+      </button>
+    </form>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

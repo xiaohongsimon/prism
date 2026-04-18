@@ -855,3 +855,9 @@ details[open] > .source-group-header::before { content: "▾"; }
 .article-highlights { margin-top: 36px; padding-top: 20px; border-top: 1px solid var(--border); }
 .article-highlights h2 { font-size: 14px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 14px; }
 .article-highlights blockquote { border-left: 3px solid var(--success); padding: 10px 16px; margin: 10px 0; color: var(--text); background: rgba(52,211,153,0.04); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-style: normal; }
+
+/* Article like button */
+.article-actions { margin-top: 32px; padding: 20px 0; border-top: 1px solid var(--border); text-align: center; }
+.btn-article-like { display: inline-flex; align-items: center; gap: 6px; padding: 10px 24px; background: transparent; border: 1.5px solid var(--border); border-radius: var(--radius-full); color: var(--text-secondary); font-size: 14px; font-weight: 600; cursor: pointer; transition: all var(--transition-fast); font-family: inherit; }
+.btn-article-like:hover { border-color: var(--accent); color: var(--accent); background: rgba(29,155,240,0.06); }
+.btn-article-like.liked { border-color: #ef4444; color: #ef4444; background: rgba(239,68,68,0.06); }

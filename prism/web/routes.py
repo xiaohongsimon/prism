@@ -345,6 +345,21 @@ def feedback(
     conn.commit()
     update_preferences(conn, sig_id, action)
 
+    # If from article page, return article-style like button
+    referer = request.headers.get("hx-current-url", "") or request.headers.get("referer", "")
+    if "/article/" in referer:
+        liked = action == "save"
+        html = (
+            '<div class="article-actions">'
+            f'<form method="POST" action="/feedback" hx-post="/feedback" hx-swap="outerHTML" hx-target="closest .article-actions">'
+            f'<input type="hidden" name="signal_id" value="{sig_id}">'
+            f'<input type="hidden" name="action" value="save">'
+            f'<button type="submit" class="btn-article-like {"liked" if liked else ""}">'
+            f'{"❤️ 已喜欢" if liked else "🤍 喜欢这篇"}'
+            '</button></form></div>'
+        )
+        return HTMLResponse(html)
+
     item = {"signal_id": sig_id}
     feedback_state = action
 
@@ -562,6 +577,25 @@ def article_detail(request: Request, article_id: int):
         except (json.JSONDecodeError, TypeError):
             pass
 
+    # Find the signal_id for this article (raw_item → cluster → signal)
+    sig_row = conn.execute(
+        """SELECT s.id AS signal_id FROM signals s
+           JOIN cluster_items ci ON ci.cluster_id = s.cluster_id
+           WHERE ci.raw_item_id = ? AND s.is_current = 1
+           LIMIT 1""",
+        (row["raw_item_id"],),
+    ).fetchone()
+    signal_id = sig_row["signal_id"] if sig_row else None
+
+    # Check if user already liked this article
+    liked = False
+    if signal_id:
+        fb = conn.execute(
+            "SELECT action FROM feedback WHERE signal_id = ? ORDER BY id DESC LIMIT 1",
+            (signal_id,),
+        ).fetchone()
+        liked = fb["action"] == "save" if fb else False
+
     return _render(
         "article.html",
         request=request,
@@ -569,6 +603,8 @@ def article_detail(request: Request, article_id: int):
         body_html=body_html,
         highlights=highlights,
         source_key=row["source_key"],
+        signal_id=signal_id,
+        liked=liked,
     )
 
 
