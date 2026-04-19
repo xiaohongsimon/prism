@@ -1221,3 +1221,45 @@ async def pairwise_profile_block(request: Request):
     )
     conn.commit()
     return JSONResponse({"ok": True})
+
+
+# --- Persona ---
+
+@web_router.get("/persona", response_class=HTMLResponse)
+def persona_form(request: Request):
+    return _render("persona.html", request=request)
+
+
+@web_router.post("/persona")
+def persona_submit(
+    request: Request,
+    role: str = Form(...),
+    goals: list[str] = Form(default=[]),
+    active_learning: str = Form(""),
+    seed_handles: str = Form(""),
+    dislike: str = Form(""),
+    style: list[str] = Form(default=[]),
+    language: str = Form("都行"),
+    length: str = Form("都可以"),
+    free_text: str = Form(""),
+):
+    from prism.persona import save_snapshot, extract_from_snapshot
+
+    answers = {
+        "role": role,
+        "goals": goals,
+        "active_learning": active_learning,
+        "dislike": dislike,
+        "style": style,
+        "language": language,
+        "length": length,
+    }
+    handles = [h.strip() for h in seed_handles.splitlines() if h.strip()]
+
+    conn = _db(request)
+    snap_id = save_snapshot(
+        conn, answers=answers, free_text=free_text, seed_handles=handles,
+    )
+    extract_from_snapshot(conn, snap_id)
+
+    return RedirectResponse(url="/taste/sources", status_code=303)
