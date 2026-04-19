@@ -80,7 +80,7 @@ def test_select_pair_returns_two_different_signals():
     _seed_signals(conn, 5)
     result = select_pair(conn)
     assert result is not None
-    a, b = result
+    a, b, _strategy = result
     assert a["signal_id"] != b["signal_id"]
 
 
@@ -101,7 +101,7 @@ def test_pair_break_loop():
     for _ in range(3):
         pair = select_pair(conn)
         assert pair is not None
-        a, b = pair
+        a, b, _strategy = pair
         record_vote(conn, a["signal_id"], b["signal_id"], "neither", "", 0)
     # Next pair should still work (random fallback)
     pair = select_pair(conn)

@@ -247,8 +247,8 @@ def index(request: Request, tab: str = "recommend", channel: str = ""):
         pair = select_pair(conn)
         tpl = _jinja_env.get_template("pairwise.html")
         if pair:
-            a, b = pair
-            return HTMLResponse(tpl.render(signal_a=a, signal_b=b, tab="recommend"))
+            a, b, strategy = pair
+            return HTMLResponse(tpl.render(signal_a=a, signal_b=b, strategy=strategy, tab="recommend"))
         return HTMLResponse(tpl.render(signal_a=None, signal_b=None, tab="recommend"))
     if tab == "follow":
         creators = _build_creator_list(conn)
@@ -897,9 +897,9 @@ def pairwise_pair(request: Request):
     if pair is None:
         tpl = _jinja_env.get_template("partials/pair_empty.html")
         return HTMLResponse(tpl.render())
-    a, b = pair
+    a, b, strategy = pair
     tpl = _jinja_env.get_template("partials/pair_cards.html")
-    return HTMLResponse(tpl.render(signal_a=a, signal_b=b))
+    return HTMLResponse(tpl.render(signal_a=a, signal_b=b, strategy=strategy))
 
 
 @web_router.post("/pairwise/vote", response_class=HTMLResponse)
@@ -910,6 +910,7 @@ def pairwise_vote(
     winner: str = Form(...),
     comment: str = Form(""),
     response_time_ms: int = Form(0),
+    strategy: str = Form("exploit"),
 ):
     """Record vote and return next pair immediately.
 
@@ -917,7 +918,7 @@ def pairwise_vote(
     - both/neither/skip: load completely new pair
     """
     conn = _db(request)
-    record_vote(conn, signal_a_id, signal_b_id, winner, comment, response_time_ms)
+    record_vote(conn, signal_a_id, signal_b_id, winner, comment, response_time_ms, strategy=strategy)
 
     tpl = _jinja_env.get_template("partials/pair_cards.html")
     empty_tpl = _jinja_env.get_template("partials/pair_empty.html")
@@ -934,18 +935,20 @@ def pairwise_vote(
         if winner_sig and candidates:
             import random
             new_sig = random.choice(candidates)
-            return HTMLResponse(tpl.render(signal_a=winner_sig, signal_b=new_sig))
+            return HTMLResponse(tpl.render(signal_a=winner_sig, signal_b=new_sig, strategy="carry_winner"))
         # Fallback: if winner not in pool or no candidates, get fresh pair
         pair = select_pair(conn)
         if pair is None:
             return HTMLResponse(empty_tpl.render())
-        return HTMLResponse(tpl.render(signal_a=pair[0], signal_b=pair[1]))
+        a, b, next_strategy = pair
+        return HTMLResponse(tpl.render(signal_a=a, signal_b=b, strategy=next_strategy))
 
     # both / neither / skip → completely new pair
     pair = select_pair(conn)
     if pair is None:
         return HTMLResponse(empty_tpl.render())
-    return HTMLResponse(tpl.render(signal_a=pair[0], signal_b=pair[1]))
+    a, b, next_strategy = pair
+    return HTMLResponse(tpl.render(signal_a=a, signal_b=b, strategy=next_strategy))
 
 
 @web_router.post("/pairwise/feed", response_class=HTMLResponse)
@@ -962,9 +965,9 @@ def pairwise_feed(
     if pair is None:
         tpl = _jinja_env.get_template("partials/pair_empty.html")
         return HTMLResponse(tpl.render(feed_success=True))
-    a, b = pair
+    a, b, strategy = pair
     tpl = _jinja_env.get_template("partials/pair_cards.html")
-    return HTMLResponse(tpl.render(signal_a=a, signal_b=b, feed_success=True))
+    return HTMLResponse(tpl.render(signal_a=a, signal_b=b, strategy=strategy, feed_success=True))
 
 
 @web_router.get("/pairwise/liked", response_class=HTMLResponse)
