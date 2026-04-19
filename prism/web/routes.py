@@ -260,7 +260,7 @@ def index(request: Request, tab: str = "recommend", channel: str = ""):
     feedback_map = _feedback_map(conn, signal_ids)
 
     return _render(
-        "feed.html",
+        "feed_legacy.html",
         items=items,
         tab=tab,
         page=1,
@@ -271,8 +271,8 @@ def index(request: Request, tab: str = "recommend", channel: str = ""):
     )
 
 
-@web_router.get("/feed", response_class=HTMLResponse)
-def feed_fragment(
+@web_router.get("/feed/legacy", response_class=HTMLResponse)
+def feed_legacy_fragment(
     request: Request,
     tab: str = "recommend",
     page: int = 1,
@@ -292,7 +292,7 @@ def feed_fragment(
 
     if len(items) >= per_page:
         html_parts.append(
-            f'<div hx-get="/feed?tab={tab}&page={page + 1}&per_page={per_page}"'
+            f'<div hx-get="/feed/legacy?tab={tab}&page={page + 1}&per_page={per_page}"'
             f' hx-trigger="revealed"'
             f' hx-target="#feed-list"'
             f' hx-swap="beforeend"'
