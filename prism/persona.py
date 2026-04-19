@@ -88,70 +88,77 @@ def extract_from_snapshot(conn, snapshot_id: int) -> tuple[int, int]:
         answers, free_text, seed_handles, _fetch_current_top_prefs(conn),
     )
     result = call_llm_json(prompt, system=PERSONA_PROMPT_SYSTEM, max_tokens=4096)
+    if not isinstance(result, dict):
+        raise ValueError(
+            f"LLM returned non-dict result for snapshot {snapshot_id}: "
+            f"{type(result).__name__}"
+        )
 
     summary = str(result.get("summary", "")).strip()
     bias_weights = result.get("bias_weights") or []
     candidates = result.get("candidate_sources") or []
 
-    # Zero out all previous persona_bias rows (audit trail kept; rows not deleted)
-    conn.execute(
-        "UPDATE preference_weights SET weight = 0.0, "
-        "updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now') "
-        "WHERE dimension = 'persona_bias'"
-    )
-
+    # All DB mutations inside a single transaction — rolls back on any error
+    # so persona_bias is never left partially zeroed.
     n_weights = 0
-    for bw in bias_weights:
-        dim = str(bw.get("dimension", "")).strip()
-        key = str(bw.get("key", "")).strip()
-        try:
-            w = float(bw.get("weight", 0))
-        except (TypeError, ValueError):
-            continue
-        if not dim or not key:
-            continue
-        w = max(-_PERSONA_BIAS_CLIP, min(_PERSONA_BIAS_CLIP, w))
-        composite_key = f"{dim}/{key}"
-        conn.execute(
-            "INSERT INTO preference_weights (dimension, key, weight, updated_at) "
-            "VALUES ('persona_bias', ?, ?, strftime('%Y-%m-%dT%H:%M:%S','now')) "
-            "ON CONFLICT(dimension, key) DO UPDATE SET weight = excluded.weight, "
-            "updated_at = excluded.updated_at",
-            (composite_key, w),
-        )
-        n_weights += 1
-
     n_proposals = 0
-    for cand in candidates:
-        ctype = str(cand.get("type", "")).strip()
-        if not ctype:
-            continue
-        cfg = {k: v for k, v in cand.items() if k not in ("rationale", "category", "display_name")}
-        if "handle_or_url" in cfg:
-            # normalise: if looks like URL, store as url; else as handle for x-like types
-            v = cfg.pop("handle_or_url")
-            if "://" in v:
-                cfg["url"] = v
-            else:
-                cfg["handle"] = v
-        display = str(cand.get("display_name") or cfg.get("handle") or cfg.get("url") or ctype)
-        rationale = str(cand.get("rationale", ""))
-        category = str(cand.get("category", ""))
+    with conn:
+        # Zero out all previous persona_bias rows (audit trail kept; rows not deleted)
         conn.execute(
-            "INSERT INTO source_proposals "
-            "(source_type, source_config_json, display_name, rationale, origin, origin_ref) "
-            "VALUES (?, ?, ?, ?, 'persona', ?)",
-            (ctype, _json.dumps(cfg, ensure_ascii=False),
-             display, f"{category}: {rationale}" if category else rationale,
-             str(snapshot_id)),
+            "UPDATE preference_weights SET weight = 0.0, "
+            "updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now') "
+            "WHERE dimension = 'persona_bias'"
         )
-        n_proposals += 1
 
-    conn.execute(
-        "UPDATE persona_snapshots SET extracted_summary = ? WHERE id = ?",
-        (summary, snapshot_id),
-    )
-    conn.commit()
+        for bw in bias_weights:
+            dim = str(bw.get("dimension", "")).strip()
+            key = str(bw.get("key", "")).strip()
+            try:
+                w = float(bw.get("weight", 0))
+            except (TypeError, ValueError):
+                continue
+            if not dim or not key:
+                continue
+            w = max(-_PERSONA_BIAS_CLIP, min(_PERSONA_BIAS_CLIP, w))
+            composite_key = f"{dim}/{key}"
+            conn.execute(
+                "INSERT INTO preference_weights (dimension, key, weight, updated_at) "
+                "VALUES ('persona_bias', ?, ?, strftime('%Y-%m-%dT%H:%M:%S','now')) "
+                "ON CONFLICT(dimension, key) DO UPDATE SET weight = excluded.weight, "
+                "updated_at = excluded.updated_at",
+                (composite_key, w),
+            )
+            n_weights += 1
+
+        for cand in candidates:
+            ctype = str(cand.get("type", "")).strip()
+            if not ctype:
+                continue
+            cfg = {k: v for k, v in cand.items() if k not in ("rationale", "category", "display_name")}
+            if "handle_or_url" in cfg:
+                # normalise: if looks like URL, store as url; else as handle for x-like types
+                v = cfg.pop("handle_or_url")
+                if "://" in v:
+                    cfg["url"] = v
+                else:
+                    cfg["handle"] = v
+            display = str(cand.get("display_name") or cfg.get("handle") or cfg.get("url") or ctype)
+            rationale = str(cand.get("rationale", ""))
+            category = str(cand.get("category", ""))
+            conn.execute(
+                "INSERT INTO source_proposals "
+                "(source_type, source_config_json, display_name, rationale, origin, origin_ref) "
+                "VALUES (?, ?, ?, ?, 'persona', ?)",
+                (ctype, _json.dumps(cfg, ensure_ascii=False),
+                 display, f"{category}: {rationale}" if category else rationale,
+                 str(snapshot_id)),
+            )
+            n_proposals += 1
+
+        conn.execute(
+            "UPDATE persona_snapshots SET extracted_summary = ? WHERE id = ?",
+            (summary, snapshot_id),
+        )
     return n_weights, n_proposals
 
 
