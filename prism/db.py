@@ -338,6 +338,22 @@ def init_db(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_source_proposals_status
             ON source_proposals(status);
+
+        CREATE TABLE IF NOT EXISTS feed_interactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            signal_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            target_key TEXT NOT NULL DEFAULT '',
+            response_time_ms INTEGER NOT NULL DEFAULT 0,
+            context_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_feed_interactions_signal
+            ON feed_interactions(signal_id);
+
+        CREATE INDEX IF NOT EXISTS idx_feed_interactions_action_created
+            ON feed_interactions(action, created_at);
     """)
 
     # Add extracted_json column to external_feeds if missing
