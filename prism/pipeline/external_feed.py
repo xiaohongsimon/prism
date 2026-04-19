@@ -64,38 +64,42 @@ def run_external_feed_consumer(conn: sqlite3.Connection) -> int:
         try:
             extracted = call_llm_json(prompt, system=_SYSTEM_PROMPT, max_tokens=1024)
         except Exception as exc:  # noqa: BLE001
-            # Leave processed=0 so next run retries; note the error in extracted_json
-            conn.execute(
-                "UPDATE external_feeds SET extracted_json = ? WHERE id = ?",
-                (json.dumps({"error": str(exc)}, ensure_ascii=False), feed_id),
-            )
-            conn.commit()
+            # Leave processed=0 so next run retries; note the error in extracted_json.
+            # Own transaction so prior successful rows aren't affected.
+            with conn:
+                conn.execute(
+                    "UPDATE external_feeds SET extracted_json = ? WHERE id = ?",
+                    (json.dumps({"error": str(exc)}, ensure_ascii=False), feed_id),
+                )
             continue
 
-        hint = extracted.get("source_hint") or {}
-        if hint and not _source_already_present(hint, yaml_path):
-            cfg: dict[str, Any] = {"type": hint.get("type", "")}
-            if "handle" in hint:
-                cfg["handle"] = hint["handle"]
-                cfg["depth"] = "thread"
-            elif "url" in hint:
-                cfg["url"] = hint["url"]
-            display = hint.get("display_name") or cfg.get("handle") or cfg.get("url") or "unknown"
-            conn.execute(
-                "INSERT INTO source_proposals "
-                "(source_type, source_config_json, display_name, rationale, origin, origin_ref) "
-                "VALUES (?, ?, ?, ?, 'external_feed', ?)",
-                (cfg["type"], json.dumps(cfg, ensure_ascii=False),
-                 display,
-                 f"来自你投喂的链接：{extracted.get('summary_zh','')}",
-                 str(feed_id)),
-            )
+        # Each successful row is its own atomic unit: proposal (if any) + processed=1
+        # commit together, so a later row failing can't leave this row half-applied.
+        with conn:
+            hint = extracted.get("source_hint") or {}
+            has_locator = bool(hint.get("handle") or hint.get("url"))
+            if hint and hint.get("type") and has_locator and not _source_already_present(hint, yaml_path):
+                cfg: dict[str, Any] = {"type": hint["type"]}
+                if "handle" in hint:
+                    cfg["handle"] = hint["handle"]
+                    cfg["depth"] = "thread"
+                elif "url" in hint:
+                    cfg["url"] = hint["url"]
+                display = hint.get("display_name") or cfg.get("handle") or cfg.get("url") or "unknown"
+                conn.execute(
+                    "INSERT INTO source_proposals "
+                    "(source_type, source_config_json, display_name, rationale, origin, origin_ref) "
+                    "VALUES (?, ?, ?, ?, 'external_feed', ?)",
+                    (cfg["type"], json.dumps(cfg, ensure_ascii=False),
+                     display,
+                     f"来自你投喂的链接：{extracted.get('summary_zh','')}",
+                     str(feed_id)),
+                )
 
-        conn.execute(
-            "UPDATE external_feeds SET processed = 1, extracted_json = ? WHERE id = ?",
-            (json.dumps(extracted, ensure_ascii=False), feed_id),
-        )
+            conn.execute(
+                "UPDATE external_feeds SET processed = 1, extracted_json = ? WHERE id = ?",
+                (json.dumps(extracted, ensure_ascii=False), feed_id),
+            )
         n += 1
 
-    conn.commit()
     return n
