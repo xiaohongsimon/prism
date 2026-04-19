@@ -294,6 +294,25 @@ def feed_action(
     )
 
 
+@web_router.get("/feed/saved", response_class=HTMLResponse)
+def feed_saved(request: Request):
+    conn = _db(request)
+    rows = conn.execute(
+        """SELECT fi.created_at, s.summary, c.topic_label,
+                  (SELECT url FROM raw_items ri
+                   JOIN cluster_items ci ON ci.raw_item_id = ri.id
+                   WHERE ci.cluster_id = s.cluster_id LIMIT 1) AS url
+             FROM feed_interactions fi
+             JOIN signals s ON s.id = fi.signal_id
+             LEFT JOIN clusters c ON c.id = s.cluster_id
+            WHERE fi.action = 'save'
+            ORDER BY fi.created_at DESC
+            LIMIT 200"""
+    ).fetchall()
+    tpl = _jinja_env.get_template("feed_saved.html")
+    return HTMLResponse(tpl.render(signals=rows))
+
+
 @web_router.get("/feed/legacy", response_class=HTMLResponse)
 def feed_legacy_fragment(
     request: Request,
