@@ -236,38 +236,61 @@ def gen_invite(request: Request):
 # ── Feed Routes ──────────────────────────────────────────────────────────────
 
 @web_router.get("/", response_class=HTMLResponse)
-def index(request: Request, tab: str = "recommend", channel: str = ""):
-    """Full feed page."""
+def index(request: Request):
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/feed", status_code=307)
+
+
+from prism.web.feed import rank_feed, record_feed_action
+
+
+@web_router.get("/feed", response_class=HTMLResponse)
+def feed_index(request: Request):
+    tpl = _jinja_env.get_template("feed.html")
+    return HTMLResponse(tpl.render(next_offset=0))
+
+
+@web_router.get("/feed/more", response_class=HTMLResponse)
+def feed_more(request: Request, offset: int = 0, limit: int = 10):
     conn = _db(request)
-    if tab not in ("recommend", "follow", "hot"):
-        tab = "recommend"
+    rows = rank_feed(conn, limit=limit, offset=offset)
+    if not rows:
+        tpl = _jinja_env.get_template("partials/feed_empty.html")
+        return HTMLResponse(tpl.render())
+    card_tpl = _jinja_env.get_template("partials/feed_card.html")
+    html = "".join(card_tpl.render(signal=r) for r in rows)
+    return HTMLResponse(html)
 
-    # Pairwise mode for recommend tab
-    if tab == "recommend":
-        pair = select_pair(conn)
-        tpl = _jinja_env.get_template("pairwise.html")
-        if pair:
-            a, b, strategy = pair
-            return HTMLResponse(tpl.render(signal_a=a, signal_b=b, strategy=strategy, tab="recommend"))
-        return HTMLResponse(tpl.render(signal_a=None, signal_b=None, tab="recommend"))
-    if tab == "follow":
-        creators = _build_creator_list(conn)
-        return _render("creators.html", request=request, tab=tab, creators=creators, total=len(creators))
 
-    per_page = 20
-    items = compute_feed(conn, tab=tab, page=1, per_page=per_page, channel=channel)
-    signal_ids = [item["signal_id"] for item in items]
-    feedback_map = _feedback_map(conn, signal_ids)
-
-    return _render(
-        "feed_legacy.html",
-        items=items,
-        tab=tab,
-        page=1,
-        per_page=per_page,
-        feedback_map=feedback_map,
-        source_types=[],
-        current_channel=channel,
+@web_router.post("/feed/action", response_class=HTMLResponse)
+def feed_action(
+    request: Request,
+    signal_id: int = Form(...),
+    action: str = Form(...),
+    target_key: str = Form(""),
+    response_time_ms: int = Form(0),
+):
+    conn = _db(request)
+    record_feed_action(
+        conn,
+        signal_id=signal_id,
+        action=action,
+        target_key=target_key,
+        response_time_ms=response_time_ms,
+    )
+    if action in ("save", "dismiss"):
+        label = "已保存" if action == "save" else "已隐藏"
+        return HTMLResponse(
+            f'<div class="feed-card feed-done">{label} ✓</div>'
+        )
+    labels = {
+        "follow_author": f"已关注 {target_key}",
+        "mute_topic": f"已屏蔽 #{target_key}",
+        "unfollow_author": f"取消关注 {target_key}",
+        "unmute_topic": f"取消屏蔽 #{target_key}",
+    }
+    return HTMLResponse(
+        f'<span class="btn btn-done">{labels.get(action, "ok")}</span>'
     )
 
 

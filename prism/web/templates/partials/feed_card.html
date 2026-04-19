@@ -1,0 +1,40 @@
+<article class="feed-card" id="feed-card-{{ signal.signal_id }}">
+    <header class="feed-meta">
+        <span class="feed-topic">{{ signal.topic_label }}</span>
+        {% if signal.source_keys %}<span class="feed-source">{{ signal.source_keys[0] }}</span>{% endif %}
+        {% if signal.authors %}<span class="feed-author">@{{ signal.authors[0] }}</span>{% endif %}
+    </header>
+    <div class="feed-body">
+        <p class="feed-summary">{{ signal.summary }}</p>
+        {% if signal.why_it_matters %}<p class="feed-why">{{ signal.why_it_matters }}</p>{% endif %}
+        {% if signal.urls %}<p class="feed-links"><a href="{{ signal.urls[0] }}" target="_blank" rel="noopener">原文 ↗</a></p>{% endif %}
+    </div>
+    <footer class="feed-actions">
+        <form hx-post="/feed/action" hx-target="#feed-card-{{ signal.signal_id }}" hx-swap="outerHTML" style="display:inline">
+            <input type="hidden" name="signal_id" value="{{ signal.signal_id }}">
+            <input type="hidden" name="action" value="save">
+            <button type="submit" class="btn btn-save">👍 Save</button>
+        </form>
+        {% if signal.authors %}
+        <form hx-post="/feed/action" hx-target="this" hx-swap="outerHTML" style="display:inline">
+            <input type="hidden" name="signal_id" value="{{ signal.signal_id }}">
+            <input type="hidden" name="action" value="follow_author">
+            <input type="hidden" name="target_key" value="{{ signal.authors[0] }}">
+            <button type="submit" class="btn btn-follow">🔔 Follow {{ signal.authors[0] }}</button>
+        </form>
+        {% endif %}
+        {% if signal.tags %}
+        <form hx-post="/feed/action" hx-target="this" hx-swap="outerHTML" style="display:inline">
+            <input type="hidden" name="signal_id" value="{{ signal.signal_id }}">
+            <input type="hidden" name="action" value="mute_topic">
+            <input type="hidden" name="target_key" value="{{ signal.tags[0] }}">
+            <button type="submit" class="btn btn-mute">🙈 Mute #{{ signal.tags[0] }}</button>
+        </form>
+        {% endif %}
+        <form hx-post="/feed/action" hx-target="#feed-card-{{ signal.signal_id }}" hx-swap="outerHTML" style="display:inline">
+            <input type="hidden" name="signal_id" value="{{ signal.signal_id }}">
+            <input type="hidden" name="action" value="dismiss">
+            <button type="submit" class="btn btn-dismiss">✕</button>
+        </form>
+    </footer>
+</article>
