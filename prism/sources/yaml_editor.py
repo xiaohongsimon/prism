@@ -34,7 +34,7 @@ def _source_key(entry: dict) -> str:
 
 def load_sources_list(path: Path) -> list[dict[str, Any]]:
     """Return the `sources` list from a yaml file (mutation-safe copy)."""
-    data = _yaml().load(Path(path).read_text())
+    data = _yaml().load(Path(path).read_text(encoding="utf-8"))
     return [dict(item) for item in (data.get("sources") or [])]
 
 
@@ -46,7 +46,7 @@ def append_source_block(
     """Append a source entry to `sources.yaml`. Returns True if appended,
     False if an entry with the same canonical key already existed."""
     y = _yaml()
-    data = y.load(Path(path).read_text())
+    data = y.load(Path(path).read_text(encoding="utf-8"))
     seq = data["sources"]
 
     new_key = _source_key(source_config)
@@ -56,12 +56,13 @@ def append_source_block(
 
     # Append preserving ordering
     from ruamel.yaml.comments import CommentedMap
-    entry = CommentedMap(source_config)
+    entry = CommentedMap()
+    entry.update(source_config)
     if category_comment:
         entry.yaml_set_start_comment(category_comment, indent=4)
     seq.append(entry)
 
-    with Path(path).open("w") as f:
+    with Path(path).open("w", encoding="utf-8") as f:
         y.dump(data, f)
     return True
 
@@ -69,7 +70,7 @@ def append_source_block(
 def comment_out_source(path: Path, source_key: str, reason: str = "") -> bool:
     """Comment out the source entry matching `source_key` (e.g. 'hn:best').
     Preserves other entries and comments. Returns True if something was removed."""
-    text = Path(path).read_text()
+    text = Path(path).read_text(encoding="utf-8")
     y = _yaml()
     data = y.load(text)
     seq = data["sources"]
@@ -102,5 +103,5 @@ def comment_out_source(path: Path, source_key: str, reason: str = "") -> bool:
     out_buf = _io.StringIO()
     y.dump(data, out_buf)
     new_text = out_buf.getvalue().rstrip() + "\n\n" + header + "\n" + commented + "\n"
-    Path(path).write_text(new_text)
+    Path(path).write_text(new_text, encoding="utf-8")
     return True
