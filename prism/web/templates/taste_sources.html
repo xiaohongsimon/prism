@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<main class="container" style="max-width: 820px; margin: 2rem auto;">
+  <h1>推荐源审核</h1>
+  <p class="muted">这些源由你的 persona 描述、外部投喂或图扩展自动产出。一键接受/拒绝。</p>
+
+  {% if not groups %}
+    <p>暂无待审核的源提议。</p>
+  {% endif %}
+
+  {% for origin, items in groups.items() %}
+    <h2 style="margin-top:2rem;">{{ origin_label(origin) }}</h2>
+    <ul id="origin-{{ origin }}" style="list-style:none; padding:0;">
+      {% for item in items %}
+        {% include "taste_source_item.html" %}
+      {% endfor %}
+    </ul>
+  {% endfor %}
+</main>
+{% endblock %}

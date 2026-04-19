@@ -1263,3 +1263,98 @@ def persona_submit(
     extract_from_snapshot(conn, snap_id)
 
     return RedirectResponse(url="/taste/sources", status_code=303)
+
+
+# --- Taste / source proposals ---
+
+_ORIGIN_LABELS = {
+    "persona": "来自 persona 描述",
+    "external_feed": "来自外部投喂",
+    "graph_expansion": "来自高权重源的邻居",
+    "gap": "来自话题覆盖缺口",
+    "blindspot": "盲点扫描发现",
+    "manual": "手动添加",
+}
+
+
+def _origin_label(origin: str) -> str:
+    return _ORIGIN_LABELS.get(origin, origin)
+
+
+@web_router.get("/taste/sources", response_class=HTMLResponse)
+def taste_sources_list(request: Request):
+    import yaml as _yaml
+    conn = _db(request)
+    rows = conn.execute(
+        "SELECT id, source_type, source_config_json, display_name, rationale, origin "
+        "FROM source_proposals WHERE status = 'pending' ORDER BY origin, id DESC"
+    ).fetchall()
+
+    groups: dict[str, list[dict]] = {}
+    for r in rows:
+        cfg = _json.loads(r[2])
+        groups.setdefault(r[5], []).append({
+            "id": r[0], "source_type": r[1],
+            "source_config_pretty": _yaml.safe_dump(cfg, allow_unicode=True).strip(),
+            "display_name": r[3], "rationale": r[4],
+        })
+
+    return _render("taste_sources.html", groups=groups, origin_label=_origin_label)
+
+
+@web_router.post("/taste/sources/{proposal_id}/accept", response_class=HTMLResponse)
+def taste_source_accept(proposal_id: int, request: Request):
+    from prism.sources.yaml_editor import append_source_block
+    from prism.config import settings
+
+    conn = _db(request)
+    row = conn.execute(
+        "SELECT source_type, source_config_json, display_name, origin "
+        "FROM source_proposals WHERE id = ? AND status = 'pending'",
+        (proposal_id,),
+    ).fetchone()
+    if not row:
+        return HTMLResponse("", status_code=404)
+
+    cfg = _json.loads(row[1])
+    cfg.setdefault("type", row[0])
+    append_source_block(
+        Path(settings.source_config),
+        source_config=cfg,
+        category_comment=f"proposed via {row[3]}",
+    )
+    conn.execute(
+        "UPDATE source_proposals SET status = 'accepted', "
+        "reviewed_at = datetime('now') WHERE id = ?",
+        (proposal_id,),
+    )
+    conn.execute(
+        "INSERT INTO decision_log (layer, action, reason, context_json) "
+        "VALUES ('recall', 'add_source', ?, ?)",
+        (f"accepted proposal #{proposal_id}", _json.dumps({"config": cfg, "origin": row[3]})),
+    )
+    conn.commit()
+    return HTMLResponse(f'<li class="muted">已接受：{row[2]}</li>')
+
+
+@web_router.post("/taste/sources/{proposal_id}/reject", response_class=HTMLResponse)
+def taste_source_reject(proposal_id: int, request: Request):
+    conn = _db(request)
+    row = conn.execute(
+        "SELECT display_name FROM source_proposals WHERE id = ? AND status = 'pending'",
+        (proposal_id,),
+    ).fetchone()
+    if not row:
+        return HTMLResponse("", status_code=404)
+    conn.execute(
+        "UPDATE source_proposals SET status = 'rejected', "
+        "reviewed_at = datetime('now') WHERE id = ?",
+        (proposal_id,),
+    )
+    conn.execute(
+        "INSERT INTO decision_log (layer, action, reason, context_json) "
+        "VALUES ('recall', 'reject_source', ?, '{}')",
+        (f"rejected proposal #{proposal_id}",),
+    )
+    conn.commit()
+    return HTMLResponse(f'<li class="muted">已拒绝：{row[0]}</li>')
