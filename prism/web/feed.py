@@ -88,3 +88,56 @@ def _set_weight(conn: sqlite3.Connection, dimension: str, key: str, weight: floa
         "weight = excluded.weight, updated_at = excluded.updated_at",
         (dimension, key, weight),
     )
+
+
+from prism.web.pairwise import _get_candidate_pool, _load_pref_weights
+
+
+_DIMENSION_WEIGHT = {
+    "author": 1.0,
+    "tag": 0.6,
+    "source": 0.8,
+    "layer": 0.4,
+}
+
+
+def _score_signal(signal: dict, pref_map: dict[tuple[str, str], float]) -> float:
+    score = signal.get("bt_score", 0.0) + signal.get("signal_strength", 0) * 10.0
+
+    # author
+    for author in signal.get("authors", []) or []:
+        score += pref_map.get(("author", author), 0.0) * _DIMENSION_WEIGHT["author"]
+
+    # tags
+    for tag in signal.get("tags", []) or []:
+        score += pref_map.get(("tag", tag), 0.0) * _DIMENSION_WEIGHT["tag"]
+
+    # source
+    for sk in signal.get("source_keys", []) or []:
+        score += pref_map.get(("source", sk), 0.0) * _DIMENSION_WEIGHT["source"]
+
+    # layer
+    layer = signal.get("signal_layer") or ""
+    if layer:
+        score += pref_map.get(("layer", layer), 0.0) * _DIMENSION_WEIGHT["layer"]
+
+    return score
+
+
+def _recent_feed_excludes(conn: sqlite3.Connection, days: int = 7) -> set[int]:
+    rows = conn.execute(
+        "SELECT DISTINCT signal_id FROM feed_interactions "
+        "WHERE action IN ('save','dismiss') "
+        "AND created_at > datetime('now', ?)",
+        (f"-{days} days",),
+    ).fetchall()
+    return {r[0] for r in rows if r[0]}
+
+
+def rank_feed(conn: sqlite3.Connection, limit: int = 10, offset: int = 0) -> list[dict]:
+    """Return signals ranked by feed_score desc, paged by limit/offset."""
+    excl = _recent_feed_excludes(conn)
+    pool = _get_candidate_pool(conn, extra_exclude_ids=excl)
+    pref_map = _load_pref_weights(conn)
+    ranked = sorted(pool, key=lambda s: _score_signal(s, pref_map), reverse=True)
+    return ranked[offset:offset + limit]

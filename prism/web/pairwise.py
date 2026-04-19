@@ -67,7 +67,10 @@ def _load_pref_weights(conn: sqlite3.Connection) -> dict[tuple[str, str], float]
     return {(r["dimension"], r["key"]): r["weight"] for r in rows}
 
 
-def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
+def _get_candidate_pool(
+    conn: sqlite3.Connection,
+    extra_exclude_ids: set[int] | None = None,
+) -> list[dict]:
     """Get signals eligible for pairwise comparison."""
     # Content must be published within SIGNAL_MAX_AGE_DAYS (not just synced recently)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=SIGNAL_MAX_AGE_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
@@ -87,6 +90,9 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
     for r in rows:
         recent_ids.add(r["signal_a_id"])
         recent_ids.add(r["signal_b_id"])
+
+    if extra_exclude_ids:
+        recent_ids = recent_ids | set(extra_exclude_ids)
 
     # Get current signals — filter by actual content publish date, not signal creation
     signals = conn.execute(
