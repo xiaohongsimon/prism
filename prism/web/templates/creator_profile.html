@@ -53,22 +53,48 @@
   {% endfor %}
   </div>
 
-  {% if pending_items %}
-  <h3 style="margin:24px 0 8px;font-size:14px;color:#888">待分析</h3>
-  <div class="item-list">
+  {# Split pending into two buckets:
+       - ready_items: already transcribed / articlized (article_id present).
+         These are a DONE state for the user; grouping them under "待分析"
+         was misleading.
+       - waiting_items: still need transcription / analysis.
+       For X-style sources (no article pipeline), everything stays in
+       waiting_items — the raw tweet is the only artifact they produce. #}
+  {% set ready_items = [] %}
+  {% set waiting_items = [] %}
   {% for item in pending_items %}
-    {% if source_type in ('youtube', 'xiaoyuzhou') %}
-    <a class="item-card" href="{% if item.article_id %}/article/{{ item.article_id }}{% else %}{{ item.url }}{% endif %}">
+    {% if item.article_id %}{% set _ = ready_items.append(item) %}
+    {% else %}{% set _ = waiting_items.append(item) %}{% endif %}
+  {% endfor %}
+
+  {% if ready_items %}
+  <h3 style="margin:24px 0 8px;font-size:14px;color:#888">{% if source_type == 'xiaoyuzhou' %}已转写{% else %}已转文章{% endif %}</h3>
+  <div class="item-list">
+  {% for item in ready_items %}
+    <a class="item-card" href="/article/{{ item.article_id }}">
       <div class="item-card-title">{{ item.title }}</div>
       {% if item.article_subtitle %}
       <div class="item-card-subtitle">{{ item.article_subtitle }}</div>
       {% endif %}
       <div class="item-card-meta">
         {{ (item.published_at or item.created_at or '')[:10] }}
-        {% if item.article_id %}
-          · {{ item.word_count }} 字
-          <span class="item-card-status has-article">{% if source_type == 'xiaoyuzhou' %}已转写{% else %}已转文章{% endif %}</span>
-        {% elif item.body %}
+        · {{ item.word_count }} 字
+      </div>
+    </a>
+  {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if waiting_items %}
+  <h3 style="margin:24px 0 8px;font-size:14px;color:#888">待分析</h3>
+  <div class="item-list">
+  {% for item in waiting_items %}
+    {% if source_type in ('youtube', 'xiaoyuzhou') %}
+    <a class="item-card" href="{{ item.url }}">
+      <div class="item-card-title">{{ item.title }}</div>
+      <div class="item-card-meta">
+        {{ (item.published_at or item.created_at or '')[:10] }}
+        {% if item.body %}
           <span class="item-card-status">待转换</span>
         {% else %}
           <span class="item-card-status no-subtitle">{% if source_type == 'xiaoyuzhou' %}待转写{% else %}暂无字幕{% endif %}</span>
