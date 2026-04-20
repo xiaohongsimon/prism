@@ -11,6 +11,7 @@ from prism.sources.claude_sessions import ClaudeSessionsAdapter
 from prism.sources.hn_search import HnSearchAdapter
 from prism.sources.reddit import RedditAdapter
 from prism.sources.producthunt import ProductHuntAdapter
+from prism.sources.xiaoyuzhou import XiaoyuzhouAdapter
 
 ADAPTERS = {
     "x": XAdapter,
@@ -26,4 +27,5 @@ ADAPTERS = {
     "model_economics": ModelEconomicsAdapter,
     "git_practice": GitPracticeAdapter,
     "claude_sessions": ClaudeSessionsAdapter,
+    "xiaoyuzhou": XiaoyuzhouAdapter,
 }

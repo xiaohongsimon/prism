@@ -177,6 +177,34 @@ sources:
     display_name: LT+
     key: youtube:ltshijie
     type: youtube
+  - display_name: 知行小酒馆
+    key: xyz:zxxjg
+    pid: 6013f9f58e2f7ee375cf4216
+    type: xiaoyuzhou
+  - display_name: 张小珺Jùn｜商业访谈录
+    key: xyz:zxj
+    pid: 626b46ea9cbbf0451cf5a962
+    type: xiaoyuzhou
+  - display_name: 屠龙之术
+    key: xyz:tlzs
+    pid: 6507bc165c88d2412626b401
+    type: xiaoyuzhou
+  - display_name: 晚点聊 LateTalk
+    key: xyz:wdl
+    pid: 61933ace1b4320461e91fd55
+    type: xiaoyuzhou
+  - display_name: 无人知晓
+    key: xyz:wurenzhixiao
+    pid: 611719d3cb0b82e1df0ad29e
+    type: xiaoyuzhou
+  - display_name: 进击的沈帅波｜进击波财经
+    key: xyz:jinjibojincai
+    pid: 63622ece910f1acc8e48d49e
+    type: xiaoyuzhou
+  - display_name: 半拿铁｜商业沉浮录
+    key: xyz:bannatie
+    pid: 62382c1103bea1ebfffa1c00
+    type: xiaoyuzhou
   - key: economics:models
     type: model_economics
   - key: practice:git
