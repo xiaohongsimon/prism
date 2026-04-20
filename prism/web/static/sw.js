@@ -1,5 +1,5 @@
-const CACHE_NAME = 'prism-v5';
-const PRECACHE = ['/static/style.css?v=23'];
+const CACHE_NAME = 'prism-v6';
+const PRECACHE = ['/static/style.css?v=24'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(PRECACHE)));

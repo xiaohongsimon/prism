@@ -161,10 +161,27 @@ def _recent_feed_excludes(conn: sqlite3.Connection, days: int = 7) -> set[int]:
     return {r[0] for r in rows if r[0]}
 
 
+def _feed_pool(conn: sqlite3.Connection) -> list[dict]:
+    """Candidate pool for feed ranking.
+
+    Feed should NOT inherit pairwise's 'recently compared' blacklist —
+    that list shadows almost every X signal once the user has done
+    meaningful pairwise rounds. Feed also skips the diversity cap, since
+    the feed's own scoring (author/tag/source prefs) is the right way to
+    rebalance — not a hard cap.
+    """
+    excl = _recent_feed_excludes(conn)
+    return _get_candidate_pool(
+        conn,
+        extra_exclude_ids=excl,
+        apply_pairwise_recent_filter=False,
+        apply_diversity_cap=False,
+    )
+
+
 def rank_feed(conn: sqlite3.Connection, limit: int = 10, offset: int = 0) -> list[dict]:
     """Return signals ranked by feed_score desc, paged by limit/offset."""
-    excl = _recent_feed_excludes(conn)
-    pool = _get_candidate_pool(conn, extra_exclude_ids=excl)
+    pool = _feed_pool(conn)
     pref_map = _load_pref_weights(conn)
     ranked = sorted(pool, key=lambda s: _score_signal(s, pref_map), reverse=True)
     return ranked[offset:offset + limit]
@@ -177,8 +194,7 @@ def rank_feed_following(
     followed = get_followed_authors(conn)
     if not followed:
         return []
-    excl = _recent_feed_excludes(conn)
-    pool = _get_candidate_pool(conn, extra_exclude_ids=excl)
+    pool = _feed_pool(conn)
     filtered = [
         s for s in pool
         if any((a or "").lower() in followed for a in (s.get("authors") or []))

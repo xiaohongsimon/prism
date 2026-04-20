@@ -999,6 +999,39 @@ details[open] > .source-group-header::before { content: "▾"; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.feed-author-sub time {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+.feed-channel {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.feed-channel-x { color: #1d9bf0; }
+.feed-channel-youtube { color: #ff4d4d; }
+.feed-channel-arxiv { color: #b31b1b; }
+.feed-channel-hackernews,
+.feed-channel-hn_search { color: #ff6600; }
+.feed-channel-github_trending,
+.feed-channel-github_releases { color: var(--text); }
+.feed-channel-reddit { color: #ff4500; }
+.feed-channel-producthunt { color: #da552f; }
+
+.feed-topic-tag {
+  margin-left: auto;
+  align-self: flex-start;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: rgba(255,255,255,0.04);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  white-space: nowrap;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .feed-meta {
   display: flex;

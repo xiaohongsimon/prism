@@ -70,8 +70,17 @@ def _load_pref_weights(conn: sqlite3.Connection) -> dict[tuple[str, str], float]
 def _get_candidate_pool(
     conn: sqlite3.Connection,
     extra_exclude_ids: set[int] | None = None,
+    apply_pairwise_recent_filter: bool = True,
+    apply_diversity_cap: bool = True,
 ) -> list[dict]:
-    """Get signals eligible for pairwise comparison."""
+    """Get signals eligible for pairwise comparison (and feed ranking).
+
+    apply_pairwise_recent_filter: when True (default) excludes any signal
+    that appeared in the recent pairwise history — appropriate for the
+    pairwise pool (don't re-show same pair). For the feed this should be
+    False; the feed is not a comparison, and excluding every X signal
+    that was ever pairwise-compared starves the pool.
+    """
     # Content must be published within SIGNAL_MAX_AGE_DAYS (not just synced recently)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=SIGNAL_MAX_AGE_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -80,16 +89,17 @@ def _get_candidate_pool(
     blocked_sources = {k for (d, k), w in pref_map.items() if d == "source" and w <= PREF_BLOCK_THRESHOLD}
     blocked_tags = {k for (d, k), w in pref_map.items() if d == "tag" and w <= PREF_BLOCK_THRESHOLD}
 
-    # Get recently shown signal IDs
-    recent_ids = set()
-    rows = conn.execute(
-        "SELECT signal_a_id, signal_b_id FROM pairwise_comparisons "
-        "ORDER BY id DESC LIMIT ?",
-        (RECENT_PAIR_LIMIT,),
-    ).fetchall()
-    for r in rows:
-        recent_ids.add(r["signal_a_id"])
-        recent_ids.add(r["signal_b_id"])
+    # Get recently shown signal IDs (from pairwise history)
+    recent_ids: set[int] = set()
+    if apply_pairwise_recent_filter:
+        rows = conn.execute(
+            "SELECT signal_a_id, signal_b_id FROM pairwise_comparisons "
+            "ORDER BY id DESC LIMIT ?",
+            (RECENT_PAIR_LIMIT,),
+        ).fetchall()
+        for r in rows:
+            recent_ids.add(r["signal_a_id"])
+            recent_ids.add(r["signal_b_id"])
 
     if extra_exclude_ids:
         recent_ids = recent_ids | set(extra_exclude_ids)
@@ -332,7 +342,7 @@ def _get_candidate_pool(
             p["card_channel"] = p["source_keys"][0] if p["source_keys"] else ""
 
     # Cap any single source type to ensure diversity — repeat until stable
-    if pool:
+    if pool and apply_diversity_cap:
         from collections import Counter
         for _ in range(3):  # iterate to stabilize
             type_counts = Counter()

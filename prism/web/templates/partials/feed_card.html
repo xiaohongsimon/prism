@@ -1,22 +1,28 @@
+{% set pub = signal.published_at or signal.created_at %}
+{% set pub_date = pub[:10] if pub else '' %}
+{% set channel = signal.card_channel or (signal.source_keys[0] if signal.source_keys else '') %}
 <article class="feed-card" id="feed-card-{{ signal.signal_id }}">
     <header class="feed-card-header">
         {% if signal.card_avatar %}
         <img class="feed-avatar" src="{{ signal.card_avatar }}" alt=""
              onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-        <div class="feed-avatar-fallback" style="display:none">{{ (signal.card_name or '?')[:1] }}</div>
+        <div class="feed-avatar-fallback" style="display:none">{{ (signal.card_name or channel or '?')[:1] }}</div>
         {% else %}
-        <div class="feed-avatar-fallback">{{ (signal.card_name or '?')[:1] }}</div>
+        <div class="feed-avatar-fallback">{{ (signal.card_name or channel or '?')[:1] }}</div>
         {% endif %}
         <div class="feed-author-block">
             {% if signal.source_keys %}
-            <a class="feed-author-name" href="/creator/{{ signal.source_keys[0] }}">{{ signal.card_name or signal.authors[0] if signal.authors else signal.source_keys[0] }}</a>
+            <a class="feed-author-name" href="/creator/{{ signal.source_keys[0] }}">{{ signal.card_name or (signal.authors[0] if signal.authors else signal.source_keys[0]) }}</a>
             {% else %}
             <span class="feed-author-name">{{ signal.card_name or (signal.authors[0] if signal.authors else '') }}</span>
             {% endif %}
             <span class="feed-author-sub">
-                {% if signal.authors %}@{{ signal.authors[0] }} · {% endif %}{{ signal.topic_label }}
+                {% if signal.authors %}@{{ signal.authors[0] }}{% endif %}
+                {% if channel %}{% if signal.authors %} · {% endif %}<span class="feed-channel feed-channel-{{ (signal.source_types[0] if signal.source_types else 'other')|lower }}">{{ channel }}</span>{% endif %}
+                {% if pub_date %} · <time datetime="{{ pub }}">{{ pub_date }}</time>{% endif %}
             </span>
         </div>
+        {% if signal.topic_label %}<span class="feed-topic-tag">{{ signal.topic_label }}</span>{% endif %}
     </header>
     <div class="feed-body">
         <p class="feed-summary">{{ signal.content_zh or signal.summary }}</p>
