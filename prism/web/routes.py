@@ -243,7 +243,6 @@ def index(request: Request):
 
 from prism.web.feed import (
     rank_feed,
-    rank_feed_following,
     record_feed_action,
     get_followed_authors,
 )
@@ -252,25 +251,27 @@ from prism.web.feed import (
 @web_router.get("/feed", response_class=HTMLResponse)
 def feed_index(request: Request):
     tpl = _jinja_env.get_template("feed.html")
-    return HTMLResponse(tpl.render(next_offset=0, view="all"))
+    return HTMLResponse(tpl.render(next_offset=0))
 
 
 @web_router.get("/feed/following", response_class=HTMLResponse)
 def feed_following_index(request: Request):
-    tpl = _jinja_env.get_template("feed.html")
-    return HTMLResponse(tpl.render(next_offset=0, view="following"))
+    """Creator-level list sorted by preference score → each row links to
+    the creator's profile page. This replaces the earlier signal-flow
+    view — users wanted a list of *who* they follow, not a merged feed."""
+    conn = _db(request)
+    creators = _build_creator_list(conn)
+    tpl = _jinja_env.get_template("feed_following.html")
+    return HTMLResponse(tpl.render(creators=creators))
 
 
 @web_router.get("/feed/more", response_class=HTMLResponse)
-def feed_more(request: Request, offset: int = 0, limit: int = 10, view: str = "all"):
+def feed_more(request: Request, offset: int = 0, limit: int = 10):
     conn = _db(request)
-    if view == "following":
-        rows = rank_feed_following(conn, limit=limit, offset=offset)
-    else:
-        rows = rank_feed(conn, limit=limit, offset=offset)
+    rows = rank_feed(conn, limit=limit, offset=offset)
     if not rows:
         tpl = _jinja_env.get_template("partials/feed_empty.html")
-        return HTMLResponse(tpl.render(view=view))
+        return HTMLResponse(tpl.render(view="all"))
     followed = get_followed_authors(conn)
     card_tpl = _jinja_env.get_template("partials/feed_card.html")
     html = "".join(

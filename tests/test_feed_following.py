@@ -1,5 +1,4 @@
-"""Tests for follow-author detection and the following feed."""
-import json
+"""Tests for follow-author detection used by feed-card follow buttons."""
 import sqlite3
 
 from prism.db import init_db
@@ -10,31 +9,6 @@ def _mkconn():
     conn.row_factory = sqlite3.Row
     init_db(conn)
     return conn
-
-
-def _seed(conn, sid, author, source_key, source_type, handle):
-    conn.execute(
-        "INSERT OR IGNORE INTO sources (id, source_key, type, handle) VALUES (?, ?, ?, ?)",
-        (sid, source_key, source_type, handle),
-    )
-    conn.execute(
-        "INSERT OR IGNORE INTO clusters (id, date, topic_label) VALUES (?, '2026-04-19', 'AI')",
-        (sid,),
-    )
-    conn.execute(
-        "INSERT INTO signals (id, cluster_id, summary, signal_layer, signal_strength, "
-        "tags_json, is_current, analysis_type) "
-        "VALUES (?, ?, ?, 'actionable', 3, ?, 1, 'daily')",
-        (sid, sid, f"s{sid}", json.dumps(["ai"])),
-    )
-    conn.execute(
-        "INSERT INTO raw_items (id, source_id, url, author, body) VALUES (?, ?, ?, ?, 't')",
-        (sid, sid, f"https://x/{sid}", author),
-    )
-    conn.execute(
-        "INSERT INTO cluster_items (cluster_id, raw_item_id) VALUES (?, ?)",
-        (sid, sid),
-    )
 
 
 def test_get_followed_authors_merges_sources_yaml_and_prefs():
@@ -61,26 +35,3 @@ def test_get_followed_authors_merges_sources_yaml_and_prefs():
     assert "explicitfollow" in followed
     assert "zzz" not in followed  # disabled
     assert "weaksignal" not in followed  # below threshold
-
-
-def test_rank_feed_following_filters_to_followed_authors():
-    from prism.web.feed import rank_feed_following
-
-    conn = _mkconn()
-    _seed(conn, 1, "karpathy", "x:karpathy", "x", "karpathy")
-    _seed(conn, 2, "random", "x:random", "x", "random")
-    _seed(conn, 3, "simonw", "x:simonw", "x", "simonw")
-    # Disable one of them to confirm it is excluded.
-    conn.execute("UPDATE sources SET enabled = 0 WHERE handle = 'random'")
-    conn.commit()
-
-    rows = rank_feed_following(conn, limit=10, offset=0)
-    ids = {r["signal_id"] for r in rows}
-    assert ids == {1, 3}
-
-
-def test_rank_feed_following_empty_when_no_follows():
-    from prism.web.feed import rank_feed_following
-
-    conn = _mkconn()
-    assert rank_feed_following(conn) == []

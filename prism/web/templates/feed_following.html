@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}关注 · Prism{% endblock %}
+{% block content %}
+<div class="feed-container">
+    <nav class="feed-nav">
+        <a href="/feed">Feed</a>
+        <a href="/feed/following" class="active">关注</a>
+        <a href="/feed/saved">Saved</a>
+        <a href="/pairwise">Pairwise 校准</a>
+        <a href="/pairwise/sources">Sources</a>
+        <a href="/taste/sources">Proposals</a>
+        <a href="/persona">Persona</a>
+    </nav>
+
+    <div class="follow-list">
+        {% for c in creators %}
+        <a class="tl-row" href="/creator/{{ c.source_key }}">
+            {% if c.avatar %}
+            <img class="tl-avatar" src="{{ c.avatar }}" alt="" loading="lazy"
+                 onerror="this.outerHTML='<div class=tl-avatar-fb>{{ c.display_name[0] if c.display_name else '?' }}</div>'">
+            {% else %}
+            <div class="tl-avatar-fb">{{ c.display_name[0] if c.display_name else '?' }}</div>
+            {% endif %}
+            <div class="tl-body">
+                <div class="tl-header">
+                    <span class="tl-name">{{ c.display_name }}</span>
+                    <span class="tl-icon">{{ c.icon }}</span>
+                    {% if c.pref_score != 0 %}
+                    <span class="tl-score {% if c.pref_score > 0 %}positive{% elif c.pref_score < 0 %}negative{% endif %}">
+                        {{ '%+.1f'|format(c.pref_score) }}
+                    </span>
+                    {% endif %}
+                    <span class="tl-count muted">· {{ c.item_count }}</span>
+                </div>
+                {% if c.recent_items %}
+                <div class="tl-preview">
+                    {{ c.recent_items[0].article_subtitle
+                       or c.recent_items[0].title
+                       or (c.recent_items[0].body[:80] if c.recent_items[0].body else '') }}
+                </div>
+                {% endif %}
+            </div>
+            <span class="tl-time muted">{{ c.latest[:10] if c.latest else '' }}</span>
+        </a>
+        {% else %}
+        <p class="muted" style="padding:2rem;text-align:center">
+            还没有关注的博主。去 <a href="/pairwise/sources">Sources</a> 添加。
+        </p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

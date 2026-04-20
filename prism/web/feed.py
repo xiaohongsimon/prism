@@ -187,18 +187,3 @@ def rank_feed(conn: sqlite3.Connection, limit: int = 10, offset: int = 0) -> lis
     return ranked[offset:offset + limit]
 
 
-def rank_feed_following(
-    conn: sqlite3.Connection, limit: int = 10, offset: int = 0
-) -> list[dict]:
-    """Same as rank_feed but filtered to signals whose authors are followed."""
-    followed = get_followed_authors(conn)
-    if not followed:
-        return []
-    pool = _feed_pool(conn)
-    filtered = [
-        s for s in pool
-        if any((a or "").lower() in followed for a in (s.get("authors") or []))
-    ]
-    pref_map = _load_pref_weights(conn)
-    ranked = sorted(filtered, key=lambda s: _score_signal(s, pref_map), reverse=True)
-    return ranked[offset:offset + limit]
