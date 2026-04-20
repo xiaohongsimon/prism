@@ -702,3 +702,8 @@ sources:
     handle: me
     feed: subscriptions
     count: 30
+  - type: github_home
+    key: github_home:fyp
+    display_name: GitHub For You (follows' activity)
+    handle: me
+    count: 50

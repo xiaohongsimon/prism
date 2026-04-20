@@ -2,6 +2,7 @@ from prism.sources.x import XAdapter
 from prism.sources.x_home import XHomeAdapter
 from prism.sources.arxiv import ArxivAdapter
 from prism.sources.github import GithubAdapter
+from prism.sources.github_home import GithubHomeAdapter
 from prism.sources.follow_builders import FollowBuildersAdapter
 from prism.sources.hackernews import HackernewsAdapter
 from prism.sources.github_releases import GithubReleasesAdapter
@@ -20,6 +21,7 @@ ADAPTERS = {
     "x_home": XHomeAdapter,
     "arxiv": ArxivAdapter,
     "github_trending": GithubAdapter,
+    "github_home": GithubHomeAdapter,
     "follow_builders": FollowBuildersAdapter,
     "hackernews": HackernewsAdapter,
     "hn_search": HnSearchAdapter,
