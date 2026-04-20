@@ -8,7 +8,33 @@ source-weight logic see feed signals transparently.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
+
+
+_MD_STRIP_RE = re.compile(r'(\*\*|__|[*_`~#>]|\[([^\]]+)\]\([^)]+\))')
+_SENT_SPLIT_RE = re.compile(r'[。！？!?\n]')
+
+
+def compress_headline(text: str, max_len: int = 50) -> str:
+    """Condense a long summary into a one-glance feed headline.
+
+    - Strip common markdown markers and link wrappers (keep link text).
+    - Take the first sentence (split on 。！？!? or newline).
+    - Hard-truncate to max_len chars with ellipsis if still too long.
+    """
+    if not text:
+        return ""
+    # Replace markdown links [text](url) with just the text, then strip other markers.
+    t = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+    t = re.sub(r'[*_`~#>]+', '', t)
+    # First sentence.
+    head = _SENT_SPLIT_RE.split(t, maxsplit=1)[0].strip()
+    if not head:
+        head = t.strip()
+    if len(head) <= max_len:
+        return head
+    return head[:max_len].rstrip() + '…'
 
 # Reuse existing pairwise helpers so feed feedback hits the same learning path.
 from prism.web.pairwise import (
@@ -41,21 +67,25 @@ def record_feed_action(
     target_key: str = "",
     response_time_ms: int = 0,
     context: dict | None = None,
-) -> None:
+) -> int:
     """Record a feed interaction and update learning state.
 
     - save / dismiss → BT nudge on signal_scores + delta across all
       preference dimensions of the signal.
     - follow_author / unfollow_author → single author-dimension weight.
     - mute_topic / unmute_topic → single tag-dimension weight.
+
+    Returns the feed_interactions.id of the row just inserted — callers
+    use this as the group_id when materializing CTR training samples.
     """
-    conn.execute(
+    cur = conn.execute(
         "INSERT INTO feed_interactions "
         "(signal_id, action, target_key, response_time_ms, context_json) "
         "VALUES (?, ?, ?, ?, ?)",
         (signal_id, action, target_key, response_time_ms,
          json.dumps(context or {}, ensure_ascii=False)),
     )
+    interaction_id = cur.lastrowid
 
     if action in ("save", "dismiss"):
         _ensure_signal_score(conn, signal_id)
@@ -78,6 +108,7 @@ def record_feed_action(
         _set_weight(conn, "tag", target_key, 0.0)
 
     conn.commit()
+    return int(interaction_id) if interaction_id is not None else 0
 
 
 def _set_weight(conn: sqlite3.Connection, dimension: str, key: str, weight: float) -> None:
@@ -241,12 +272,20 @@ def rank_feed(conn: sqlite3.Connection, limit: int = 10, offset: int = 0) -> lis
     """Return signals ranked by feed_score desc with channel-diversity
     interleaving, then paged by limit/offset.
 
+    Each returned signal carries a 'feed_score' key — the heuristic score
+    used for ordering. Impression logging stores this so the CTR model
+    can learn a residual over the current heuristic.
+
     Diversify BEFORE paging so offset/limit slices through a stable
     interleaved list — consecutive pages remain consistent.
     """
     pool = _feed_pool(conn)
     pref_map = _load_pref_weights(conn)
-    ranked = sorted(pool, key=lambda s: _score_signal(s, pref_map), reverse=True)
+    scored = [(s, _score_signal(s, pref_map)) for s in pool]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    for s, sc in scored:
+        s["feed_score"] = sc
+    ranked = [s for s, _ in scored]
     diversified = _diversify_by_channel(ranked)
     return diversified[offset:offset + limit]
 

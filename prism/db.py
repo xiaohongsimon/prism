@@ -355,6 +355,58 @@ def init_db(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_feed_interactions_action_created
             ON feed_interactions(action, created_at);
 
+        -- Per-item feedback from creator profile pages. Distinct from
+        -- feed_interactions because creator-page items are raw_items, not
+        -- clustered signals (signal_id is meaningless here).
+        CREATE TABLE IF NOT EXISTS item_interactions (
+            item_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (item_id, action)
+        );
+
+        -- Impression log: every signal served in /feed/more, grouped by
+        -- session (rolling 30-min window of scrolls). Powers skip-above
+        -- negative sampling for the CTR ranking model.
+        CREATE TABLE IF NOT EXISTS feed_impressions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trace_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            signal_id INTEGER NOT NULL,
+            rank_in_trace INTEGER NOT NULL,
+            rank_in_session INTEGER NOT NULL,
+            feed_score REAL NOT NULL DEFAULT 0,
+            served_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_impr_session
+            ON feed_impressions(session_id, rank_in_session);
+        CREATE INDEX IF NOT EXISTS idx_impr_signal_time
+            ON feed_impressions(signal_id, served_at);
+        CREATE INDEX IF NOT EXISTS idx_impr_served
+            ON feed_impressions(served_at);
+
+        -- CTR training samples — materialized after every save event.
+        -- group_id == save_event_id (feed_interactions.id for the save).
+        -- One row per (group_id, signal_id). Incremental: a background
+        -- task writes the positive + skip-above negatives right after
+        -- the save happens, so we never need an offline rebuild step.
+        CREATE TABLE IF NOT EXISTS ctr_samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id INTEGER NOT NULL,
+            signal_id INTEGER NOT NULL,
+            label INTEGER NOT NULL,              -- 1 = save, 0 = skip-above
+            session_id TEXT NOT NULL,
+            rank_in_session INTEGER NOT NULL,
+            feed_score REAL NOT NULL DEFAULT 0,
+            served_at TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(group_id, signal_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_ctr_samples_group
+            ON ctr_samples(group_id);
+        CREATE INDEX IF NOT EXISTS idx_ctr_samples_signal
+            ON ctr_samples(signal_id);
+
         -- Quality Watchdog: periodic pipeline health snapshots & detected anomalies.
         CREATE TABLE IF NOT EXISTS quality_snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
