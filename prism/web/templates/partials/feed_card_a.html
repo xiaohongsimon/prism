@@ -1,0 +1,22 @@
+{# A — 极简一行流：作者 + 渠道 + 时间 · 一句话标题（≤50 字） · hover 出 actions #}
+{% set pub = signal.published_at or signal.created_at %}
+{% set pub_date = pub[:10] if pub else '' %}
+{% set channel = signal.card_channel or (signal.source_keys[0] if signal.source_keys else '') %}
+{% set headline = signal.feed_headline or signal.summary %}
+<article class="feed-card variant-a" id="feed-card-{{ signal.signal_id }}">
+    <div class="a-row">
+        <span class="a-meta">
+            {% if signal.authors %}<span class="a-author">@{{ signal.authors[0] }}</span>{% endif %}
+            {% if channel %}<span class="a-channel feed-channel-{{ (signal.source_types[0] if signal.source_types else 'other')|lower }}">{{ channel }}</span>{% endif %}
+            {% if pub_date %}<time class="a-time" datetime="{{ pub }}">{{ pub_date }}</time>{% endif %}
+        </span>
+        <span class="a-title">
+            {% if signal.urls %}
+            <a href="{{ signal.urls[0] }}" target="_blank" rel="noopener">{{ headline }}</a>
+            {% else %}{{ headline }}{% endif %}
+        </span>
+        <span class="a-actions feed-actions compact hover-reveal">
+            {% with compact=true %}{% include 'partials/feed_card_actions.html' %}{% endwith %}
+        </span>
+    </div>
+</article>

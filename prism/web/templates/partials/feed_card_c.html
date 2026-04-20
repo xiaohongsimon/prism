@@ -1,0 +1,36 @@
+{# C — 微博风：圆头像 + 元信息 + 一句话标题（≤50 字）· hover 出 actions #}
+{% set pub = signal.published_at or signal.created_at %}
+{% set pub_date = pub[:10] if pub else '' %}
+{% set channel = signal.card_channel or (signal.source_keys[0] if signal.source_keys else '') %}
+{% set headline = signal.feed_headline or signal.summary %}
+<article class="feed-card variant-c" id="feed-card-{{ signal.signal_id }}">
+    <header class="feed-card-header">
+        {% if signal.card_avatar %}
+        <img class="feed-avatar" src="{{ signal.card_avatar }}" alt=""
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div class="feed-avatar-fallback" style="display:none">{{ (signal.card_name or channel or '?')[:1] }}</div>
+        {% else %}
+        <div class="feed-avatar-fallback">{{ (signal.card_name or channel or '?')[:1] }}</div>
+        {% endif %}
+        <div class="feed-author-block">
+            {% if signal.source_keys %}
+            <a class="feed-author-name" href="/creator/{{ signal.source_keys[0] }}">{{ signal.card_name or (signal.authors[0] if signal.authors else signal.source_keys[0]) }}</a>
+            {% else %}
+            <span class="feed-author-name">{{ signal.card_name or (signal.authors[0] if signal.authors else '') }}</span>
+            {% endif %}
+            <span class="feed-author-sub">
+                {% if signal.authors %}@{{ signal.authors[0] }}{% endif %}
+                {% if channel %}{% if signal.authors %} · {% endif %}<span class="feed-channel feed-channel-{{ (signal.source_types[0] if signal.source_types else 'other')|lower }}">{{ channel }}</span>{% endif %}
+                {% if pub_date %} · <time datetime="{{ pub }}">{{ pub_date }}</time>{% endif %}
+            </span>
+        </div>
+    </header>
+    <div class="feed-body">
+        <p class="feed-summary">
+            {% if signal.urls %}<a href="{{ signal.urls[0] }}" target="_blank" rel="noopener">{{ headline }}</a>{% else %}{{ headline }}{% endif %}
+        </p>
+    </div>
+    <footer class="feed-actions compact hover-reveal">
+        {% with compact=true %}{% include 'partials/feed_card_actions.html' %}{% endwith %}
+    </footer>
+</article>

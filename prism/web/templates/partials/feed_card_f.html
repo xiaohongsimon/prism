@@ -1,0 +1,30 @@
+{# F — 徽章式：左上单个徽章 + 一句话标题（≤50 字）+ 元信息 · hover 出 actions #}
+{% set pub = signal.published_at or signal.created_at %}
+{% set pub_date = pub[:10] if pub else '' %}
+{% set channel = signal.card_channel or (signal.source_keys[0] if signal.source_keys else '') %}
+{% set stype = (signal.source_types[0] if signal.source_types else 'other')|lower %}
+{% set layer = signal.signal_layer or '' %}
+{% set headline = signal.feed_headline or signal.summary %}
+<article class="feed-card variant-f" id="feed-card-{{ signal.signal_id }}">
+    <span class="f-badge f-badge-{{ layer or stype }}">
+        {% if layer == 'actionable' %}⚡ Actionable
+        {% elif layer == 'insight' %}💡 Insight
+        {% elif layer == 'context' %}📖 Context
+        {% elif stype in ('hackernews','hn','hn_search') %}🔥 HN
+        {% elif stype == 'youtube' %}▶ YouTube
+        {% elif stype in ('github','github_releases','github_trending') %}⭐ GitHub
+        {% elif stype == 'arxiv' %}📄 arXiv
+        {% elif stype == 'x' %}𝕏
+        {% else %}{{ channel }}{% endif %}
+    </span>
+    <h3 class="f-title">
+        {% if signal.urls %}<a href="{{ signal.urls[0] }}" target="_blank" rel="noopener">{{ headline }}</a>{% else %}{{ headline }}{% endif %}
+    </h3>
+    <div class="f-meta">
+        {% if signal.authors %}@{{ signal.authors[0] }}{% endif %}
+        {% if pub_date %} · <time datetime="{{ pub }}">{{ pub_date }}</time>{% endif %}
+    </div>
+    <footer class="feed-actions compact hover-reveal">
+        {% with compact=true %}{% include 'partials/feed_card_actions.html' %}{% endwith %}
+    </footer>
+</article>
