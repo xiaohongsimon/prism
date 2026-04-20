@@ -1,0 +1,39 @@
+{# Tweet — X 原推文：头像 + 姓名 + 全文（不压缩，保留换行）#}
+{% set pub = signal.published_at or signal.created_at %}
+{% set pub_date = pub[:10] if pub else '' %}
+{% set name = signal.tweet_name or (signal.authors[0] if signal.authors else '') %}
+{% set handle = signal.tweet_handle or (signal.authors[0] if signal.authors else '') %}
+<article class="feed-card variant-tweet" id="feed-card-{{ signal.signal_id }}">
+    <header class="tw-header">
+        {% if signal.tweet_avatar %}
+        <img class="tw-avatar" src="{{ signal.tweet_avatar }}" alt=""
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div class="tw-avatar-fallback" style="display:none">{{ name[:1]|upper }}</div>
+        {% else %}
+        <div class="tw-avatar-fallback">{{ name[:1]|upper }}</div>
+        {% endif %}
+        <div class="tw-author">
+            <span class="tw-name">
+                {% if signal.source_keys %}
+                <a href="/creator/{{ signal.source_keys[0] }}">{{ name }}</a>
+                {% else %}{{ name }}{% endif %}
+                {% if signal.tweet_verified %}<span class="tw-verified" title="Verified">✓</span>{% endif %}
+            </span>
+            <span class="tw-meta">
+                {% if handle %}@{{ handle }}{% endif %}
+                {% if pub_date %} · <time datetime="{{ pub }}">{{ pub_date }}</time>{% endif %}
+            </span>
+        </div>
+    </header>
+    <div class="tw-body">{{ signal.tweet_text or signal.content_zh or signal.summary }}</div>
+    {% if signal.quoted_tweet and signal.quoted_tweet.text %}
+    <blockquote class="tw-quoted">
+        {% if signal.quoted_tweet.name %}<div class="tw-quoted-author">{{ signal.quoted_tweet.name }} {% if signal.quoted_tweet.handle %}<span>@{{ signal.quoted_tweet.handle }}</span>{% endif %}</div>{% endif %}
+        <div class="tw-quoted-text">{{ signal.quoted_tweet.text }}</div>
+    </blockquote>
+    {% endif %}
+    {% if signal.urls %}<a class="tw-link" href="{{ signal.urls[0] }}" target="_blank" rel="noopener">在 X 上查看 ↗</a>{% endif %}
+    <footer class="feed-actions compact hover-reveal">
+        {% with compact=true %}{% include 'partials/feed_card_actions.html' %}{% endwith %}
+    </footer>
+</article>

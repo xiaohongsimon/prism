@@ -1,0 +1,24 @@
+{# Article — 长文章 / HN / arxiv / GitHub / Reddit / PH：标题 + 摘要 #}
+{% set pub = signal.published_at or signal.created_at %}
+{% set pub_date = pub[:10] if pub else '' %}
+{% set stype = (signal.source_types[0] if signal.source_types else 'other')|lower %}
+{% set channel = signal.card_channel or (signal.source_keys[0] if signal.source_keys else '') %}
+{% set first_url = signal.urls[0] if signal.urls else '' %}
+{% set title = signal.summary %}
+{% set snippet = signal.content_zh %}
+<article class="feed-card variant-article" id="feed-card-{{ signal.signal_id }}">
+    <div class="art-meta-top">
+        {% if channel %}<span class="feed-channel feed-channel-{{ stype }}">{{ channel }}</span>{% endif %}
+        {% if signal.authors %} · <span class="art-author">{% if signal.source_keys %}<a href="/creator/{{ signal.source_keys[0] }}">{{ signal.authors[0] }}</a>{% else %}{{ signal.authors[0] }}{% endif %}</span>{% endif %}
+        {% if pub_date %} · <time datetime="{{ pub }}">{{ pub_date }}</time>{% endif %}
+        {% if signal.topic_label %} · <span class="feed-topic-tag">{{ signal.topic_label }}</span>{% endif %}
+    </div>
+    <h3 class="art-title">
+        {% if first_url %}<a href="{{ first_url }}" target="_blank" rel="noopener">{{ title }}</a>{% else %}{{ title }}{% endif %}
+    </h3>
+    {% if snippet and snippet != title %}<p class="art-snippet">{{ snippet }}</p>{% endif %}
+    {% if signal.why_it_matters %}<p class="art-why">💡 {{ signal.why_it_matters }}</p>{% endif %}
+    <footer class="feed-actions compact hover-reveal">
+        {% with compact=true %}{% include 'partials/feed_card_actions.html' %}{% endwith %}
+    </footer>
+</article>

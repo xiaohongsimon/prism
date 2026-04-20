@@ -1,0 +1,33 @@
+{# Video — YouTube：封面 + 标题 + AI 总结要点 + meta #}
+{% set pub = signal.published_at or signal.created_at %}
+{% set pub_date = pub[:10] if pub else '' %}
+{% set first_url = signal.urls[0] if signal.urls else '' %}
+{% set yt_id = '' %}
+{% if 'youtube.com/watch?v=' in first_url %}{% set yt_id = first_url.split('watch?v=')[1].split('&')[0] %}
+{% elif 'youtu.be/' in first_url %}{% set yt_id = first_url.split('youtu.be/')[1].split('?')[0] %}{% endif %}
+{% set title = signal.summary %}
+{% set snippet = signal.content_zh %}
+<article class="feed-card variant-video" id="feed-card-{{ signal.signal_id }}">
+    {% if yt_id and not in_creator_profile %}
+    <a class="vid-cover-link" href="{{ first_url }}" target="_blank" rel="noopener">
+        <div class="vid-cover" style="background-image:url('https://i.ytimg.com/vi/{{ yt_id }}/hqdefault.jpg')">
+            <span class="vid-play">▶</span>
+        </div>
+    </a>
+    {% endif %}
+    <div class="vid-body">
+        <div class="vid-meta-top">
+            <span class="feed-channel feed-channel-youtube">YouTube</span>
+            {% if signal.authors %} · <span class="vid-channel-name">{% if signal.source_keys %}<a href="/creator/{{ signal.source_keys[0] }}">{{ signal.authors[0] }}</a>{% else %}{{ signal.authors[0] }}{% endif %}</span>{% endif %}
+            {% if pub_date %} · <time datetime="{{ pub }}">{{ pub_date }}</time>{% endif %}
+        </div>
+        <h3 class="vid-title">
+            {% if first_url %}<a href="{{ first_url }}" target="_blank" rel="noopener">{{ title }}</a>{% else %}{{ title }}{% endif %}
+        </h3>
+        {% if snippet and snippet != title %}<p class="vid-snippet">{{ snippet }}</p>{% endif %}
+        {% if signal.why_it_matters %}<p class="vid-why">💡 {{ signal.why_it_matters }}</p>{% endif %}
+    </div>
+    <footer class="feed-actions compact hover-reveal">
+        {% with compact=true %}{% include 'partials/feed_card_actions.html' %}{% endwith %}
+    </footer>
+</article>

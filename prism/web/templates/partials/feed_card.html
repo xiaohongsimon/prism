@@ -1,66 +1,12 @@
-{% set pub = signal.published_at or signal.created_at %}
-{% set pub_date = pub[:10] if pub else '' %}
-{% set channel = signal.card_channel or (signal.source_keys[0] if signal.source_keys else '') %}
-<article class="feed-card" id="feed-card-{{ signal.signal_id }}">
-    <header class="feed-card-header">
-        {% if signal.card_avatar %}
-        <img class="feed-avatar" src="{{ signal.card_avatar }}" alt=""
-             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-        <div class="feed-avatar-fallback" style="display:none">{{ (signal.card_name or channel or '?')[:1] }}</div>
-        {% else %}
-        <div class="feed-avatar-fallback">{{ (signal.card_name or channel or '?')[:1] }}</div>
-        {% endif %}
-        <div class="feed-author-block">
-            {% if signal.source_keys %}
-            <a class="feed-author-name" href="/creator/{{ signal.source_keys[0] }}">{{ signal.card_name or (signal.authors[0] if signal.authors else signal.source_keys[0]) }}</a>
-            {% else %}
-            <span class="feed-author-name">{{ signal.card_name or (signal.authors[0] if signal.authors else '') }}</span>
-            {% endif %}
-            <span class="feed-author-sub">
-                {% if signal.authors %}@{{ signal.authors[0] }}{% endif %}
-                {% if channel %}{% if signal.authors %} · {% endif %}<span class="feed-channel feed-channel-{{ (signal.source_types[0] if signal.source_types else 'other')|lower }}">{{ channel }}</span>{% endif %}
-                {% if pub_date %} · <time datetime="{{ pub }}">{{ pub_date }}</time>{% endif %}
-            </span>
-        </div>
-        {% if signal.topic_label %}<span class="feed-topic-tag">{{ signal.topic_label }}</span>{% endif %}
-    </header>
-    <div class="feed-body">
-        <p class="feed-summary">{{ signal.content_zh or signal.summary }}</p>
-        {% if signal.why_it_matters %}<p class="feed-why">💡 {{ signal.why_it_matters }}</p>{% endif %}
-        {% if signal.urls %}<p class="feed-links"><a href="{{ signal.urls[0] }}" target="_blank" rel="noopener">原文 ↗</a></p>{% endif %}
-    </div>
-    <footer class="feed-actions">
-        <form hx-post="/feed/action" hx-target="#feed-card-{{ signal.signal_id }}" hx-swap="outerHTML" style="display:inline">
-            <input type="hidden" name="signal_id" value="{{ signal.signal_id }}">
-            <input type="hidden" name="action" value="save">
-            <button type="submit" class="btn btn-save">👍 Save</button>
-        </form>
-        {% if signal.authors %}
-            {% set author0 = signal.authors[0] %}
-            {% set is_followed = followed_authors and author0 and author0.lower() in followed_authors %}
-            {% if is_followed %}
-            <span class="btn btn-following">✓ Following {{ author0 }}</span>
-            {% else %}
-            <form hx-post="/feed/action" hx-target="this" hx-swap="outerHTML" style="display:inline">
-                <input type="hidden" name="signal_id" value="{{ signal.signal_id }}">
-                <input type="hidden" name="action" value="follow_author">
-                <input type="hidden" name="target_key" value="{{ author0 }}">
-                <button type="submit" class="btn btn-follow">🔔 Follow {{ author0 }}</button>
-            </form>
-            {% endif %}
-        {% endif %}
-        {% if signal.tags %}
-        <form hx-post="/feed/action" hx-target="this" hx-swap="outerHTML" style="display:inline">
-            <input type="hidden" name="signal_id" value="{{ signal.signal_id }}">
-            <input type="hidden" name="action" value="mute_topic">
-            <input type="hidden" name="target_key" value="{{ signal.tags[0] }}">
-            <button type="submit" class="btn btn-mute">🙈 Mute #{{ signal.tags[0] }}</button>
-        </form>
-        {% endif %}
-        <form hx-post="/feed/action" hx-target="#feed-card-{{ signal.signal_id }}" hx-swap="outerHTML" style="display:inline">
-            <input type="hidden" name="signal_id" value="{{ signal.signal_id }}">
-            <input type="hidden" name="action" value="dismiss">
-            <button type="submit" class="btn btn-dismiss">✕</button>
-        </form>
-    </footer>
-</article>
+{# Dispatcher — pick card variant by source_type.
+   - X (has tweet_text) → tweet card, raw content preserved
+   - YouTube / video → video card with cover
+   - Everything else (HN / arxiv / GitHub / Reddit / PH / …) → article card
+#}
+{% if signal.tweet_text %}
+{% include 'partials/feed_card_tweet.html' %}
+{% elif signal.is_video %}
+{% include 'partials/feed_card_video.html' %}
+{% else %}
+{% include 'partials/feed_card_article.html' %}
+{% endif %}
