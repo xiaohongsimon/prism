@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Decision Log · this week — Prism{% endblock %}
+{% block meta %}
+<meta name="description" content="Every autonomous decision Prism made in the last 7 days — source reweighting, new-source trials, anomaly flags. Fully audit-grade and public.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Prism">
+<meta property="og:title" content="Prism Decision Log — this week">
+<meta property="og:description" content="What Prism did on its own this week, with reasons. {{ total }} decisions across {{ counts | length }} action types.">
+<meta property="og:image" content="https://prism.simon-ai.net/static/icon-192.png">
+<meta name="twitter:card" content="summary">
+{% endblock %}
+{% block content %}
+<style>
+  .decisions { max-width: 860px; margin: 0 auto; padding: 40px 20px 80px; }
+  .decisions h1 { font-family: 'Outfit', sans-serif; font-size: 30px; font-weight: 600;
+                  color: #f5f5f2; margin: 0 0 8px; }
+  .decisions .tagline { color: #b8b8b0; font-size: 15px; margin: 0 0 32px; line-height: 1.55; }
+  .decisions .tagline a { color: #e8c878; }
+  .decisions h2 { font-family: 'Outfit', sans-serif; font-size: 18px; color: #e0e0d8;
+                  margin: 36px 0 14px; letter-spacing: 0.02em; }
+  .decisions h2 .day { color: #888; font-family: monospace; font-size: 13px; margin-left: 8px; }
+
+  .action-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 24px; }
+  .action-chip { background: #1a1a22; border: 1px solid #2a2a33; color: #b8b8b0;
+                 padding: 5px 11px; border-radius: 14px; font-size: 12px;
+                 font-family: monospace; }
+  .action-chip b { color: #e8c878; }
+
+  .day-block { background: #14141a; border: 1px solid #2a2a33; border-radius: 10px;
+               padding: 4px 16px; margin-bottom: 14px; }
+  .d-row { padding: 10px 0; border-bottom: 1px solid #1f1f26; font-size: 13px;
+           color: #b8b8b0; line-height: 1.5; }
+  .d-row:last-child { border-bottom: none; }
+  .d-row .t { color: #666; font-family: monospace; font-size: 11px;
+              display: inline-block; width: 44px; }
+  .d-row .layer { color: #888; font-family: monospace; font-size: 11px;
+                  display: inline-block; width: 60px; }
+  .d-row .action { color: #e0e0d8; font-family: monospace; margin-right: 6px; }
+  .d-row .reason { color: #a0a0a0; }
+  .d-row.adjust .action { color: #e8c878; }
+  .d-row.add .action { color: #6ed77a; }
+  .d-row.block .action { color: #d77a7a; }
+
+  .back-link { color: #7fb8e8; text-decoration: none; font-size: 13px; }
+</style>
+
+<div class="decisions">
+  <a class="back-link" href="/showcase">← showcase</a>
+  <h1 style="margin-top:16px">Decision Log · last 7 days</h1>
+  <div class="tagline">
+    Prism 是自演化的：源权重会根据胜率自动增减，新账号会被自动纳入，异常会被标记。
+    所有自动决策都写入 <code>decision_log</code> 表，这个页面把它公开出来。
+    共 <b>{{ total }}</b> 条决策，跨 <b>{{ counts | length }}</b> 种 action。
+  </div>
+
+  <div class="action-chips">
+    {% for c in counts %}
+    <span class="action-chip">{{ c.action }} <b>{{ c.n }}</b></span>
+    {% endfor %}
+  </div>
+
+  {% for day in days %}
+  <h2>{{ day }}<span class="day">· {{ by_date[day] | length }} 条</span></h2>
+  <div class="day-block">
+    {% for d in by_date[day] %}
+    <div class="d-row {% if 'adjust' in d.action %}adjust{% elif 'add' in d.action %}add{% elif 'block' in d.action %}block{% endif %}">
+      <span class="t">{{ d.time }}</span>
+      <span class="layer">{{ d.layer }}</span>
+      <span class="action">{{ d.action }}</span>
+      <span class="reason">{{ d.reason }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div style="color:#666;padding:20px">暂无本周决策记录。</div>
+  {% endfor %}
+</div>
+{% endblock %}

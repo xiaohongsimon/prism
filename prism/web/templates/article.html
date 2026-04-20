@@ -1,4 +1,23 @@
 {% extends "base.html" %}
+{% block title %}{{ article.title }} — Prism{% endblock %}
+{% block meta %}
+{% set _desc = article.subtitle or (article.structured_body or '') | striptags | replace('#', '') | replace('*', '') | replace('\n', ' ') | trim %}
+{% set _desc = _desc[:160] %}
+{% set _yt_id = '' %}
+{% if article.source_type == 'youtube' and article.source_url %}
+  {% set _yt_id = article.source_url.split('v=')[-1].split('&')[0] if 'v=' in article.source_url else article.source_url.rsplit('/', 1)[-1].split('?')[0] %}
+{% endif %}
+{% set _og_image = 'https://img.youtube.com/vi/' ~ _yt_id ~ '/hqdefault.jpg' if _yt_id else 'https://prism.simon-ai.net/static/icon-192.png' %}
+<meta name="description" content="{{ _desc }}">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Prism">
+<meta property="og:title" content="{{ article.title }}">
+<meta property="og:description" content="{{ _desc }}">
+<meta property="og:image" content="{{ _og_image }}">
+{% if article.author %}<meta property="article:author" content="{{ article.author }}">{% endif %}
+{% if article.published_at %}<meta property="article:published_time" content="{{ article.published_at }}">{% endif %}
+<meta name="twitter:card" content="{{ 'summary_large_image' if _yt_id else 'summary' }}">
+{% endblock %}
 {% block content %}
 <div class="article-page">
   <a class="back-link" href="/creator/{{ source_key }}">← {{ article.author or '返回' }}</a>
@@ -11,7 +30,11 @@
     <div class="article-meta">
       {{ (article.published_at or article.item_created or '')[:10] }}
       · {{ article.word_count }} 字
-      · <a href="{{ article.source_url }}" target="_blank" rel="noopener">观看原视频 ↗</a>
+      · <a href="{{ article.source_url }}" target="_blank" rel="noopener">
+        {% if article.source_type == 'xiaoyuzhou' %}收听原节目 ↗
+        {% elif article.source_type == 'youtube' %}观看原视频 ↗
+        {% else %}查看原文 ↗{% endif %}
+      </a>
     </div>
   </div>
 
@@ -29,7 +52,9 @@
   {% endif %}
 
   <div class="article-actions">
-    {% if signal_id %}
+    {% if is_anonymous %}
+    <a class="btn-article-like" href="/login" style="text-decoration:none">登录后可保存</a>
+    {% elif signal_id %}
     <form method="POST" action="/feedback" hx-post="/feedback" hx-swap="outerHTML" hx-target="closest .article-actions">
       <input type="hidden" name="signal_id" value="{{ signal_id }}">
       <input type="hidden" name="action" value="save">

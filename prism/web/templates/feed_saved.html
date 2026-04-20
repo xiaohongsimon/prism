@@ -1,11 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Saved · Prism{% endblock %}
+{% block title %}收藏 · Prism{% endblock %}
 {% block content %}
 <div class="feed-container">
     <nav class="feed-nav">
         <a href="/feed">Feed</a>
-        <a href="/feed/saved" class="active">Saved</a>
-        <a href="/pairwise">Pairwise 校准</a>
+        <a href="/feed/following">关注</a>
+        <a href="/feed/saved" class="active">收藏</a>
+        {% if not is_anonymous %}
+        <a href="/pairwise/sources">Sources</a>
+        <a href="/pairwise/profile">画像</a>
+        {% else %}
+        <a href="/showcase">Showcase</a>
+        <a href="/decisions/weekly">Decisions</a>
+        <a href="/login" style="margin-left:auto">登录</a>
+        {% endif %}
     </nav>
     {% if not signals %}
     <p>还没有已保存的信号。</p>
@@ -15,7 +23,12 @@
         <li class="saved-item">
             <div class="saved-meta">{{ s.created_at }} · {{ s.topic_label or "" }}</div>
             <div class="saved-summary">{{ s.summary }}</div>
-            {% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener">原文 ↗</a>{% endif %}
+            {% if s.article_id %}
+              <a href="/article/{{ s.article_id }}">阅读文章 →</a>
+              {% if s.url %} · <a href="{{ s.url }}" target="_blank" rel="noopener">原文 ↗</a>{% endif %}
+            {% elif s.url %}
+              <a href="{{ s.url }}" target="_blank" rel="noopener">原文 ↗</a>
+            {% endif %}
         </li>
         {% endfor %}
     </ul>

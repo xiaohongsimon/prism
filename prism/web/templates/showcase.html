@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}Prism — self-hosted AI that reads 500 sources so you don't have to{% endblock %}
+{% block meta %}
+<meta name="description" content="Prism is a self-hosted personal recommendation engine running 24/7 on a Mac Studio. It reads {{ stats.sources_total }} sources, distils {{ stats.signals_7d }} signals per week, and costs $0 in LLM API fees.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Prism">
+<meta property="og:title" content="Prism — self-hosted AI that reads the internet so you don't have to">
+<meta property="og:description" content="{{ stats.sources_total }} sources · {{ stats.raw_7d }} items/week · {{ stats.signals_7d }} signals distilled · {{ stats.days_running }} days running · $0 LLM cost.">
+<meta property="og:image" content="https://prism.simon-ai.net/static/icon-192.png">
+<meta name="twitter:card" content="summary_large_image">
+{% endblock %}
+{% block content %}
+<style>
+  .showcase { max-width: 900px; margin: 0 auto; padding: 40px 20px 80px; }
+  .showcase h1 { font-family: 'Outfit', sans-serif; font-size: 36px; line-height: 1.2;
+                 font-weight: 600; margin: 0 0 12px; color: #f5f5f2; }
+  .showcase .tagline { font-size: 18px; color: #b8b8b0; margin: 0 0 40px; line-height: 1.5; }
+  .showcase .tagline em { color: #e8c878; font-style: normal; font-weight: 500; }
+  .showcase h2 { font-family: 'Outfit', sans-serif; font-size: 20px; margin: 48px 0 16px;
+                 color: #e0e0d8; letter-spacing: 0.02em; }
+  .showcase h2 .sub { color: #888; font-size: 13px; margin-left: 8px; font-weight: 400; }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+                gap: 12px; margin: 24px 0; }
+  .stat-box { background: #14141a; border: 1px solid #2a2a33; border-radius: 10px;
+              padding: 16px 14px; }
+  .stat-num { font-family: 'Outfit', sans-serif; font-size: 28px; font-weight: 600;
+              color: #f5f5f2; line-height: 1; }
+  .stat-num .unit { font-size: 16px; color: #888; font-weight: 400; }
+  .stat-label { font-size: 12px; color: #888; margin-top: 6px; letter-spacing: 0.02em; }
+
+  .cost-callout { background: linear-gradient(135deg, #1a1208 0%, #14140e 100%);
+                  border: 1px solid #4a3820; border-radius: 12px; padding: 20px;
+                  margin: 20px 0; }
+  .cost-callout .big { font-family: 'Outfit', sans-serif; font-size: 24px; color: #e8c878;
+                       font-weight: 600; }
+  .cost-callout .sub { color: #b8b8b0; font-size: 14px; margin-top: 6px; }
+  .cost-callout s { color: #666; }
+
+  .source-pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+  .source-pills .pill { background: #1a1a22; border: 1px solid #2a2a33; color: #b8b8b0;
+                        padding: 4px 10px; border-radius: 14px; font-size: 12px;
+                        font-family: monospace; }
+  .source-pills .pill b { color: #e0e0d8; }
+
+  .signal-card { background: #14141a; border: 1px solid #2a2a33; border-radius: 10px;
+                 padding: 16px 18px; margin: 10px 0; }
+  .signal-card .sig-topic { font-size: 15px; color: #e8c878; margin-bottom: 8px;
+                            font-weight: 500; }
+  .signal-card .sig-summary { color: #d8d8d0; font-size: 14px; line-height: 1.55;
+                              margin: 6px 0; }
+  .signal-card .sig-meta { font-size: 12px; color: #888; margin-top: 10px; }
+  .signal-card .sig-why { border-left: 2px solid #4a3820; padding-left: 10px;
+                          margin: 10px 0 4px; color: #b8b8b0; font-size: 13px;
+                          line-height: 1.5; }
+  .signal-card .strength { display: inline-block; color: #e8c878; margin-right: 8px; }
+  .signal-card a.open { color: #7fb8e8; text-decoration: none; margin-left: 8px; }
+
+  .decision-row { padding: 10px 0; border-bottom: 1px solid #1f1f26;
+                  font-size: 13px; color: #b8b8b0; }
+  .decision-row:last-child { border-bottom: none; }
+  .decision-row .ts { color: #666; font-family: monospace; font-size: 11px;
+                      display: inline-block; width: 90px; }
+  .decision-row .action { color: #e0e0d8; font-family: monospace; margin-right: 8px; }
+  .decision-row .reason { color: #888; }
+
+  .footer-cta { margin: 60px 0 0; padding: 28px; background: #14141a;
+                border-radius: 12px; border: 1px solid #2a2a33; text-align: center; }
+  .footer-cta .lead { color: #b8b8b0; font-size: 14px; margin-bottom: 16px; }
+  .star-btn { display: inline-flex; align-items: center; gap: 8px;
+              background: #1f1b10; border: 1px solid #4a3820; color: #e8c878;
+              padding: 10px 20px; border-radius: 8px; text-decoration: none;
+              font-weight: 500; font-size: 15px; transition: all .15s; }
+  .star-btn:hover { background: #2a2315; border-color: #e8c878; color: #f5d98a; }
+  .star-btn .star { font-size: 18px; }
+</style>
+
+<div class="showcase">
+  <h1>Prism</h1>
+  <div class="tagline">
+    Self-hosted AI that reads the internet so you don't have to.<br>
+    Running 24/7 on a Mac Studio. <em>{{ stats.sources_total }} sources</em>,
+    <em>{{ stats.signals_7d }} signals/week</em>, <em>$0</em> in LLM API fees.
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-box">
+      <div class="stat-num">{{ stats.sources_total }}</div>
+      <div class="stat-label">信号源 · sources</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">{{ stats.raw_7d }}<span class="unit"> /wk</span></div>
+      <div class="stat-label">原始条目 · items ingested</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">{{ stats.signals_7d }}<span class="unit"> /wk</span></div>
+      <div class="stat-label">LLM 提炼信号 · signals distilled</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">{{ stats.strategic_7d }}</div>
+      <div class="stat-label">high-value ({{ stats.kept_ratio }}%)</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">{{ stats.decisions_30d }}</div>
+      <div class="stat-label">自主决策 · autonomous decisions /30d</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">{{ stats.days_running }}</div>
+      <div class="stat-label">天连续运行 · days running</div>
+    </div>
+  </div>
+
+  <div class="cost-callout">
+    <div class="big">${{ stats.cloud_cost_7d }} <s style="font-size:16px">→</s>
+      <span style="color:#6ed77a">$0</span>
+      <span style="font-size:14px;color:#888;margin-left:8px">/ week</span>
+    </div>
+    <div class="sub">
+      同样工作量（约 {{ stats.tokens_week_m }}M tokens/周）在 Claude Sonnet 4.5 上
+      每年要 <b>~${{ stats.cloud_cost_yearly }}</b>。
+      Prism 全部跑在本地 <code>omlx</code>，LLM 成本 $0，数据不出设备。
+    </div>
+  </div>
+
+  <h2>Active sources <span class="sub">· 来源分布</span></h2>
+  <div class="source-pills">
+    {% for s in stats.sources_by_type %}
+    <span class="pill">{{ s.type }} <b>{{ s.n }}</b></span>
+    {% endfor %}
+  </div>
+
+  <h2>Top signals this week <span class="sub">· 本周高价值信号</span></h2>
+  {% for sig in top_signals %}
+  <div class="signal-card">
+    <div class="sig-topic">
+      <span class="strength">{% for _ in range(sig.signal_strength) %}★{% endfor %}</span>
+      {{ sig.topic_label }}
+      {% if sig.url %}<a class="open" href="{{ sig.url }}" target="_blank" rel="noopener">source ↗</a>{% endif %}
+    </div>
+    <div class="sig-summary">{{ sig.summary }}</div>
+    {% if sig.why_it_matters %}
+    <div class="sig-why"><b>Why it matters:</b> {{ sig.why_it_matters }}</div>
+    {% endif %}
+    <div class="sig-meta">
+      {{ sig.signal_layer }} · merged {{ sig.item_count }} item{% if sig.item_count > 1 %}s{% endif %} · {{ sig.date }}
+    </div>
+  </div>
+  {% else %}
+  <div style="color:#666;padding:20px">暂无 high-value signals，pipeline 正在运行。</div>
+  {% endfor %}
+
+  <h2>Recent autonomous decisions
+    <span class="sub">· 系统正在自我调整 · <a href="/decisions/weekly" style="color:#7fb8e8;text-decoration:none">full log →</a></span>
+  </h2>
+  <div style="background:#14141a;border:1px solid #2a2a33;border-radius:10px;padding:6px 18px">
+  {% for d in decisions %}
+  <div class="decision-row">
+    <span class="ts">{{ d.timestamp[5:16] }}</span>
+    <span class="action">{{ d.action }}</span>
+    <span class="reason">{{ d.reason or '' }}</span>
+  </div>
+  {% else %}
+  <div class="decision-row"><span class="reason">暂无自动决策记录</span></div>
+  {% endfor %}
+  </div>
+
+  <h2>How it works <span class="sub">· pipeline</span></h2>
+  <pre style="background:#14141a;border:1px solid #2a2a33;border-radius:10px;padding:18px;color:#b8b8b0;font-size:13px;line-height:1.6;overflow-x:auto">
+sources.yaml
+    │    136 × {x, youtube, xiaoyuzhou, reddit, arxiv, github, …}
+    ▼
+[sync]       fetch raw items
+    │
+    ▼
+[cluster]    dedup + semantic grouping
+    │
+    ▼
+[analyze]    local LLM → summary · why · strength · tags
+    │
+    ▼
+[pairwise]   Bradley-Terry + your 1-bit choices → preference model
+    │
+    ▼
+[decision]   adjust source weights · pick new sources · flag anomalies
+    │        (everything logged to decision_log for auditability)
+    ▼
+signals → /feed · /briefing · /showcase
+  </pre>
+
+  <div class="footer-cta">
+    <div class="lead">Code is open source · MIT · built by one person on one Mac Studio.<br>
+      If you like what you see, a star helps more people find it.</div>
+    <a class="star-btn" href="https://github.com/xiaohongsimon/prism" target="_blank" rel="noopener">
+      <span class="star">⭐</span> Star on GitHub
+    </a>
+  </div>
+</div>
+{% endblock %}

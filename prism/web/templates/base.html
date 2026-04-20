@@ -3,7 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Prism</title>
+    <title>{% block title %}Prism — AI 信号筛选{% endblock %}</title>
+    {% block meta %}
+    <meta name="description" content="Prism — AI 驱动的个人推荐系统，帮你从信息洪流中筛出值得一读的信号。">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Prism">
+    <meta property="og:title" content="Prism — AI 信号筛选">
+    <meta property="og:description" content="AI 驱动的个人推荐系统，帮你从信息洪流中筛出值得一读的信号。">
+    <meta property="og:image" content="https://prism.simon-ai.net/static/icon-192.png">
+    <meta name="twitter:card" content="summary">
+    {% endblock %}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -19,10 +28,51 @@
     <div class="container">
         {% block content %}{% endblock %}
     </div>
+    {% if is_anonymous %}
+    <div class="site-foot-anon">
+        Prism is open source ·
+        <a href="https://github.com/xiaohongsimon/prism" target="_blank" rel="noopener">⭐ Star on GitHub</a>
+        · <a href="/showcase">about</a>
+    </div>
+    {% endif %}
     <script>
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js');
     }
+    // Click-through tracker: if a link inside a .feed-card is opened in
+    // a new tab/window, send a keep-alive beacon to /feed/click so we
+    // can bucket this signal as impressed+clicked. Fire-and-forget —
+    // navigation is NEVER blocked on the network call.
+    document.addEventListener('click', function (ev) {
+        const a = ev.target.closest('.feed-card a[href]');
+        if (!a) return;
+        const href = a.getAttribute('href') || '';
+        if (!/^https?:\/\//i.test(href)) return;       // only outbound
+        const card = a.closest('[id^="feed-card-"]');
+        if (!card) return;
+        const sid = card.id.replace('feed-card-', '');
+        if (!sid) return;
+        try {
+            const body = 'signal_id=' + encodeURIComponent(sid)
+                       + '&url=' + encodeURIComponent(href);
+            // sendBeacon ships reliably even when this click opens
+            // target=_blank and the current page stays put.
+            const blob = new Blob([body], {
+                type: 'application/x-www-form-urlencoded',
+            });
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon('/feed/click', blob);
+            } else {
+                fetch('/feed/click', {
+                    method: 'POST',
+                    body: body,
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    keepalive: true,
+                });
+            }
+        } catch (e) { /* best-effort */ }
+    }, { capture: true });
+
     function exportNotion(btn, clusterId) {
         btn.disabled = true;
         btn.textContent = '搬运中...';

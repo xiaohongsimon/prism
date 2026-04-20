@@ -1,0 +1,41 @@
+{# Shared action buttons. `compact=true` uses monochrome text glyphs
+   (not emoji) so CSS grayscale/color rules apply consistently across
+   browsers. Non-compact keeps the old labeled pills for pairwise UIs.
+   Anonymous visitors see a single login prompt instead of the actions —
+   their interactions must never touch the owner's preference model. #}
+{% if is_anonymous %}
+<a class="btn btn-signin" href="/login" title="登录后可保存、关注、屏蔽">登录以互动</a>
+{% else %}
+<form hx-post="/feed/action" hx-target="#feed-card-{{ signal.signal_id }}" hx-swap="outerHTML" style="display:inline">
+    <input type="hidden" name="signal_id" value="{{ signal.signal_id }}">
+    <input type="hidden" name="action" value="save">
+    <button type="submit" class="btn btn-save" title="Save" aria-label="Save">{% if compact %}♡{% else %}👍 Save{% endif %}</button>
+</form>
+{% if signal.authors %}
+    {% set author0 = signal.authors[0] %}
+    {% set is_followed = followed_authors and author0 and author0.lower() in followed_authors %}
+    {% if is_followed %}
+    <span class="btn btn-following" title="Following {{ author0 }}" aria-label="Following">{% if compact %}✓{% else %}✓ Following {{ author0 }}{% endif %}</span>
+    {% else %}
+    <form hx-post="/feed/action" hx-target="this" hx-swap="outerHTML" style="display:inline">
+        <input type="hidden" name="signal_id" value="{{ signal.signal_id }}">
+        <input type="hidden" name="action" value="follow_author">
+        <input type="hidden" name="target_key" value="{{ author0 }}">
+        <button type="submit" class="btn btn-follow" title="Follow {{ author0 }}" aria-label="Follow">{% if compact %}+{% else %}🔔 Follow {{ author0 }}{% endif %}</button>
+    </form>
+    {% endif %}
+{% endif %}
+{% if signal.tags %}
+<form hx-post="/feed/action" hx-target="this" hx-swap="outerHTML" style="display:inline">
+    <input type="hidden" name="signal_id" value="{{ signal.signal_id }}">
+    <input type="hidden" name="action" value="mute_topic">
+    <input type="hidden" name="target_key" value="{{ signal.tags[0] }}">
+    <button type="submit" class="btn btn-mute" title="Mute #{{ signal.tags[0] }}" aria-label="Mute">{% if compact %}−{% else %}🙈 Mute #{{ signal.tags[0] }}{% endif %}</button>
+</form>
+{% endif %}
+<form hx-post="/feed/action" hx-target="#feed-card-{{ signal.signal_id }}" hx-swap="outerHTML" style="display:inline">
+    <input type="hidden" name="signal_id" value="{{ signal.signal_id }}">
+    <input type="hidden" name="action" value="dismiss">
+    <button type="submit" class="btn btn-dismiss" title="Dismiss" aria-label="Dismiss">✕</button>
+</form>
+{% endif %}

@@ -1,7 +1,20 @@
 {% extends "base.html" %}
+{% block title %}{{ display_name }} — Prism{% endblock %}
+{% block meta %}
+{% set _type_label = 'YouTube 频道' if source_type == 'youtube' else ('小宇宙播客' if source_type == 'xiaoyuzhou' else ('X 账号' if source_type in ('x', 'follow_builders') else '信息源')) %}
+{% set _desc = display_name ~ ' 的最新信号与精选文章 · ' ~ _type_label ~ ' · 来自 Prism。' %}
+{% set _og_image = avatar if avatar else 'https://prism.simon-ai.net/static/icon-192.png' %}
+<meta name="description" content="{{ _desc }}">
+<meta property="og:type" content="profile">
+<meta property="og:site_name" content="Prism">
+<meta property="og:title" content="{{ display_name }}">
+<meta property="og:description" content="{{ _desc }}">
+<meta property="og:image" content="{{ _og_image }}">
+<meta name="twitter:card" content="summary">
+{% endblock %}
 {% block content %}
 <div class="creator-profile">
-  <a class="back-link" href="/?tab=follow">← 关注</a>
+  <a class="back-link" href="/feed/following">← 关注</a>
 
   <div class="creator-header">
     {% if avatar %}
@@ -9,17 +22,41 @@
     {% endif %}
     <div class="creator-header-info">
       <h1>{{ display_name }}</h1>
-      {% if source_url %}
-      <a class="creator-source-link" href="{{ source_url }}" target="_blank" rel="noopener">
-        {% if source_type == 'youtube' %}打开 YouTube 频道{% else %}打开 X 主页{% endif %} ↗
-      </a>
-      {% endif %}
+      <div class="creator-header-actions">
+        {% if source_url %}
+        <a class="creator-source-link" href="{{ source_url }}" target="_blank" rel="noopener">
+          {% if source_type == 'youtube' %}打开 YouTube 频道{% elif source_type == 'xiaoyuzhou' %}打开小宇宙主页{% else %}打开 X 主页{% endif %} ↗
+        </a>
+        {% endif %}
+        {% if not is_anonymous %}
+          {% if source.enabled %}
+          <button class="unfollow-btn"
+                  hx-post="/channel/{{ source.source_key }}/unfollow"
+                  hx-swap="outerHTML">取消关注</button>
+          {% else %}
+          <button class="follow-btn"
+                  hx-post="/channel/{{ source.source_key }}/follow"
+                  hx-swap="outerHTML">关注</button>
+          {% endif %}
+        {% endif %}
+      </div>
     </div>
   </div>
 
+  {# Signal cards — identical layout to the main feed #}
+  <div class="feed-list">
+  {% for signal in signals %}
+    {% include 'partials/feed_card.html' %}
+  {% else %}
+    <div class="empty" style="padding:24px;color:#888">暂无已分析的信号</div>
+  {% endfor %}
+  </div>
+
+  {% if pending_items %}
+  <h3 style="margin:24px 0 8px;font-size:14px;color:#888">待分析</h3>
   <div class="item-list">
-  {% for item in items %}
-    {% if source_type == 'youtube' %}
+  {% for item in pending_items %}
+    {% if source_type in ('youtube', 'xiaoyuzhou') %}
     <a class="item-card" href="{% if item.article_id %}/article/{{ item.article_id }}{% else %}{{ item.url }}{% endif %}">
       <div class="item-card-title">{{ item.title }}</div>
       {% if item.article_subtitle %}
@@ -29,16 +66,16 @@
         {{ (item.published_at or item.created_at or '')[:10] }}
         {% if item.article_id %}
           · {{ item.word_count }} 字
-          <span class="item-card-status has-article">已转文章</span>
+          <span class="item-card-status has-article">{% if source_type == 'xiaoyuzhou' %}已转写{% else %}已转文章{% endif %}</span>
         {% elif item.body %}
           <span class="item-card-status">待转换</span>
         {% else %}
-          <span class="item-card-status no-subtitle">暂无字幕</span>
+          <span class="item-card-status no-subtitle">{% if source_type == 'xiaoyuzhou' %}待转写{% else %}暂无字幕{% endif %}</span>
         {% endif %}
       </div>
     </a>
     {% else %}
-    <a class="item-card" href="{{ item.url }}" target="_blank" rel="noopener">
+    <div class="item-card item-card-tweet">
       {% if item.body_zh %}
       <div class="item-card-subtitle">{{ item.body_zh }}</div>
       {% else %}
@@ -49,10 +86,25 @@
       <div class="item-card-meta">
         {{ (item.published_at or item.created_at or '')[:10] }}
         · {{ item.author }}
+        · <a class="item-card-open" href="{{ item.url }}" target="_blank" rel="noopener">打开 ↗</a>
       </div>
-    </a>
+      {% if not is_anonymous %}
+      <div class="item-card-actions">
+        {% if item.liked %}
+        <form hx-post="/creator/item/{{ item.id }}/unlike" hx-target="this" hx-swap="outerHTML" style="display:inline">
+          <button type="submit" class="item-like liked" title="取消喜欢">❤ 已喜欢</button>
+        </form>
+        {% else %}
+        <form hx-post="/creator/item/{{ item.id }}/like" hx-target="this" hx-swap="outerHTML" style="display:inline">
+          <button type="submit" class="item-like" title="喜欢">♡ 喜欢</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
     {% endif %}
   {% endfor %}
   </div>
+  {% endif %}
 </div>
 {% endblock %}

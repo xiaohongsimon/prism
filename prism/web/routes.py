@@ -6,21 +6,18 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, BackgroundTasks, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader
 
 import markdown as _md
 
-from prism.web.ranking import compute_feed, update_preferences
+from prism.web.ranking import update_preferences
 from prism.web.auth import (
     COOKIE_NAME, validate_session, login, create_admin,
     create_invite, register_with_invite,
 )
-from prism.web.pairwise import (
-    select_pair, record_vote, process_external_feed, get_pairwise_history,
-    _get_candidate_pool,
-)
+from prism.web.pairwise import process_external_feed
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 _jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
@@ -50,7 +47,9 @@ _jinja_env.filters["linkify_clusters"] = _linkify_clusters
 web_router = APIRouter()
 
 # Public paths that don't need auth
-_PUBLIC_PATHS = {"/login", "/register", "/auth/login", "/auth/register", "/static", "/article", "/briefing", "/sw.js"}
+_PUBLIC_PATHS = {"/login", "/register", "/auth/login", "/auth/register", "/static",
+                 "/article", "/briefing", "/creator", "/translate", "/showcase",
+                 "/decisions", "/feed", "/slides", "/sw.js"}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -68,20 +67,36 @@ def _get_user(request: Request) -> dict | None:
 
 
 def _render(template_name: str, **ctx) -> HTMLResponse:
+    # Auto-inject `is_anonymous` whenever the caller passes `request`, so
+    # every template can gate interactive controls (save / like / follow)
+    # behind `{% if not is_anonymous %}` without each route threading the
+    # flag through by hand.
+    if "request" in ctx and "is_anonymous" not in ctx:
+        ctx["is_anonymous"] = _get_user(ctx["request"]) is None
     tmpl = _jinja_env.get_template(template_name)
     return HTMLResponse(tmpl.render(**ctx))
 
 
 def _build_creator_list(conn) -> dict:
-    """Build creator list for follow tab: YouTube channels + timeline of others.
+    """Build channel-grouped creator list for /feed/following.
 
-    Returns {"youtube": [creators sorted by latest], "timeline": [creators sorted by latest]}
-    YouTube gets a prominent section; X/builders/github merge into a single timeline.
+    Returns a dict with named buckets so the template can render section
+    headers and collapsible groups instead of a flat 130-row timeline:
+
+      {
+        "youtube":  [...],      # long-form video channels (top section)
+        "podcast":  [...],      # xiaoyuzhou podcasts
+        "x_today":  [...],      # X creators with items in the last 24h
+        "x_week":   [...],      # X creators with items in last 7d (excl. today)
+        "x_silent": [...],      # X creators with nothing in 7d
+        "other":    [...],      # HN/Reddit/Arxiv/GitHub/etc aggregators
+      }
     """
     from prism.web.ranking import FOLLOW_SOURCE_TYPES
+    from datetime import datetime, timedelta, timezone
     import yaml as _yaml
 
-    type_icons = {"youtube": "▶", "x": "𝕏", "follow_builders": "𝕏", "github_releases": "📦"}
+    type_icons = {"youtube": "▶", "x": "𝕏", "follow_builders": "𝕏", "github_releases": "📦", "xiaoyuzhou": "🎙"}
 
     sources = conn.execute(
         """SELECT s.id, s.source_key, s.type, s.handle, s.config_yaml
@@ -123,7 +138,7 @@ def _build_creator_list(conn) -> dict:
         ).fetchone()
 
         recent = conn.execute(
-            """SELECT ri.id as item_id, ri.title, ri.body, ri.url, ri.created_at,
+            """SELECT ri.id as item_id, ri.title, ri.body, ri.body_zh, ri.url, ri.created_at,
                       a.id as article_id, a.subtitle as article_subtitle
                FROM raw_items ri LEFT JOIN articles a ON a.raw_item_id = ri.id
                WHERE ri.source_id = ?
@@ -132,6 +147,8 @@ def _build_creator_list(conn) -> dict:
         ).fetchall()
 
         if src_type == "youtube":
+            avatar = config.get("avatar", "")
+        elif src_type == "xiaoyuzhou":
             avatar = config.get("avatar", "")
         elif src_type in ("x", "follow_builders"):
             avatar = f"https://unavatar.io/x/{handle}"
@@ -157,8 +174,39 @@ def _build_creator_list(conn) -> dict:
             "pref_score": round(pref_score, 1),
         })
 
-    all_creators.sort(key=lambda c: (c["pref_score"], c["latest"] or ""), reverse=True)
-    return all_creators
+    # Bucket by channel + activity. SQLite created_at is "YYYY-MM-DD HH:MM:SS"
+    # in UTC; comparing against ISO strings of the same shape works fine.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    today_cutoff = (now - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+    week_cutoff = (now - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+
+    buckets: dict[str, list] = {
+        "youtube": [], "podcast": [], "other": [],
+        "x_today": [], "x_week": [], "x_silent": [],
+    }
+    for c in all_creators:
+        if c["type"] == "youtube":
+            buckets["youtube"].append(c)
+        elif c["type"] == "xiaoyuzhou":
+            buckets["podcast"].append(c)
+        elif c["type"] in ("x", "follow_builders"):
+            latest = c["latest"] or ""
+            if latest >= today_cutoff:
+                buckets["x_today"].append(c)
+            elif latest >= week_cutoff:
+                buckets["x_week"].append(c)
+            else:
+                buckets["x_silent"].append(c)
+        else:
+            buckets["other"].append(c)
+
+    # Inside each bucket: pref_score desc, then most-recent first.
+    for key in buckets:
+        buckets[key].sort(
+            key=lambda c: (c["pref_score"], c["latest"] or ""),
+            reverse=True,
+        )
+    return buckets
 
 
 def _feedback_map(conn: sqlite3.Connection, signal_ids: list[int]) -> dict[int, str]:
@@ -245,13 +293,13 @@ from prism.web.feed import (
     rank_feed,
     record_feed_action,
     get_followed_authors,
+    compress_headline,
 )
 
 
 @web_router.get("/feed", response_class=HTMLResponse)
 def feed_index(request: Request):
-    tpl = _jinja_env.get_template("feed.html")
-    return HTMLResponse(tpl.render(next_offset=0))
+    return _render("feed.html", request=request, next_offset=0)
 
 
 @web_router.get("/feed/following", response_class=HTMLResponse)
@@ -260,9 +308,8 @@ def feed_following_index(request: Request):
     the creator's profile page. This replaces the earlier signal-flow
     view — users wanted a list of *who* they follow, not a merged feed."""
     conn = _db(request)
-    creators = _build_creator_list(conn)
-    tpl = _jinja_env.get_template("feed_following.html")
-    return HTMLResponse(tpl.render(creators=creators))
+    buckets = _build_creator_list(conn)
+    return _render("feed_following.html", request=request, buckets=buckets)
 
 
 @web_router.get("/feed/more", response_class=HTMLResponse)
@@ -272,10 +319,23 @@ def feed_more(request: Request, offset: int = 0, limit: int = 10):
     if not rows:
         tpl = _jinja_env.get_template("partials/feed_empty.html")
         return HTMLResponse(tpl.render(view="all"))
+    # Log impressions — one row per served signal, bound to a session so
+    # skip-above sample construction can reason across multi-page scrolls.
+    # Anonymous visitors (public /feed) must NOT pollute the owner's CTR
+    # training data, so skip the log entirely when no session is present.
+    if _get_user(request):
+        try:
+            from prism.ctr.impressions import log_impressions
+            log_impressions(conn, rows)
+        except Exception:
+            pass  # logging failure must never break the feed
     followed = get_followed_authors(conn)
     card_tpl = _jinja_env.get_template("partials/feed_card.html")
+    is_anon = _get_user(request) is None
+    # Card template auto-dispatches by source_type (tweet / video / article).
     html = "".join(
-        card_tpl.render(signal=r, followed_authors=followed) for r in rows
+        card_tpl.render(signal=r, followed_authors=followed, is_anonymous=is_anon)
+        for r in rows
     )
     return HTMLResponse(html)
 
@@ -283,19 +343,35 @@ def feed_more(request: Request, offset: int = 0, limit: int = 10):
 @web_router.post("/feed/action", response_class=HTMLResponse)
 def feed_action(
     request: Request,
+    background_tasks: BackgroundTasks,
     signal_id: int = Form(...),
     action: str = Form(...),
     target_key: str = Form(""),
     response_time_ms: int = Form(0),
 ):
+    if not _get_user(request):
+        return HTMLResponse("", status_code=401)
     conn = _db(request)
-    record_feed_action(
+    interaction_id = record_feed_action(
         conn,
         signal_id=signal_id,
         action=action,
         target_key=target_key,
         response_time_ms=response_time_ms,
     )
+
+    # On save, materialize the CTR training group (1 positive + N
+    # skip-above negatives) off the request path. BackgroundTasks runs
+    # after the HTTP response is sent, so the user sees "已保存 ✓" with
+    # zero added latency. The task opens its own SQLite connection
+    # because the request connection is recycled by then.
+    if action == "save" and interaction_id:
+        from prism.config import settings as _cfg
+        from prism.ctr.collect import materialize_from_db
+        background_tasks.add_task(
+            materialize_from_db, str(_cfg.db_path), int(interaction_id)
+        )
+
     if action in ("save", "dismiss"):
         label = "已保存" if action == "save" else "已隐藏"
         return HTMLResponse(
@@ -312,57 +388,104 @@ def feed_action(
     )
 
 
+@web_router.post("/feed/click")
+def feed_click(request: Request, signal_id: int = Form(...), url: str = Form("")):
+    """Click-through beacon: fire-and-forget log for outbound link click.
+
+    Called by the delegated click handler in base.html via
+    navigator.sendBeacon, which issues POST with form-encoded body.
+    The original <a target=_blank> still navigates — this endpoint just
+    returns 204 and updates feed_interactions in the background.
+
+    target_key stores the bare host so analytics can bucket clicks by
+    domain without carrying long URLs around.
+    """
+    from urllib.parse import urlparse
+    from fastapi.responses import Response
+
+    # Anonymous clicks are silently discarded — we return 204 so the
+    # sendBeacon path still succeeds, but nothing touches feed_interactions.
+    if not _get_user(request):
+        return Response(status_code=204)
+
+    host = ""
+    if url:
+        parsed = urlparse(url)
+        if parsed.scheme in ("http", "https"):
+            host = parsed.netloc
+
+    try:
+        conn = _db(request)
+        conn.execute(
+            "INSERT INTO feed_interactions (signal_id, action, target_key, context_json) "
+            "VALUES (?, 'click', ?, ?)",
+            (signal_id, host, '{"source":"feed_card"}'),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    return Response(status_code=204)
+
+
 @web_router.get("/feed/saved", response_class=HTMLResponse)
 def feed_saved(request: Request):
+    """Unified saved view across the 3 like/save paths:
+       - /feed/action save → feed_interactions
+       - /feedback save (article w/ signal) → feedback
+       - /article/{id}/like (article w/o signal) → external_feeds
+    """
     conn = _db(request)
+    # dedup_key collapses dups across the 3 paths:
+    # - same signal saved via /feedback AND /feed/action → one row
+    # - same article liked via /article/{id}/like multiple times → one row
     rows = conn.execute(
-        """SELECT fi.created_at, s.summary, c.topic_label,
-                  (SELECT url FROM raw_items ri
-                   JOIN cluster_items ci ON ci.raw_item_id = ri.id
-                   WHERE ci.cluster_id = s.cluster_id LIMIT 1) AS url
-             FROM feed_interactions fi
-             JOIN signals s ON s.id = fi.signal_id
-             LEFT JOIN clusters c ON c.id = s.cluster_id
-            WHERE fi.action = 'save'
-            ORDER BY fi.created_at DESC
+        """SELECT MAX(created_at) AS created_at, summary, topic_label, url, article_id
+             FROM (
+               SELECT 'sig:' || fi.signal_id AS dedup_key,
+                      fi.created_at AS created_at,
+                      s.summary AS summary,
+                      c.topic_label AS topic_label,
+                      (SELECT url FROM raw_items ri
+                       JOIN cluster_items ci ON ci.raw_item_id = ri.id
+                       WHERE ci.cluster_id = s.cluster_id LIMIT 1) AS url,
+                      NULL AS article_id
+                 FROM feed_interactions fi
+                 JOIN signals s ON s.id = fi.signal_id
+                 LEFT JOIN clusters c ON c.id = s.cluster_id
+                WHERE fi.action = 'save'
+
+               UNION ALL
+
+               SELECT 'sig:' || fb.signal_id AS dedup_key,
+                      fb.created_at AS created_at,
+                      s.summary AS summary,
+                      c.topic_label AS topic_label,
+                      (SELECT url FROM raw_items ri
+                       JOIN cluster_items ci ON ci.raw_item_id = ri.id
+                       WHERE ci.cluster_id = s.cluster_id LIMIT 1) AS url,
+                      NULL AS article_id
+                 FROM feedback fb
+                 JOIN signals s ON s.id = fb.signal_id
+                 LEFT JOIN clusters c ON c.id = s.cluster_id
+                WHERE fb.action = 'save'
+
+               UNION ALL
+
+               SELECT 'art:' || a.id AS dedup_key,
+                      ef.created_at AS created_at,
+                      COALESCE(a.title, ri.title, ef.url) AS summary,
+                      COALESCE(a.subtitle, '') AS topic_label,
+                      ri.url AS url,
+                      a.id AS article_id
+                 FROM external_feeds ef
+                 JOIN raw_items ri ON ri.url = ef.url
+                 JOIN articles a ON a.raw_item_id = ri.id
+             )
+            GROUP BY dedup_key
+            ORDER BY MAX(created_at) DESC
             LIMIT 200"""
     ).fetchall()
-    tpl = _jinja_env.get_template("feed_saved.html")
-    return HTMLResponse(tpl.render(signals=rows))
-
-
-@web_router.get("/feed/legacy", response_class=HTMLResponse)
-def feed_legacy_fragment(
-    request: Request,
-    tab: str = "recommend",
-    page: int = 1,
-    per_page: int = 20,
-):
-    """HTMX feed fragment — renders cards only (no base layout)."""
-    conn = _db(request)
-    items = compute_feed(conn, tab=tab, page=page, per_page=per_page)
-    signal_ids = [item["signal_id"] for item in items]
-    feedback_map = _feedback_map(conn, signal_ids)
-
-    card_tmpl = _jinja_env.get_template("partials/card.html")
-    html_parts = []
-    for item in items:
-        feedback_state = feedback_map.get(item["signal_id"])
-        html_parts.append(card_tmpl.render(item=item, feedback_state=feedback_state))
-
-    if len(items) >= per_page:
-        html_parts.append(
-            f'<div hx-get="/feed/legacy?tab={tab}&page={page + 1}&per_page={per_page}"'
-            f' hx-trigger="revealed"'
-            f' hx-target="#feed-list"'
-            f' hx-swap="beforeend"'
-            f' class="loading">加载中…</div>'
-        )
-
-    if not items:
-        html_parts.append('<div class="empty">暂无内容</div>')
-
-    return HTMLResponse("".join(html_parts))
+    return _render("feed_saved.html", request=request, signals=rows)
 
 
 @web_router.get("/slides/{signal_id}", response_class=HTMLResponse)
@@ -395,6 +518,8 @@ def feedback(
     action: str = Form(...),
 ):
     """Record feedback and return updated action bar fragment."""
+    if not _get_user(request):
+        return HTMLResponse("", status_code=401)
     conn = _db(request)
     sig_id = int(signal_id)
 
@@ -547,6 +672,10 @@ def creator_profile(request: Request, source_key: str):
     if source["type"] == "youtube":
         avatar = config.get("avatar", "")
         source_url = f"https://www.youtube.com/channel/{channel_id}" if channel_id else ""
+    elif source["type"] == "xiaoyuzhou":
+        avatar = config.get("avatar", "")
+        pid = config.get("pid", "")
+        source_url = f"https://www.xiaoyuzhoufm.com/podcast/{pid}" if pid else ""
     elif source["type"] in ("x", "follow_builders"):
         handle = source["handle"] or source_key.split(":")[-1]
         avatar = f"https://unavatar.io/x/{handle}"
@@ -555,16 +684,44 @@ def creator_profile(request: Request, source_key: str):
         avatar = ""
         source_url = ""
 
-    items = conn.execute(
-        """SELECT ri.id, ri.url, ri.title, ri.body, ri.body_zh, ri.author, ri.created_at, ri.published_at,
-                  a.id as article_id, a.subtitle as article_subtitle, a.word_count
+    # Feed-style signal cards for this creator. Pull the full signal pool
+    # (no age cutoff, no pairwise-recent filter, no diversity cap) and
+    # keep only signals whose cluster includes a raw_item from this source.
+    from prism.web.pairwise import _get_candidate_pool
+    pool = _get_candidate_pool(
+        conn,
+        apply_pairwise_recent_filter=False,
+        apply_diversity_cap=False,
+        max_age_days=None,
+    )
+    signals = [s for s in pool if source_key in (s.get("source_keys") or [])]
+    signals.sort(key=lambda s: s.get("published_at") or s.get("created_at") or "", reverse=True)
+    signals = signals[:100]
+
+    # Still expose the raw_items tail — creator page also wants to show
+    # un-analyzed items (freshly synced, no signal yet) so the user can
+    # see what's pending. We render these under the signal cards.
+    pending = conn.execute(
+        """SELECT ri.id, ri.url, ri.title, ri.body, ri.body_zh, ri.author,
+                  ri.created_at, ri.published_at,
+                  a.id as article_id, a.subtitle as article_subtitle, a.word_count,
+                  EXISTS(SELECT 1 FROM item_interactions ii
+                         WHERE ii.item_id = ri.id AND ii.action = 'like') AS liked
            FROM raw_items ri
            LEFT JOIN articles a ON a.raw_item_id = ri.id
            WHERE ri.source_id = ?
+             AND NOT EXISTS (
+                SELECT 1 FROM cluster_items ci
+                JOIN signals s ON s.cluster_id = ci.cluster_id AND s.is_current = 1
+                WHERE ci.raw_item_id = ri.id
+             )
            ORDER BY ri.published_at DESC, ri.created_at DESC
-           LIMIT 100""",
+           LIMIT 50""",
         (source["id"],),
     ).fetchall()
+
+    from prism.web.feed import get_followed_authors
+    followed = get_followed_authors(conn)
 
     return _render(
         "creator_profile.html",
@@ -574,7 +731,9 @@ def creator_profile(request: Request, source_key: str):
         avatar=avatar,
         source_url=source_url,
         source_type=source["type"],
-        items=[dict(r) for r in items],
+        signals=signals,
+        pending_items=[dict(r) for r in pending],
+        followed_authors=followed,
     )
 
 
@@ -590,21 +749,99 @@ def translate_item(request: Request, item_id: int):
     body = (row["body"] or "")[:1500]
     if not body:
         return HTMLResponse("")
-    from prism.pipeline.llm import call_llm
-    try:
-        zh = call_llm(
-            prompt=f"将以下英文推文翻译为简洁流畅的中文，只输出译文，不要解释：\n\n{body}",
-            system="你是翻译助手。忠实翻译，语言简洁自然。",
-            max_tokens=512,
-        ).strip()
-        # strip think tags if present
-        import re
-        zh = re.sub(r"<think>.*?</think>", "", zh, flags=re.DOTALL).strip()
+    from prism.pipeline.translate import translate_one
+    zh = translate_one(body)
+    if zh:
+        # Cache only successful translations — empty zh means LLM failure;
+        # don't poison the cache so a later batch / retry can fill it.
         conn.execute("UPDATE raw_items SET body_zh = ? WHERE id = ?", (zh, item_id))
         conn.commit()
-    except Exception:
-        zh = body  # fallback to original
-    return HTMLResponse(f'<span class="item-card-subtitle">{zh}</span>')
+        display = zh
+    else:
+        display = body  # fallback to English original
+    return HTMLResponse(f'<span class="item-card-subtitle">{display}</span>')
+
+
+# Lightweight per-item feedback from creator profile pages. Distinct from
+# /feed/action because creator-page items are raw_items, not clustered
+# signals. A "like" bumps the source_key weight by a small delta so the
+# user's accumulated likes on a creator translate into ranking signal.
+ITEM_LIKE_SOURCE_DELTA = 0.5
+
+
+def _like_button_html(item_id: int, liked: bool) -> str:
+    if liked:
+        return (
+            f'<form hx-post="/creator/item/{item_id}/unlike" '
+            f'hx-target="this" hx-swap="outerHTML" style="display:inline" '
+            f'onclick="event.stopPropagation()">'
+            f'<button type="submit" class="item-like liked" title="取消喜欢">❤ 已喜欢</button>'
+            f'</form>'
+        )
+    return (
+        f'<form hx-post="/creator/item/{item_id}/like" '
+        f'hx-target="this" hx-swap="outerHTML" style="display:inline" '
+        f'onclick="event.stopPropagation()">'
+        f'<button type="submit" class="item-like" title="喜欢">♡ 喜欢</button>'
+        f'</form>'
+    )
+
+
+@web_router.post("/creator/item/{item_id}/like", response_class=HTMLResponse)
+def creator_item_like(request: Request, item_id: int):
+    if not _get_user(request):
+        return HTMLResponse("", status_code=401)
+    conn = _db(request)
+    row = conn.execute(
+        "SELECT s.source_key FROM raw_items ri "
+        "JOIN sources s ON ri.source_id = s.id WHERE ri.id = ?",
+        (item_id,),
+    ).fetchone()
+    if not row:
+        return HTMLResponse("", status_code=404)
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO item_interactions (item_id, action) VALUES (?, 'like')",
+        (item_id,),
+    )
+    if cur.rowcount > 0:
+        # First-time like for this item — bump source weight.
+        conn.execute(
+            "INSERT INTO preference_weights (dimension, key, weight, updated_at) "
+            "VALUES ('source', ?, ?, strftime('%Y-%m-%dT%H:%M:%S','now')) "
+            "ON CONFLICT(dimension, key) DO UPDATE SET "
+            "weight = weight + excluded.weight, updated_at = excluded.updated_at",
+            (row["source_key"], ITEM_LIKE_SOURCE_DELTA),
+        )
+    conn.commit()
+    return HTMLResponse(_like_button_html(item_id, liked=True))
+
+
+@web_router.post("/creator/item/{item_id}/unlike", response_class=HTMLResponse)
+def creator_item_unlike(request: Request, item_id: int):
+    if not _get_user(request):
+        return HTMLResponse("", status_code=401)
+    conn = _db(request)
+    row = conn.execute(
+        "SELECT s.source_key FROM raw_items ri "
+        "JOIN sources s ON ri.source_id = s.id WHERE ri.id = ?",
+        (item_id,),
+    ).fetchone()
+    if not row:
+        return HTMLResponse("", status_code=404)
+    cur = conn.execute(
+        "DELETE FROM item_interactions WHERE item_id = ? AND action = 'like'",
+        (item_id,),
+    )
+    if cur.rowcount > 0:
+        # Reverse the source-weight bump applied at like time.
+        conn.execute(
+            "UPDATE preference_weights SET weight = weight - ?, "
+            "updated_at = strftime('%Y-%m-%dT%H:%M:%S','now') "
+            "WHERE dimension = 'source' AND key = ?",
+            (ITEM_LIKE_SOURCE_DELTA, row["source_key"]),
+        )
+    conn.commit()
+    return HTMLResponse(_like_button_html(item_id, liked=False))
 
 
 @web_router.get("/article/{article_id}", response_class=HTMLResponse)
@@ -646,6 +883,23 @@ def article_detail(request: Request, article_id: int):
         (row["raw_item_id"],),
     ).fetchone()
     signal_id = sig_row["signal_id"] if sig_row else None
+
+    # Record a 'click' interaction so we can bucket this signal as
+    # impressed+clicked (vs impressed-only or saved). Best-effort: a
+    # logging failure must never break the article page.
+    # Anonymous page views (public /article) don't get logged — otherwise
+    # stranger traffic would skew the owner's CTR and preference model.
+    if signal_id is not None and _get_user(request):
+        try:
+            conn.execute(
+                "INSERT INTO feed_interactions (signal_id, action, target_key, context_json) "
+                "VALUES (?, 'click', ?, ?)",
+                (signal_id, f"article:{article_id}",
+                 '{"source":"article_detail"}'),
+            )
+            conn.commit()
+        except Exception:
+            pass
 
     # Check if user already liked this article
     liked = False
@@ -949,68 +1203,6 @@ def export_notion_by_cluster(request: Request, cluster_id: int):
 
 # ── Pairwise Routes ────────────────────────────────────────────────────────
 
-@web_router.get("/pairwise/pair", response_class=HTMLResponse)
-def pairwise_pair(request: Request):
-    """HTMX: return next pair of signals."""
-    conn = _db(request)
-    pair = select_pair(conn)
-    if pair is None:
-        tpl = _jinja_env.get_template("partials/pair_empty.html")
-        return HTMLResponse(tpl.render())
-    a, b, strategy = pair
-    tpl = _jinja_env.get_template("partials/pair_cards.html")
-    return HTMLResponse(tpl.render(signal_a=a, signal_b=b, strategy=strategy))
-
-
-@web_router.post("/pairwise/vote", response_class=HTMLResponse)
-def pairwise_vote(
-    request: Request,
-    signal_a_id: int = Form(...),
-    signal_b_id: int = Form(...),
-    winner: str = Form(...),
-    comment: str = Form(""),
-    response_time_ms: int = Form(0),
-    strategy: str = Form("exploit"),
-):
-    """Record vote and return next pair immediately.
-
-    - a/b: keep winner at position A, new signal at position B
-    - both/neither/skip: load completely new pair
-    """
-    conn = _db(request)
-    record_vote(conn, signal_a_id, signal_b_id, winner, comment, response_time_ms, strategy=strategy)
-
-    tpl = _jinja_env.get_template("partials/pair_cards.html")
-    empty_tpl = _jinja_env.get_template("partials/pair_empty.html")
-
-    if winner in ("a", "b"):
-        # Keep winner, replace loser with a new signal
-        winner_id = signal_a_id if winner == "a" else signal_b_id
-        pool = _get_candidate_pool(conn)
-        # Find winner in pool
-        winner_sig = next((s for s in pool if s["signal_id"] == winner_id), None)
-        # Pick a new signal (not the winner, not the loser)
-        exclude = {signal_a_id, signal_b_id}
-        candidates = [s for s in pool if s["signal_id"] not in exclude]
-        if winner_sig and candidates:
-            import random
-            new_sig = random.choice(candidates)
-            return HTMLResponse(tpl.render(signal_a=winner_sig, signal_b=new_sig, strategy="carry_winner"))
-        # Fallback: if winner not in pool or no candidates, get fresh pair
-        pair = select_pair(conn)
-        if pair is None:
-            return HTMLResponse(empty_tpl.render())
-        a, b, next_strategy = pair
-        return HTMLResponse(tpl.render(signal_a=a, signal_b=b, strategy=next_strategy))
-
-    # both / neither / skip → completely new pair
-    pair = select_pair(conn)
-    if pair is None:
-        return HTMLResponse(empty_tpl.render())
-    a, b, next_strategy = pair
-    return HTMLResponse(tpl.render(signal_a=a, signal_b=b, strategy=next_strategy))
-
-
 @web_router.post("/pairwise/feed", response_class=HTMLResponse)
 def pairwise_feed(
     request: Request,
@@ -1021,13 +1213,8 @@ def pairwise_feed(
     conn = _db(request)
     if url.strip():
         process_external_feed(conn, url=url.strip(), note=note.strip())
-    pair = select_pair(conn)
-    if pair is None:
-        tpl = _jinja_env.get_template("partials/pair_empty.html")
-        return HTMLResponse(tpl.render(feed_success=True))
-    a, b, strategy = pair
-    tpl = _jinja_env.get_template("partials/pair_cards.html")
-    return HTMLResponse(tpl.render(signal_a=a, signal_b=b, strategy=strategy, feed_success=True))
+        return HTMLResponse('<div class="feed-card feed-done">已收到 ✓</div>')
+    return HTMLResponse('<div class="feed-card feed-done">请输入链接或话题</div>')
 
 
 @web_router.get("/pairwise/liked", response_class=HTMLResponse)
@@ -1286,143 +1473,6 @@ async def pairwise_profile_block(request: Request):
     return JSONResponse({"ok": True})
 
 
-# --- Persona ---
-
-@web_router.get("/persona", response_class=HTMLResponse)
-def persona_form(request: Request):
-    return _render("persona.html", request=request)
-
-
-@web_router.post("/persona")
-def persona_submit(
-    request: Request,
-    role: str = Form(...),
-    goals: list[str] = Form(default=[]),
-    active_learning: str = Form(""),
-    seed_handles: str = Form(""),
-    dislike: str = Form(""),
-    style: list[str] = Form(default=[]),
-    language: str = Form("都行"),
-    length: str = Form("都可以"),
-    free_text: str = Form(""),
-):
-    from prism.persona import save_snapshot, extract_from_snapshot
-
-    answers = {
-        "role": role,
-        "goals": goals,
-        "active_learning": active_learning,
-        "dislike": dislike,
-        "style": style,
-        "language": language,
-        "length": length,
-    }
-    handles = [h.strip() for h in seed_handles.splitlines() if h.strip()]
-
-    conn = _db(request)
-    snap_id = save_snapshot(
-        conn, answers=answers, free_text=free_text, seed_handles=handles,
-    )
-    extract_from_snapshot(conn, snap_id)
-
-    return RedirectResponse(url="/taste/sources", status_code=303)
-
-
-# --- Taste / source proposals ---
-
-_ORIGIN_LABELS = {
-    "persona": "来自 persona 描述",
-    "external_feed": "来自外部投喂",
-    "graph_expansion": "来自高权重源的邻居",
-    "gap": "来自话题覆盖缺口",
-    "blindspot": "盲点扫描发现",
-    "manual": "手动添加",
-}
-
-
-def _origin_label(origin: str) -> str:
-    return _ORIGIN_LABELS.get(origin, origin)
-
-
-@web_router.get("/taste/sources", response_class=HTMLResponse)
-def taste_sources_list(request: Request):
-    import yaml as _yaml
-    conn = _db(request)
-    rows = conn.execute(
-        "SELECT id, source_type, source_config_json, display_name, rationale, origin "
-        "FROM source_proposals WHERE status = 'pending' ORDER BY origin, id DESC"
-    ).fetchall()
-
-    groups: dict[str, list[dict]] = {}
-    for r in rows:
-        cfg = _json.loads(r[2])
-        groups.setdefault(r[5], []).append({
-            "id": r[0], "source_type": r[1],
-            "source_config_pretty": _yaml.safe_dump(cfg, allow_unicode=True).strip(),
-            "display_name": r[3], "rationale": r[4],
-        })
-
-    return _render("taste_sources.html", groups=groups, origin_label=_origin_label)
-
-
-@web_router.post("/taste/sources/{proposal_id}/accept", response_class=HTMLResponse)
-def taste_source_accept(proposal_id: int, request: Request):
-    from prism.sources.yaml_editor import append_source_block
-    from prism.config import settings
-
-    conn = _db(request)
-    row = conn.execute(
-        "SELECT source_type, source_config_json, display_name, origin "
-        "FROM source_proposals WHERE id = ? AND status = 'pending'",
-        (proposal_id,),
-    ).fetchone()
-    if not row:
-        return HTMLResponse("", status_code=404)
-
-    cfg = _json.loads(row[1])
-    cfg.setdefault("type", row[0])
-    append_source_block(
-        Path(settings.source_config),
-        source_config=cfg,
-        category_comment=f"proposed via {row[3]}",
-    )
-    conn.execute(
-        "UPDATE source_proposals SET status = 'accepted', "
-        "reviewed_at = datetime('now') WHERE id = ?",
-        (proposal_id,),
-    )
-    conn.execute(
-        "INSERT INTO decision_log (layer, action, reason, context_json) "
-        "VALUES ('recall', 'add_source', ?, ?)",
-        (f"accepted proposal #{proposal_id}", _json.dumps({"config": cfg, "origin": row[3]})),
-    )
-    conn.commit()
-    return HTMLResponse(f'<li class="muted">已接受：{row[2]}</li>')
-
-
-@web_router.post("/taste/sources/{proposal_id}/reject", response_class=HTMLResponse)
-def taste_source_reject(proposal_id: int, request: Request):
-    conn = _db(request)
-    row = conn.execute(
-        "SELECT display_name FROM source_proposals WHERE id = ? AND status = 'pending'",
-        (proposal_id,),
-    ).fetchone()
-    if not row:
-        return HTMLResponse("", status_code=404)
-    conn.execute(
-        "UPDATE source_proposals SET status = 'rejected', "
-        "reviewed_at = datetime('now') WHERE id = ?",
-        (proposal_id,),
-    )
-    conn.execute(
-        "INSERT INTO decision_log (layer, action, reason, context_json) "
-        "VALUES ('recall', 'reject_source', ?, '{}')",
-        (f"rejected proposal #{proposal_id}",),
-    )
-    conn.commit()
-    return HTMLResponse(f'<li class="muted">已拒绝：{row[0]}</li>')
-
-
 # ── Quality Watchdog Routes ────────────────────────────────────────────────
 
 @web_router.get("/quality", response_class=HTMLResponse)
@@ -1455,3 +1505,201 @@ def quality_scan_now(request: Request):
     conn = _db(request)
     scan(conn)
     return RedirectResponse(url="/quality", status_code=303)
+
+
+# ── /showcase — public landing page for the GitHub README ─────────────────
+#
+# This is the page strangers hit first when they find Prism. Everything here
+# is aggregated numbers + top-of-funnel signals, no personal preference data.
+# Goal: prove in 10 seconds that Prism is a real running system, not a README
+# promise.
+
+@web_router.get("/showcase", response_class=HTMLResponse)
+def showcase(request: Request):
+    conn = _db(request)
+
+    def _one(sql, *args):
+        row = conn.execute(sql, args).fetchone()
+        return row[0] if row else 0
+
+    # ── Aggregate stats (last 7 days) ─────────────────────────────────────
+    sources_total = _one("SELECT COUNT(*) FROM sources WHERE enabled = 1")
+    sources_by_type = conn.execute(
+        "SELECT type, COUNT(*) AS n FROM sources WHERE enabled = 1 "
+        "GROUP BY type ORDER BY n DESC"
+    ).fetchall()
+    raw_7d = _one(
+        "SELECT COUNT(*) FROM raw_items WHERE created_at > datetime('now','-7 days')"
+    )
+    signals_7d = _one(
+        "SELECT COUNT(*) FROM signals WHERE is_current = 1 "
+        "AND created_at > datetime('now','-7 days')"
+    )
+    strategic_7d = _one(
+        "SELECT COUNT(*) FROM signals WHERE is_current = 1 "
+        "AND signal_layer IN ('actionable','strategic') "
+        "AND created_at > datetime('now','-7 days')"
+    )
+    decisions_30d = _one(
+        "SELECT COUNT(*) FROM decision_log WHERE timestamp > datetime('now','-30 days')"
+    )
+    signals_total = _one("SELECT COUNT(*) FROM signals WHERE is_current = 1")
+
+    # First signal timestamp → days of continuous autonomous operation
+    first_sig = conn.execute(
+        "SELECT created_at FROM signals ORDER BY created_at ASC LIMIT 1"
+    ).fetchone()
+    if first_sig and first_sig[0]:
+        try:
+            first_dt = datetime.fromisoformat(first_sig[0].replace("Z", "+00:00"))
+            if first_dt.tzinfo is None:
+                first_dt = first_dt.replace(tzinfo=timezone.utc)
+            days_running = max(1, (datetime.now(timezone.utc) - first_dt).days)
+        except Exception:
+            days_running = 0
+    else:
+        days_running = 0
+
+    # ── Top signals last 7d ───────────────────────────────────────────────
+    cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    sig_rows = conn.execute(
+        """SELECT s.id AS signal_id, s.cluster_id, s.summary, s.signal_layer,
+                  s.signal_strength, s.why_it_matters, s.tl_perspective,
+                  s.created_at, c.topic_label, c.item_count, c.date
+           FROM signals s
+           JOIN clusters c ON s.cluster_id = c.id
+           WHERE s.is_current = 1
+             AND s.signal_layer IN ('actionable','strategic')
+             AND s.signal_strength >= 3
+             AND c.date >= ?
+           ORDER BY s.signal_strength DESC, s.created_at DESC
+           LIMIT 10""",
+        (cutoff,),
+    ).fetchall()
+
+    # Best outbound URL per cluster (non-aggregator preferred)
+    _aggs = ("news.ycombinator.com", "reddit.com")
+    cluster_ids = [r["cluster_id"] for r in sig_rows]
+    cluster_url = {}
+    if cluster_ids:
+        ph = ",".join("?" * len(cluster_ids))
+        for r in conn.execute(
+            f"""SELECT ci.cluster_id, ri.url FROM cluster_items ci
+                JOIN raw_items ri ON ri.id = ci.raw_item_id
+                WHERE ci.cluster_id IN ({ph}) AND ri.url LIKE 'http%'""",
+            cluster_ids,
+        ).fetchall():
+            cid, url = r["cluster_id"], r["url"]
+            is_agg = any(a in url for a in _aggs)
+            if cid not in cluster_url or (not is_agg and any(a in cluster_url[cid] for a in _aggs)):
+                cluster_url[cid] = url
+
+    top_signals = []
+    for r in sig_rows:
+        top_signals.append({
+            "signal_id": r["signal_id"],
+            "topic_label": r["topic_label"],
+            "summary": (r["summary"] or "")[:240],
+            "signal_layer": r["signal_layer"],
+            "signal_strength": r["signal_strength"],
+            "why_it_matters": (r["why_it_matters"] or "")[:180],
+            "tl_perspective": (r["tl_perspective"] or "")[:180],
+            "item_count": r["item_count"],
+            "date": r["date"],
+            "url": cluster_url.get(r["cluster_id"]),
+        })
+
+    # ── Recent autonomous decisions ───────────────────────────────────────
+    decisions = conn.execute(
+        """SELECT timestamp, layer, action, reason, context_json
+           FROM decision_log
+           WHERE timestamp > datetime('now','-14 days')
+             AND action != 'x_follow_added'
+           ORDER BY timestamp DESC LIMIT 12"""
+    ).fetchall()
+
+    # ── Cost estimate: local vs cloud API ─────────────────────────────────
+    # Assume ~2k tokens in + ~1k tokens out per signal (cluster summary)
+    # Claude Sonnet 4.5 pricing: $3/Mtok in, $15/Mtok out (2026-04)
+    est_in_tokens = signals_7d * 2000
+    est_out_tokens = signals_7d * 1000
+    cloud_cost_7d = (est_in_tokens / 1_000_000) * 3 + (est_out_tokens / 1_000_000) * 15
+    cloud_cost_yearly = cloud_cost_7d * (365 / 7)
+
+    return _render(
+        "showcase.html",
+        request=request,
+        stats={
+            "sources_total": sources_total,
+            "sources_by_type": [dict(r) for r in sources_by_type],
+            "raw_7d": raw_7d,
+            "signals_7d": signals_7d,
+            "strategic_7d": strategic_7d,
+            "signals_total": signals_total,
+            "decisions_30d": decisions_30d,
+            "days_running": days_running,
+            "kept_ratio": round(strategic_7d * 100 / signals_7d) if signals_7d else 0,
+            "cloud_cost_7d": round(cloud_cost_7d, 2),
+            "cloud_cost_yearly": round(cloud_cost_yearly, 0),
+            "tokens_week_m": round((est_in_tokens + est_out_tokens) / 1_000_000, 1),
+        },
+        top_signals=top_signals,
+        decisions=[dict(d) for d in decisions],
+    )
+
+
+# ── /decisions/weekly — public audit log of autonomous decisions ──────────
+#
+# What Prism did this week without being asked. Groups by day, by action type.
+# This is the transparency story that SaaS recommenders can't tell — anyone
+# who lands here can see exactly what the system chose to change.
+
+@web_router.get("/decisions/weekly", response_class=HTMLResponse)
+def decisions_weekly(request: Request):
+    conn = _db(request)
+
+    # Action-type counts (top-of-page summary)
+    counts = conn.execute(
+        """SELECT action, COUNT(*) AS n FROM decision_log
+           WHERE timestamp > datetime('now','-7 days')
+           GROUP BY action ORDER BY n DESC"""
+    ).fetchall()
+
+    # Full timeline, newest first (cap at 300 to keep page snappy)
+    rows = conn.execute(
+        """SELECT timestamp, layer, action, reason, context_json
+           FROM decision_log
+           WHERE timestamp > datetime('now','-7 days')
+           ORDER BY timestamp DESC
+           LIMIT 300"""
+    ).fetchall()
+
+    # Group by date
+    by_date: dict[str, list[dict]] = {}
+    for r in rows:
+        ts = r["timestamp"] or ""
+        day = ts[:10] if ts else "unknown"
+        ctx = {}
+        if r["context_json"]:
+            try:
+                ctx = _json.loads(r["context_json"])
+            except Exception:
+                pass
+        by_date.setdefault(day, []).append({
+            "time": ts[11:16] if len(ts) > 11 else "",
+            "layer": r["layer"],
+            "action": r["action"],
+            "reason": r["reason"] or "",
+            "context": ctx,
+        })
+
+    days = sorted(by_date.keys(), reverse=True)
+
+    return _render(
+        "decisions_weekly.html",
+        request=request,
+        counts=[dict(c) for c in counts],
+        total=len(rows),
+        days=days,
+        by_date=by_date,
+    )
