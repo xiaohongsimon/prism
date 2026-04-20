@@ -1420,3 +1420,37 @@ def taste_source_reject(proposal_id: int, request: Request):
     )
     conn.commit()
     return HTMLResponse(f'<li class="muted">已拒绝：{row[0]}</li>')
+
+
+# ── Quality Watchdog Routes ────────────────────────────────────────────────
+
+@web_router.get("/quality", response_class=HTMLResponse)
+def quality_page(request: Request):
+    """Open anomalies — the one-stop pipeline health dashboard."""
+    from prism.quality.rules import list_open
+    conn = _db(request)
+    anomalies = list_open(conn)
+    # Group for the template: critical first, then warn, then info.
+    counts = {"critical": 0, "warn": 0, "info": 0}
+    for a in anomalies:
+        counts[a["severity"]] = counts.get(a["severity"], 0) + 1
+    tpl = _jinja_env.get_template("quality.html")
+    return HTMLResponse(tpl.render(anomalies=anomalies, counts=counts))
+
+
+@web_router.post("/quality/ack/{anomaly_id}", response_class=HTMLResponse)
+def quality_ack(anomaly_id: int, request: Request):
+    """Acknowledge an open anomaly — hides it until it re-fires."""
+    from prism.quality.rules import ack
+    conn = _db(request)
+    ack(conn, anomaly_id)
+    return HTMLResponse("", status_code=200)
+
+
+@web_router.post("/quality/scan", response_class=HTMLResponse)
+def quality_scan_now(request: Request):
+    """Run scan on demand and redirect back to /quality."""
+    from prism.quality import scan
+    conn = _db(request)
+    scan(conn)
+    return RedirectResponse(url="/quality", status_code=303)

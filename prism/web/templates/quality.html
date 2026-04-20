@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="page-header">
+    <nav class="feed-nav">
+        <a href="/feed">Feed</a>
+        <a href="/feed/following">关注</a>
+        <a href="/pairwise">Pairwise</a>
+        <a href="/quality" class="active">Quality</a>
+    </nav>
+    <h1>Quality Watchdog</h1>
+    <p class="muted">
+        管道健康监控 — 每小时自动扫描，发现异常立即上报。
+        你不应该成为那个先发现 bug 的人。
+    </p>
+    <form method="post" action="/quality/scan" style="margin-top:1rem">
+        <button type="submit" class="btn">立即重新扫描</button>
+    </form>
+</header>
+
+<section class="quality-summary">
+    <div class="quality-stat quality-stat-critical">
+        <span class="stat-number">{{ counts.critical }}</span>
+        <span class="stat-label">Critical</span>
+    </div>
+    <div class="quality-stat quality-stat-warn">
+        <span class="stat-number">{{ counts.warn }}</span>
+        <span class="stat-label">Warn</span>
+    </div>
+    <div class="quality-stat quality-stat-info">
+        <span class="stat-number">{{ counts.info }}</span>
+        <span class="stat-label">Info</span>
+    </div>
+</section>
+
+<section class="quality-list">
+    {% if not anomalies %}
+    <div class="quality-empty">
+        <p>🎉 没有 open anomalies。系统目前状态良好。</p>
+        <p class="muted">如果长时间没有任何监控事件，考虑是不是规则太松了。</p>
+    </div>
+    {% else %}
+    {% for a in anomalies %}
+    <article class="quality-item quality-sev-{{ a.severity }}" id="anomaly-{{ a.id }}">
+        <header class="quality-item-header">
+            <span class="quality-badge quality-badge-{{ a.severity }}">{{ a.severity }}</span>
+            <span class="quality-dim">{{ a.dimension }}{% if a.key %} · {{ a.key }}{% endif %}</span>
+            <time class="quality-time">{{ a.last_seen_at }}</time>
+        </header>
+        <h3 class="quality-title">{{ a.title }}</h3>
+        <p class="quality-detail">{{ a.detail }}</p>
+        <footer class="quality-item-footer">
+            <span class="muted">rule: {{ a.rule }} · first seen {{ a.first_seen_at }}</span>
+            <button class="btn btn-small"
+                    hx-post="/quality/ack/{{ a.id }}"
+                    hx-target="#anomaly-{{ a.id }}"
+                    hx-swap="outerHTML">
+                Ack
+            </button>
+        </footer>
+    </article>
+    {% endfor %}
+    {% endif %}
+</section>
+{% endblock %}

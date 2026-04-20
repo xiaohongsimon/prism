@@ -354,6 +354,40 @@ def init_db(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_feed_interactions_action_created
             ON feed_interactions(action, created_at);
+
+        -- Quality Watchdog: periodic pipeline health snapshots & detected anomalies.
+        CREATE TABLE IF NOT EXISTS quality_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            captured_at TEXT NOT NULL DEFAULT (datetime('now')),
+            dimension TEXT NOT NULL,         -- e.g. 'source', 'source_type', 'pipeline', 'user'
+            key TEXT NOT NULL DEFAULT '',    -- source_key / source_type / metric name
+            metric TEXT NOT NULL,            -- e.g. 'raw_items_6h', 'current_signals', 'feed_actions_24h'
+            value REAL NOT NULL DEFAULT 0.0,
+            context_json TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX IF NOT EXISTS idx_quality_snap_captured
+            ON quality_snapshots(captured_at);
+        CREATE INDEX IF NOT EXISTS idx_quality_snap_lookup
+            ON quality_snapshots(dimension, key, metric, captured_at);
+
+        CREATE TABLE IF NOT EXISTS quality_anomalies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+            last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+            severity TEXT NOT NULL CHECK(severity IN ('info','warn','critical')),
+            dimension TEXT NOT NULL,
+            key TEXT NOT NULL DEFAULT '',
+            rule TEXT NOT NULL,              -- rule id, e.g. 'source_silent_6h'
+            title TEXT NOT NULL,             -- one-line human readable
+            detail TEXT NOT NULL DEFAULT '', -- longer explanation + numbers
+            status TEXT NOT NULL DEFAULT 'open'
+                CHECK(status IN ('open','ack','resolved')),
+            acked_at TEXT DEFAULT NULL,
+            resolved_at TEXT DEFAULT NULL,
+            UNIQUE(dimension, key, rule, status)
+        );
+        CREATE INDEX IF NOT EXISTS idx_quality_anomalies_status
+            ON quality_anomalies(status, severity, last_seen_at);
     """)
 
     # Add extracted_json column to external_feeds if missing

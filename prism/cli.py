@@ -906,3 +906,26 @@ def sources_prune_cmd(threshold: float, dry_run: bool, yes: bool):
         click.echo(f"Pruned {pruned} source(s) in {yaml_path}.")
     finally:
         conn.close()
+
+
+@cli.command("quality-scan")
+def quality_scan():
+    """Capture health metrics and evaluate anomaly rules."""
+    from prism.quality import scan
+    from prism.quality.rules import list_open
+    conn = get_connection(settings.db_path)
+    try:
+        result = scan(conn)
+        click.echo(
+            f"Quality scan: {result['metrics']} metrics, "
+            f"{result['rules']} rules evaluated."
+        )
+        open_anomalies = list_open(conn)
+        if not open_anomalies:
+            click.echo("No open anomalies.")
+            return
+        click.echo(f"Open anomalies ({len(open_anomalies)}):")
+        for a in open_anomalies:
+            click.echo(f"  [{a['severity']}] {a['title']} — {a['detail']}")
+    finally:
+        conn.close()

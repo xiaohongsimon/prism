@@ -1229,3 +1229,66 @@ details[open] > .source-group-header::before { content: "▾"; }
   font-size: 13px;
 }
 .saved-item a:hover { text-decoration: underline; }
+
+/* ── Quality Watchdog ─────────────────────────────────────────────── */
+.quality-summary {
+  display: flex;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+.quality-stat {
+  flex: 1;
+  padding: 1rem;
+  border-radius: 8px;
+  text-align: center;
+  border: 1px solid var(--border, #2a2a35);
+}
+.quality-stat .stat-number { display: block; font-size: 2rem; font-weight: 600; }
+.quality-stat .stat-label { display: block; font-size: 12px; text-transform: uppercase; opacity: 0.7; }
+.quality-stat-critical { background: rgba(220, 38, 38, 0.12); border-color: rgba(220, 38, 38, 0.4); }
+.quality-stat-warn { background: rgba(234, 179, 8, 0.12); border-color: rgba(234, 179, 8, 0.4); }
+.quality-stat-info { background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.4); }
+
+.quality-list { display: flex; flex-direction: column; gap: 1rem; }
+.quality-item {
+  padding: 1rem 1.25rem;
+  border-radius: 10px;
+  border: 1px solid var(--border, #2a2a35);
+  background: var(--card-bg, #15151c);
+}
+.quality-sev-critical { border-left: 3px solid #dc2626; }
+.quality-sev-warn { border-left: 3px solid #eab308; }
+.quality-sev-info { border-left: 3px solid #3b82f6; }
+.quality-item-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 12px;
+  opacity: 0.8;
+  margin-bottom: 0.25rem;
+}
+.quality-badge {
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 11px;
+}
+.quality-badge-critical { background: #dc2626; color: #fff; }
+.quality-badge-warn { background: #eab308; color: #000; }
+.quality-badge-info { background: #3b82f6; color: #fff; }
+.quality-title { margin: 0.25rem 0; font-size: 16px; }
+.quality-detail { margin: 0.25rem 0 0.75rem 0; opacity: 0.85; font-size: 14px; }
+.quality-item-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+.quality-empty {
+  padding: 2rem;
+  text-align: center;
+  border: 1px dashed var(--border, #2a2a35);
+  border-radius: 10px;
+}
+.btn-small { padding: 4px 12px; font-size: 12px; }
