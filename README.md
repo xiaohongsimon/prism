@@ -5,119 +5,142 @@
 <h1 align="center">Prism</h1>
 
 <p align="center">
-  <b>AI 驱动的个人推荐引擎 — 用 Pairwise Comparison 学你的品味</b>
+  <b>The best recommendation system is the one you can open, audit, and argue with.</b><br>
+  <sub>So I built mine — local LLMs, pairwise preference learning, every autonomous decision logged.</sub>
 </p>
 
 <p align="center">
-  <a href="#快速开始">快速开始</a> ·
-  <a href="#核心理念">核心理念</a> ·
-  <a href="#架构">架构</a> ·
-  <a href="#功能">功能</a> ·
-  <a href="#路线图">路线图</a>
+  <a href="https://prism.simon-ai.net/showcase"><b>Live instance →</b></a> ·
+  <a href="https://prism.simon-ai.net/article/118">Example output</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#中文简介">中文</a>
+</p>
+
+<p align="center">
+  <sub>136 sources · 26+ days running non-stop · 9M tokens/week · $0 LLM bill ·
+  <a href="https://prism.simon-ai.net/decisions/weekly">130 autonomous decisions</a> in the last 30 days</sub>
 </p>
 
 ---
 
-## 为什么做 Prism？
+## The problem I was trying to solve
 
-AI 从业者每天被淹没在 X/HN/arXiv/YouTube/GitHub 的信息洪流里。现有方案要么是 RSS 全量推送（太多），要么是算法黑箱推荐（不透明）。
+I work in ML. Every day, there are ~200 things on X, Hacker News, arXiv, YouTube, and Xiaoyuzhou (中文 podcasts) that *might* be worth my attention. I tried every reader, every "AI news digest" service, every GPT-wrapper "personalized feed." They all failed in the same way: they decided what I should read, then showed me a headline, and I had no way to argue back. When they were wrong, I couldn't correct them. When they were right, I couldn't tell *why*.
 
-**Prism 的做法不一样**：AI 先把信息读完、聚类、摘要，然后每次只给你看 **两条信号**，你选更感兴趣的那个。每一次选择都是一个训练信号，系统从中学习你的偏好，动态调整"去哪找"和"怎么排"。
+So I built the opposite. Prism reads everything overnight on my Mac Studio, clusters and summarises it with local LLMs, and every morning asks me one question at a time: **"which of these two signals is more interesting?"** My 1-bit answer trains a Bradley–Terry preference model. Over weeks, the system learns what I care about — and more importantly, it **shows me exactly why** any signal made the cut, and logs every autonomous decision it made on my behalf (reweighting a source, flagging an anomaly, proposing a new feed).
+
+This README is also a deliberate artifact. If you're here because you want to see how I think about recommendation, systems design, and self-hosted AI, read on.
+
+## Three bets this project is making
+
+Every design choice in Prism comes from one of these three bets. If the bet is wrong, the project is wrong.
+
+1. **Pairwise > ratings > thumbs-up.** Humans are terrible at absolute ratings but excellent at relative ones. Asking "which of these two?" produces a cleaner, more stable preference signal than a 5-star slider ever will — and it costs the user less cognitive effort. Bradley–Terry ELO turns those pairwise bits directly into a score. ([~40 lines of code](prism/web/ranking.py) do the math.)
+
+2. **Auditability is a feature, not a compliance checkbox.** Every autonomous action the system takes — throttling a low-performing source, flagging a spike, proposing a new feed — is written to a single [`decision_log`](https://prism.simon-ai.net/decisions/weekly) table with a reason. I can replay the system's history. I can ask "why did you add this source on March 28?" and get a real answer. No recommendation system I pay for will tell me that.
+
+3. **Local LLMs crossed a threshold in 2025.** A Mac Studio with 512 GB of unified memory can now run Qwen3-30B or Gemma-3-27B at conversational latency. Throw in Bradley–Terry and some careful prompt design, and you get a personal news system that costs **$0/week in API fees** instead of ~$3,400/year on Claude Sonnet 4.5. Privacy and tweakability come along for the ride.
+
+If you disagree with any of these, I'd genuinely like to hear why — [open an issue](https://github.com/xiaohongsimon/prism/issues).
+
+## What it does
+
+- **Pairwise UI.** Two signals side-by-side. Pick A, B, both, neither, or drop a free-text note. Every interaction trains the model.
+- **Local LLM pipeline.** `sync → cluster → analyze` turns raw items (tweets, HN threads, arXiv abstracts, YouTube transcripts, podcast episodes) into summarised signals with a bilingual summary, a "why it matters" line, and a strategic-vs-tactical tier.
+- **Self-tuning recall.** Each source has a weight that drifts with the win-rate of the signals it produces. Sources you consistently pick over get crawled more often; dead weight gets throttled. All rule-based, zero LLM overhead in the ranking loop.
+- **Podcast → structured article.** Feed a Xiaoyuzhou or YouTube episode in; get a 3-section markdown article with highlighted quotes out. See [`prism/pipeline/articlize.py`](prism/pipeline/articlize.py) for the prompt — and [article 118](https://prism.simon-ai.net/article/118) for an actual output (24 k characters of podcast transcript → 4.5 k-character structured article with quotes).
+- **External-feed injection.** Paste a URL from *any* other channel (WeChat, Slack, a friend) — it's treated as a 3× positive preference signal, stronger than any in-feed action.
+- **Decision Log.** Every autonomous decision is logged with a reason. Browsable at [`/decisions/weekly`](https://prism.simon-ai.net/decisions/weekly).
+
+## Benchmark
+
+Numbers from my live instance (auto-updated at [prism.simon-ai.net/showcase](https://prism.simon-ai.net/showcase)):
+
+| Metric                             | Value                      |
+|------------------------------------|----------------------------|
+| Active sources                     | **136**                    |
+| Raw items ingested / week          | **~3,800**                 |
+| Signals distilled / week           | **~3,100**                 |
+| High-value signals (strategic)     | **~97%** of distilled      |
+| Autonomous decisions / 30d         | **130+**                   |
+| Continuous uptime                  | **26+ days**               |
+| Tokens processed / week            | **~9M**                    |
+| **LLM cost / week (local)**        | **$0**                     |
+| Same workload on Claude Sonnet 4.5 | **~$65 / week (~$3,400 / year)** |
+
+Runs on a Mac Studio via [mlx](https://github.com/ml-explore/mlx). Swap models in `.env` — any OpenAI-compatible endpoint works. I've tested Qwen3-30B, Gemma-3-27B, and qwen-plus (cloud).
+
+## Architecture
 
 ```
-┌─────────────┐     ┌─────────────┐
-│   信号 A     │     │   信号 B     │
-│ Claude 4.6   │ VS  │ Llama 4 开源 │
-│ 发布新推理模型 │     │ 405B 权重    │
-└──────┬──────┘     └──────┬──────┘
-       │    你选了 A → ELO 更新    │
-       └───────────┬───────────┘
-                   ▼
-         偏好模型持续进化
+sources.yaml  ◄── single source of truth (136 adapters)
+     │
+     ▼
+[sync]        fetch raw items
+     │
+     ▼
+[cluster]     dedup + semantic grouping
+     │
+     ▼
+[analyze]     local LLM → summary · why_it_matters · strength · tags
+     │
+     ▼
+[pairwise]    Bradley–Terry + your 1-bit choices → preference model
+     │
+     ▼
+[decide]      adjust source weights · propose new sources · flag anomalies
+     │        (everything → decision_log)
+     ▼
+signals → /feed · /briefing · /showcase · Notion
 ```
 
-## 核心理念
+The two-layer loop:
 
-> **信息应该被学习，而非推荐。**
+| Layer   | Responsibility         | Implementation |
+|---------|------------------------|----------------|
+| Recall  | *Where* to look        | 17 source adapters + dynamic per-source weights (Phase 1: rules · Phase 2: LLM-suggested new sources · Phase 3: auto-trial & promote) |
+| Ranking | *How* to order         | Bradley–Terry ELO + multi-dim weights (topic/source/author) + exploration (70% high-confidence · 20% double-new · 10% random) |
 
-- **不猜你想看什么** — 从真实的 pairwise 选择中学习，不靠用户画像
-- **透明可追溯** — 所有自动决策记录在 Decision Log，支持回溯
-- **自演化** — 源权重根据胜率动态调整，无需手动配置
-- **单人使用** — 不做 SaaS，跑在你自己的机器上，数据完全属于你
+Feedback signal weights:
 
-## 功能
+| Signal type          | Weight | Interpretation      |
+|----------------------|--------|---------------------|
+| External feed (URL)  | **3.0**| Strongest positive  |
+| Save / star          | 2.0    | Explicit like       |
+| Pairwise pick        | 1.0    | Standard            |
+| "Both fine"          | 0.3    | Weak positive       |
+| "Neither"            | −0.5   | Negative            |
 
-- **Pairwise 对比 UI** — 每次两条信号，选择/跳过/都要/都不要，可附文字反馈
-- **10+ 信号源** — X、Hacker News、arXiv、YouTube、GitHub Trending/Releases、Reddit、Product Hunt 等
-- **Bradley-Terry ELO 评分** — 经典偏好模型，<50 行 Python 实现
-- **多维偏好向量** — topic/source/author 权重从 pairwise 同步更新
-- **动态源权重** — 每个源根据其信号的胜率自动调整采集频率，零 LLM 开销
-- **外部投喂** — 随时投喂链接/话题作为强正反馈（权重 3x）
-- **LLM 分析** — 自动聚类、摘要、中文翻译、信号分层（actionable/strategic/noise）
-- **每日简报** — 自动生成全局概览 + Notion 发布
-- **292 个测试** — pytest 覆盖核心逻辑
+### The design was pressure-tested by LLMs
 
-## 架构
+The current two-layer architecture wasn't my first draft. Original design had a three-layer system with a separate "Meta" optimisation loop. I asked six different LLMs (Claude Opus, GPT-5, Gemini 2.5, DeepSeek, Qwen-Max, local Qwen3) to critique both options. Five of six argued the Meta layer was premature. I agreed, collapsed it into a background task on the ranking layer, and shipped the simpler version. The full transcript is in [`docs/reviews/synthesis/2026-04-01-prism-v2-debate.md`](docs/reviews/synthesis/2026-04-01-prism-v2-debate.md) — it's a snapshot of what multi-model design-critique looks like when used seriously.
 
-```
-信号源 (X/HN/arXiv/...)          用户
-        │                         │
-        ▼                         ▼
-   ┌─────────┐             ┌──────────┐
-   │  召回层   │             │ Pairwise │
-   │ "去哪找"  │             │   UI     │
-   │          │             │          │
-   │ sync →   │             │ 选择 A/B  │
-   │ cluster →│◄────────────│ 文字反馈  │
-   │ analyze  │  ELO 更新    │ 外部投喂  │
-   └────┬─────┘             └──────────┘
-        │                         │
-        ▼                         ▼
-   ┌─────────┐             ┌──────────┐
-   │  排序层   │             │ Decision │
-   │ "怎么排"  │             │   Log    │
-   │          │             │          │
-   │ BT-ELO   │             │ 追溯所有  │
-   │ 多维权重  │             │ 自动决策  │
-   └──────────┘             └──────────┘
-```
+## Design decisions worth arguing about
 
-### 两层闭环
+Every choice below has a real trade-off. If you think I picked wrong, I'd like to know.
 
-| 层 | 职责 | 实现 |
-|---|---|---|
-| **召回层** | 从哪找信息 | 源适配器 + 源权重动态调整（Phase 1: 规则调整，Phase 2: LLM 推荐，Phase 3: 自动试运行） |
-| **排序层** | 怎么排序 | Bradley-Terry ELO + 多维权重 + 探索策略（70% 高分+不确定 / 20% 双新 / 10% 随机） |
+- **SQLite, not Postgres.** This is a single-user system. A 4 GB SQLite file on disk is simpler, faster, and backup is `cp`. Not planning to change.
+- **No vector DB — yet.** Embedding similarity is only used for cold-start signal scoring. For 3 k signals/week it doesn't earn its complexity. Will revisit if the corpus grows 10×.
+- **Jinja2 + HTMX, no build step.** The whole frontend is server-rendered, zero npm, one `style.css`. Total frontend code: ~1.2 k lines of CSS + Jinja. Adding React would double the complexity and halve the iteration speed.
+- **Bradley–Terry, not a neural re-ranker.** Simpler model, easier to reason about, no training loop. The multi-dim weight vector already captures topic/source/author preference. A neural re-ranker would be cool but I can't justify the opacity yet.
+- **No multi-user.** Single-user is a *feature*. Personalisation only works when the feedback signal is yours. Sharing preferences across users kills the premise.
+- **YAML as config, not DB.** `config/sources.yaml` is the source of truth. The DB tracks *runtime state* (last-synced timestamps, dynamic weights). This split lets me version-control my feed config with git.
 
-### 反馈权重
+## What this does NOT do (yet)
 
-| 信号类型 | 权重 | 说明 |
-|---------|------|------|
-| 外部投喂链接 | 3.0 | 最强正反馈 |
-| 保存/星标 | 2.0 | 明确喜欢 |
-| Pairwise 选择 | 1.0 | 标准对比信号 |
-| 两个都行 | 0.3 | 弱正信号 |
-| 两个都不要 | -0.5 | 负反馈 |
+I'd rather be honest about limits than oversell.
 
-## 技术栈
+- **Cold start is rough.** First 100–200 pairwise choices the model is basically random. Better onboarding is an open problem.
+- **No real LLM-driven source discovery yet.** Phase 2 and 3 (auto-propose, auto-trial new sources) are on the roadmap but not shipped.
+- **Chinese-language sources are thin.** X / HN / arXiv / YouTube are covered well. 即刻 / 知乎 / 微信公众号 don't have adapters yet. Contributions very welcome.
+- **Single-device.** No sync across machines. The SQLite file is my state.
+- **Entity system is paused.** An earlier effort to build a unified entity graph across signals (people, companies, papers) was over-engineered and is shelved. See [`docs/specs/2026-03-29-prism-v2-entity-system.md`](docs/specs/2026-03-29-prism-v2-entity-system.md) for why.
+- **No mobile app.** The web UI is responsive but not a PWA-grade experience.
 
-| 组件 | 选型 | 理由 |
-|------|------|------|
-| 后端 | FastAPI + Uvicorn | 异步、轻量、适合单人使用 |
-| 数据库 | SQLite | 零运维、单文件、够用 |
-| 前端 | Jinja2 + HTMX + Vanilla CSS | 无构建工具、服务端渲染、PWA 支持 |
-| CLI | Click | 标准 Python CLI 框架 |
-| LLM | OpenAI 兼容 API | 本地 omlx / 云端 API 均可 |
-| 测试 | pytest + pytest-asyncio | 292 个测试，覆盖核心逻辑 |
+## Quick start
 
-## 快速开始
-
-### 前置要求
-
-- Python 3.10+
-- OpenAI 兼容的 LLM API（如阿里云百炼、本地 Ollama/omlx）
-
-### 安装
+**Prereqs:** Python 3.10+, an OpenAI-compatible LLM endpoint (local Ollama / mlx / vLLM, or cloud).
 
 ```bash
 git clone https://github.com/xiaohongsimon/prism.git
@@ -125,157 +148,77 @@ cd prism
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
+cp .env.example .env   # then edit
 ```
 
-### 配置
-
-```bash
-cp .env.example .env
-```
-
-编辑 `.env`：
+Minimum `.env`:
 
 ```env
-# LLM API（必填）
-PRISM_LLM_BASE_URL=https://your-api-endpoint.com/v1
-PRISM_LLM_API_KEY=your-api-key
-PRISM_LLM_MODEL=qwen-plus          # 主分析模型
-PRISM_LLM_CHEAP_MODEL=qwen-turbo   # 轻量任务模型
-
-# 可选
-PRISM_ADMIN_PASSWORD=your-password  # Web UI 登录密码
-NOTION_API_KEY=                     # Notion 发布
+PRISM_LLM_BASE_URL=http://localhost:8002/v1
+PRISM_LLM_MODEL=qwen3-30b-a3b-instruct
+PRISM_LLM_CHEAP_MODEL=qwen3-4b-instruct
+PRISM_ADMIN_PASSWORD=whatever
 ```
 
-### 启动
+Run:
 
 ```bash
-# 同步信号源
-prism sync
-
-# 聚类 + 分析
-prism cluster
-prism analyze --incremental
-
-# 启动 Web UI
-prism serve --port 8080
+prism sync                   # fetch from all sources
+prism cluster                # dedup + group
+prism analyze --incremental  # LLM pass
+prism serve --port 8080      # web UI at localhost:8080
 ```
 
-打开 http://localhost:8080 开始 Pairwise 对比。
+First-run tip: the first few pairwise comparisons are noisy — keep picking for ~100 rounds before judging the quality.
 
-## 常用命令
+For production-style unattended running, see [`prism/scheduling/`](prism/scheduling/) (macOS launchd plists).
 
-```bash
-prism sync                      # 从所有源同步
-prism sync --source x           # 只同步 X/Twitter
-prism cluster                   # 聚类新内容
-prism analyze --incremental     # 增量 LLM 分析
-prism analyze --daily           # 每日全局分析 + 简报叙述
-prism generate-slides --limit 50 # 生成信号卡片
-prism briefing --save           # 生成并保存每日简报
-prism publish --notion          # 发布到 Notion
-prism source list               # 查看源状态
-prism serve --port 8080         # 启动 Web 服务
-```
-
-## 项目结构
+## Project layout
 
 ```
 prism/
-├── cli.py                 # 命令行入口
-├── config.py              # 配置管理（.env + YAML）
-├── db.py                  # SQLite schema + 迁移
-├── models.py              # 数据模型
-├── source_manager.py      # 源生命周期管理
-├── pipeline/
-│   ├── sync.py            # 信号同步（含 429 退避）
-│   ├── cluster.py         # 聚类（bigram Jaccard + 关键词）
-│   ├── analyze.py         # LLM 分析 + 叙述生成
-│   └── llm.py             # LLM 调用封装
-├── sources/               # 17 个信号源适配器
-│   ├── base.py            # SourceAdapter 协议
-│   ├── x.py               # X / Twitter
-│   ├── hn.py              # Hacker News
-│   ├── arxiv.py           # arXiv RSS
-│   ├── youtube.py         # YouTube
-│   └── ...
+├── cli.py                 # CLI entry
+├── db.py                  # SQLite schema (init_db is the whole thing)
+├── pipeline/              # sync → cluster → analyze → articlize
+├── sources/               # 17 source adapters; base.py defines the protocol
 ├── web/
-│   ├── routes.py          # FastAPI 路由
-│   ├── pairwise.py        # Pairwise 配对 + ELO 更新
-│   ├── ranking.py         # 排序 + 偏好阻断
-│   ├── auth.py            # 邀请码 + Session 认证
-│   └── templates/         # Jinja2 模板
-├── output/
-│   ├── briefing.py        # 每日简报生成
-│   └── notion.py          # Notion 发布
-└── scheduling/            # macOS launchd 调度配置
+│   ├── routes.py          # FastAPI
+│   ├── pairwise.py        # pair selection + ELO update  (<200 lines)
+│   ├── ranking.py         # ranking + multi-dim weights   (<400 lines)
+│   ├── slides.py          # multi-model horse race + judge
+│   └── templates/         # Jinja2 + HTMX — zero build step
+├── output/                # briefing + Notion publish
+└── scheduling/            # launchd plists for 24/7 operation
+
+docs/
+├── specs/                 # design specs I wrote before implementing
+└── reviews/synthesis/     # multi-model design critiques
 ```
 
-## 自定义信号源
+## Who built this
 
-编辑 `config/sources.yaml` 添加新源：
+I'm Simon — algorithm team TL at a major tech company, managing ~40 people and a 1,500+ GPU cluster by day. Prism is my nights-and-weekends project, built because I wanted a recommendation system that **respects my attention the way a good editor would** — with a point of view, a memory, and a paper trail.
 
-```yaml
-sources:
-  - type: x
-    key: "x:your_handle"
-    handle: your_handle
-    display_name: "Your Handle"
+If you use this, break it, or disagree with any of the choices above — [open an issue](https://github.com/xiaohongsimon/prism/issues) or find me on X [@xiaohongsimon](https://x.com/xiaohongsimon). I care about the feedback.
 
-  - type: hackernews
-    key: "hn:front"
-    min_score: 50
-```
+If you want to contribute, the most valuable things right now:
 
-实现新的源适配器：
+- Chinese-community source adapters (即刻, 知乎, 微信公众号)
+- Cold-start strategy — how do we make the first 50 rounds feel useful?
+- A smarter pair-selection policy (current is 70/20/10 rules; active learning could do better)
 
-```python
-# prism/sources/my_source.py
-from prism.sources.base import SourceAdapter, SyncResult
-from prism.models import RawItem
+## 中文简介
 
-class MySourceAdapter(SourceAdapter):
-    async def sync(self, config: dict) -> SyncResult:
-        items = []  # fetch your data
-        return SyncResult(
-            source_key=config["key"],
-            items=items,
-            success=True,
-        )
-```
+**一句话：** AI 替你读 136 个信息源，每次给你两条，你选更喜欢的那个；选择就是训练信号。整套系统跑在你自己的机器上，LLM 零成本，数据不出设备。
 
-## 路线图
+这个项目的三个核心判断：
 
-### v0.1 Alpha（当前）
-- [x] Pairwise 对比 UI
-- [x] Bradley-Terry ELO 评分
-- [x] 10+ 信号源适配器
-- [x] 源权重动态调整
-- [x] LLM 聚类分析 + 中文翻译
-- [x] 每日简报 + Notion 发布
-- [x] Decision Log
-- [ ] 用户测试反馈收集
+1. **Pairwise 比打分更能学到真实偏好。** 人做绝对打分一塌糊涂，做相对选择很稳。Bradley–Terry ELO 把每个 1-bit 选择直接变成分数。
+2. **自动决策必须可审计。** 系统每一次调权、加源、标异常，都写进 `decision_log`，你可以回溯每一步为什么发生。不写日志的推荐系统不可信。
+3. **本地 LLM 在 2025 年跨过了临界点。** 一台 Mac Studio 跑 Qwen3-30B 就够了，LLM 月账单从 ~\$270 变成 \$0，隐私和可调性是白送的。
 
-### v0.2 Beta
-- [ ] LLM 偏好分析 → 自动推荐新源
-- [ ] 批量排序模式（拖拽 4-6 条）
-- [ ] 偏好 Profile 可视化
-- [ ] 公网部署 + 邀请码系统
-
-### v1.0
-- [ ] 自动源发现 + 试运行
-- [ ] 多设备同步
-- [ ] API 开放
-
-## 贡献
-
-欢迎 PR 和 Issue！特别欢迎：
-
-- 新信号源适配器（尤其是中文社区：即刻、知乎、微信公众号等）
-- 算法优化（探索策略、冷启动）
-- UI/UX 改进
-- 文档和翻译
+[在线实例](https://prism.simon-ai.net/showcase) · [决策日志](https://prism.simon-ai.net/decisions/weekly) · [一个输出样本（播客→文章）](https://prism.simon-ai.net/article/118)
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — use it, fork it, make it yours.

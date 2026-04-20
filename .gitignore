@@ -15,6 +15,9 @@ build/
 data/
 briefings/
 
+# Scratch / experiments (contains large audio, ASR outputs, ad-hoc scripts)
+tmp/
+
 # AI tooling
 .claude/
 .superpowers/
