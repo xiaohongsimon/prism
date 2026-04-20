@@ -20,6 +20,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "uvicorn>=0.30",
     "pyyaml>=6.0",
+    "ruamel.yaml>=0.18",
     "click>=8.0",
 ]
 

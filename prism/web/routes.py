@@ -236,43 +236,85 @@ def gen_invite(request: Request):
 # ── Feed Routes ──────────────────────────────────────────────────────────────
 
 @web_router.get("/", response_class=HTMLResponse)
-def index(request: Request, tab: str = "recommend", channel: str = ""):
-    """Full feed page."""
-    conn = _db(request)
-    if tab not in ("recommend", "follow", "hot"):
-        tab = "recommend"
+def index(request: Request):
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/feed", status_code=307)
 
-    # Pairwise mode for recommend tab
-    if tab == "recommend":
-        pair = select_pair(conn)
-        tpl = _jinja_env.get_template("pairwise.html")
-        if pair:
-            a, b = pair
-            return HTMLResponse(tpl.render(signal_a=a, signal_b=b, tab="recommend"))
-        return HTMLResponse(tpl.render(signal_a=None, signal_b=None, tab="recommend"))
-    if tab == "follow":
-        creators = _build_creator_list(conn)
-        return _render("creators.html", request=request, tab=tab, creators=creators, total=len(creators))
 
-    per_page = 20
-    items = compute_feed(conn, tab=tab, page=1, per_page=per_page, channel=channel)
-    signal_ids = [item["signal_id"] for item in items]
-    feedback_map = _feedback_map(conn, signal_ids)
-
-    return _render(
-        "feed.html",
-        items=items,
-        tab=tab,
-        page=1,
-        per_page=per_page,
-        feedback_map=feedback_map,
-        source_types=[],
-        current_channel=channel,
-    )
+from prism.web.feed import rank_feed, record_feed_action
 
 
 @web_router.get("/feed", response_class=HTMLResponse)
-def feed_fragment(
+def feed_index(request: Request):
+    tpl = _jinja_env.get_template("feed.html")
+    return HTMLResponse(tpl.render(next_offset=0))
+
+
+@web_router.get("/feed/more", response_class=HTMLResponse)
+def feed_more(request: Request, offset: int = 0, limit: int = 10):
+    conn = _db(request)
+    rows = rank_feed(conn, limit=limit, offset=offset)
+    if not rows:
+        tpl = _jinja_env.get_template("partials/feed_empty.html")
+        return HTMLResponse(tpl.render())
+    card_tpl = _jinja_env.get_template("partials/feed_card.html")
+    html = "".join(card_tpl.render(signal=r) for r in rows)
+    return HTMLResponse(html)
+
+
+@web_router.post("/feed/action", response_class=HTMLResponse)
+def feed_action(
+    request: Request,
+    signal_id: int = Form(...),
+    action: str = Form(...),
+    target_key: str = Form(""),
+    response_time_ms: int = Form(0),
+):
+    conn = _db(request)
+    record_feed_action(
+        conn,
+        signal_id=signal_id,
+        action=action,
+        target_key=target_key,
+        response_time_ms=response_time_ms,
+    )
+    if action in ("save", "dismiss"):
+        label = "已保存" if action == "save" else "已隐藏"
+        return HTMLResponse(
+            f'<div class="feed-card feed-done">{label} ✓</div>'
+        )
+    labels = {
+        "follow_author": f"已关注 {target_key}",
+        "mute_topic": f"已屏蔽 #{target_key}",
+        "unfollow_author": f"取消关注 {target_key}",
+        "unmute_topic": f"取消屏蔽 #{target_key}",
+    }
+    return HTMLResponse(
+        f'<span class="btn btn-done">{labels.get(action, "ok")}</span>'
+    )
+
+
+@web_router.get("/feed/saved", response_class=HTMLResponse)
+def feed_saved(request: Request):
+    conn = _db(request)
+    rows = conn.execute(
+        """SELECT fi.created_at, s.summary, c.topic_label,
+                  (SELECT url FROM raw_items ri
+                   JOIN cluster_items ci ON ci.raw_item_id = ri.id
+                   WHERE ci.cluster_id = s.cluster_id LIMIT 1) AS url
+             FROM feed_interactions fi
+             JOIN signals s ON s.id = fi.signal_id
+             LEFT JOIN clusters c ON c.id = s.cluster_id
+            WHERE fi.action = 'save'
+            ORDER BY fi.created_at DESC
+            LIMIT 200"""
+    ).fetchall()
+    tpl = _jinja_env.get_template("feed_saved.html")
+    return HTMLResponse(tpl.render(signals=rows))
+
+
+@web_router.get("/feed/legacy", response_class=HTMLResponse)
+def feed_legacy_fragment(
     request: Request,
     tab: str = "recommend",
     page: int = 1,
@@ -292,7 +334,7 @@ def feed_fragment(
 
     if len(items) >= per_page:
         html_parts.append(
-            f'<div hx-get="/feed?tab={tab}&page={page + 1}&per_page={per_page}"'
+            f'<div hx-get="/feed/legacy?tab={tab}&page={page + 1}&per_page={per_page}"'
             f' hx-trigger="revealed"'
             f' hx-target="#feed-list"'
             f' hx-swap="beforeend"'
@@ -897,9 +939,9 @@ def pairwise_pair(request: Request):
     if pair is None:
         tpl = _jinja_env.get_template("partials/pair_empty.html")
         return HTMLResponse(tpl.render())
-    a, b = pair
+    a, b, strategy = pair
     tpl = _jinja_env.get_template("partials/pair_cards.html")
-    return HTMLResponse(tpl.render(signal_a=a, signal_b=b))
+    return HTMLResponse(tpl.render(signal_a=a, signal_b=b, strategy=strategy))
 
 
 @web_router.post("/pairwise/vote", response_class=HTMLResponse)
@@ -910,6 +952,7 @@ def pairwise_vote(
     winner: str = Form(...),
     comment: str = Form(""),
     response_time_ms: int = Form(0),
+    strategy: str = Form("exploit"),
 ):
     """Record vote and return next pair immediately.
 
@@ -917,7 +960,7 @@ def pairwise_vote(
     - both/neither/skip: load completely new pair
     """
     conn = _db(request)
-    record_vote(conn, signal_a_id, signal_b_id, winner, comment, response_time_ms)
+    record_vote(conn, signal_a_id, signal_b_id, winner, comment, response_time_ms, strategy=strategy)
 
     tpl = _jinja_env.get_template("partials/pair_cards.html")
     empty_tpl = _jinja_env.get_template("partials/pair_empty.html")
@@ -934,18 +977,20 @@ def pairwise_vote(
         if winner_sig and candidates:
             import random
             new_sig = random.choice(candidates)
-            return HTMLResponse(tpl.render(signal_a=winner_sig, signal_b=new_sig))
+            return HTMLResponse(tpl.render(signal_a=winner_sig, signal_b=new_sig, strategy="carry_winner"))
         # Fallback: if winner not in pool or no candidates, get fresh pair
         pair = select_pair(conn)
         if pair is None:
             return HTMLResponse(empty_tpl.render())
-        return HTMLResponse(tpl.render(signal_a=pair[0], signal_b=pair[1]))
+        a, b, next_strategy = pair
+        return HTMLResponse(tpl.render(signal_a=a, signal_b=b, strategy=next_strategy))
 
     # both / neither / skip → completely new pair
     pair = select_pair(conn)
     if pair is None:
         return HTMLResponse(empty_tpl.render())
-    return HTMLResponse(tpl.render(signal_a=pair[0], signal_b=pair[1]))
+    a, b, next_strategy = pair
+    return HTMLResponse(tpl.render(signal_a=a, signal_b=b, strategy=next_strategy))
 
 
 @web_router.post("/pairwise/feed", response_class=HTMLResponse)
@@ -962,9 +1007,9 @@ def pairwise_feed(
     if pair is None:
         tpl = _jinja_env.get_template("partials/pair_empty.html")
         return HTMLResponse(tpl.render(feed_success=True))
-    a, b = pair
+    a, b, strategy = pair
     tpl = _jinja_env.get_template("partials/pair_cards.html")
-    return HTMLResponse(tpl.render(signal_a=a, signal_b=b, feed_success=True))
+    return HTMLResponse(tpl.render(signal_a=a, signal_b=b, strategy=strategy, feed_success=True))
 
 
 @web_router.get("/pairwise/liked", response_class=HTMLResponse)
@@ -1221,3 +1266,140 @@ async def pairwise_profile_block(request: Request):
     )
     conn.commit()
     return JSONResponse({"ok": True})
+
+
+# --- Persona ---
+
+@web_router.get("/persona", response_class=HTMLResponse)
+def persona_form(request: Request):
+    return _render("persona.html", request=request)
+
+
+@web_router.post("/persona")
+def persona_submit(
+    request: Request,
+    role: str = Form(...),
+    goals: list[str] = Form(default=[]),
+    active_learning: str = Form(""),
+    seed_handles: str = Form(""),
+    dislike: str = Form(""),
+    style: list[str] = Form(default=[]),
+    language: str = Form("都行"),
+    length: str = Form("都可以"),
+    free_text: str = Form(""),
+):
+    from prism.persona import save_snapshot, extract_from_snapshot
+
+    answers = {
+        "role": role,
+        "goals": goals,
+        "active_learning": active_learning,
+        "dislike": dislike,
+        "style": style,
+        "language": language,
+        "length": length,
+    }
+    handles = [h.strip() for h in seed_handles.splitlines() if h.strip()]
+
+    conn = _db(request)
+    snap_id = save_snapshot(
+        conn, answers=answers, free_text=free_text, seed_handles=handles,
+    )
+    extract_from_snapshot(conn, snap_id)
+
+    return RedirectResponse(url="/taste/sources", status_code=303)
+
+
+# --- Taste / source proposals ---
+
+_ORIGIN_LABELS = {
+    "persona": "来自 persona 描述",
+    "external_feed": "来自外部投喂",
+    "graph_expansion": "来自高权重源的邻居",
+    "gap": "来自话题覆盖缺口",
+    "blindspot": "盲点扫描发现",
+    "manual": "手动添加",
+}
+
+
+def _origin_label(origin: str) -> str:
+    return _ORIGIN_LABELS.get(origin, origin)
+
+
+@web_router.get("/taste/sources", response_class=HTMLResponse)
+def taste_sources_list(request: Request):
+    import yaml as _yaml
+    conn = _db(request)
+    rows = conn.execute(
+        "SELECT id, source_type, source_config_json, display_name, rationale, origin "
+        "FROM source_proposals WHERE status = 'pending' ORDER BY origin, id DESC"
+    ).fetchall()
+
+    groups: dict[str, list[dict]] = {}
+    for r in rows:
+        cfg = _json.loads(r[2])
+        groups.setdefault(r[5], []).append({
+            "id": r[0], "source_type": r[1],
+            "source_config_pretty": _yaml.safe_dump(cfg, allow_unicode=True).strip(),
+            "display_name": r[3], "rationale": r[4],
+        })
+
+    return _render("taste_sources.html", groups=groups, origin_label=_origin_label)
+
+
+@web_router.post("/taste/sources/{proposal_id}/accept", response_class=HTMLResponse)
+def taste_source_accept(proposal_id: int, request: Request):
+    from prism.sources.yaml_editor import append_source_block
+    from prism.config import settings
+
+    conn = _db(request)
+    row = conn.execute(
+        "SELECT source_type, source_config_json, display_name, origin "
+        "FROM source_proposals WHERE id = ? AND status = 'pending'",
+        (proposal_id,),
+    ).fetchone()
+    if not row:
+        return HTMLResponse("", status_code=404)
+
+    cfg = _json.loads(row[1])
+    cfg.setdefault("type", row[0])
+    append_source_block(
+        Path(settings.source_config),
+        source_config=cfg,
+        category_comment=f"proposed via {row[3]}",
+    )
+    conn.execute(
+        "UPDATE source_proposals SET status = 'accepted', "
+        "reviewed_at = datetime('now') WHERE id = ?",
+        (proposal_id,),
+    )
+    conn.execute(
+        "INSERT INTO decision_log (layer, action, reason, context_json) "
+        "VALUES ('recall', 'add_source', ?, ?)",
+        (f"accepted proposal #{proposal_id}", _json.dumps({"config": cfg, "origin": row[3]})),
+    )
+    conn.commit()
+    return HTMLResponse(f'<li class="muted">已接受：{row[2]}</li>')
+
+
+@web_router.post("/taste/sources/{proposal_id}/reject", response_class=HTMLResponse)
+def taste_source_reject(proposal_id: int, request: Request):
+    conn = _db(request)
+    row = conn.execute(
+        "SELECT display_name FROM source_proposals WHERE id = ? AND status = 'pending'",
+        (proposal_id,),
+    ).fetchone()
+    if not row:
+        return HTMLResponse("", status_code=404)
+    conn.execute(
+        "UPDATE source_proposals SET status = 'rejected', "
+        "reviewed_at = datetime('now') WHERE id = ?",
+        (proposal_id,),
+    )
+    conn.execute(
+        "INSERT INTO decision_log (layer, action, reason, context_json) "
+        "VALUES ('recall', 'reject_source', ?, '{}')",
+        (f"rejected proposal #{proposal_id}",),
+    )
+    conn.commit()
+    return HTMLResponse(f'<li class="muted">已拒绝：{row[0]}</li>')

@@ -308,6 +308,61 @@ def init_db(conn: sqlite3.Connection) -> None:
             updated_at TEXT
         );
     """)
+
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS persona_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            answers_json TEXT NOT NULL,
+            free_text TEXT NOT NULL DEFAULT '',
+            seed_handles_json TEXT NOT NULL DEFAULT '[]',
+            extracted_summary TEXT NOT NULL DEFAULT '',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS source_proposals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_type TEXT NOT NULL,
+            source_config_json TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            rationale TEXT NOT NULL DEFAULT '',
+            origin TEXT NOT NULL,
+            origin_ref TEXT DEFAULT NULL,
+            sample_preview_json TEXT NOT NULL DEFAULT '[]',
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK(status IN ('pending','accepted','rejected','ignored','snoozed')),
+            snooze_until TEXT DEFAULT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            reviewed_at TEXT DEFAULT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_source_proposals_status
+            ON source_proposals(status);
+
+        CREATE TABLE IF NOT EXISTS feed_interactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            signal_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            target_key TEXT NOT NULL DEFAULT '',
+            response_time_ms INTEGER NOT NULL DEFAULT 0,
+            context_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_feed_interactions_signal
+            ON feed_interactions(signal_id);
+
+        CREATE INDEX IF NOT EXISTS idx_feed_interactions_action_created
+            ON feed_interactions(action, created_at);
+    """)
+
+    # Add extracted_json column to external_feeds if missing
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(external_feeds)").fetchall()}
+    if "extracted_json" not in cols:
+        conn.execute(
+            "ALTER TABLE external_feeds ADD COLUMN extracted_json TEXT NOT NULL DEFAULT ''"
+        )
+
     conn.execute("PRAGMA journal_mode=WAL")
 
     # Migrations — safe to re-run

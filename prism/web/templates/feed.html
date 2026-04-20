@@ -1,41 +1,34 @@
 {% extends "base.html" %}
+{% block title %}Feed · Prism{% endblock %}
 {% block content %}
-<nav class="top-nav">
-    <a class="logo" href="/" onclick="location.reload();return false;">⬡ Prism</a>
-    <div class="tabs">
-        <a class="tab {% if tab == 'recommend' %}active{% endif %}"
-           href="/?tab=recommend">推荐</a>
-        <a class="tab" href="/briefing">必看</a>
-        <a class="tab {% if tab == 'follow' %}active{% endif %}"
-           href="/?tab=follow">关注</a>
-        <a class="tab" href="/pairwise/sources">来源</a>
-        <a class="tab" href="/pairwise/liked">收藏</a>
+<div class="feed-container">
+    <nav class="feed-nav">
+        <a href="/feed" class="active">Feed</a>
+        <a href="/feed/saved">Saved</a>
+        <a href="/pairwise">Pairwise 校准</a>
+        <a href="/pairwise/sources">Sources</a>
+        <a href="/taste/sources">Proposals</a>
+        <a href="/persona">Persona</a>
+    </nav>
+
+    <form class="feed-submit" hx-post="/pairwise/feed" hx-target="#feed-list" hx-swap="afterbegin">
+        <input type="text" name="url" placeholder="粘一个感兴趣的链接 / 话题" class="feed-input">
+        <input type="text" name="note" placeholder="备注（可选）" class="feed-note">
+        <button type="submit">投喂</button>
+    </form>
+
+    <div id="feed-list" class="feed-list"
+         hx-get="/feed/more?offset=0"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+        <p class="feed-loading">加载中...</p>
     </div>
-</nav>
-{% if tab == 'follow' and source_types %}
-<div class="channel-bar">
-    <a class="channel-chip {% if not current_channel %}active{% endif %}"
-       href="/?tab=follow">全部</a>
-    {% for st in source_types %}
-    <a class="channel-chip {% if current_channel == st.key %}active{% endif %}"
-       href="/?tab=follow&channel={{ st.key }}">{{ st.label }}</a>
-    {% endfor %}
-</div>
-{% endif %}
-<div id="feed-list">
-{% for item in items %}
-    {% set feedback_state = feedback_map.get(item.signal_id) if feedback_map else None %}
-    {% include "partials/card.html" %}
-{% endfor %}
-{% if items | length >= per_page %}
-<div hx-get="/feed?tab={{ tab }}&page={{ page + 1 }}&per_page={{ per_page }}{% if current_channel %}&channel={{ current_channel }}{% endif %}"
-     hx-trigger="revealed"
-     hx-target="#feed-list"
-     hx-swap="beforeend"
-     class="loading">加载中…</div>
-{% endif %}
-{% if not items %}
-<div class="empty">暂无内容</div>
-{% endif %}
+
+    <div class="feed-more-wrapper">
+        <button id="feed-load-more"
+                hx-get="/feed/more?offset={{ next_offset }}"
+                hx-target="#feed-list"
+                hx-swap="beforeend">加载更多</button>
+    </div>
 </div>
 {% endblock %}

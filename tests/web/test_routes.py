@@ -28,7 +28,7 @@ def test_index_returns_html():
 
 def test_feed_fragment_returns_cards():
     client = _test_client()
-    resp = client.get("/feed?tab=hot&page=1")
+    resp = client.get("/feed/legacy?tab=hot&page=1")
     assert resp.status_code == 200
     assert "card" in resp.text
     assert "GPT-5" in resp.text

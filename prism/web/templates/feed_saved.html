@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Saved · Prism{% endblock %}
+{% block content %}
+<div class="feed-container">
+    <nav class="feed-nav">
+        <a href="/feed">Feed</a>
+        <a href="/feed/saved" class="active">Saved</a>
+        <a href="/pairwise">Pairwise 校准</a>
+    </nav>
+    {% if not signals %}
+    <p>还没有已保存的信号。</p>
+    {% else %}
+    <ul class="saved-list">
+        {% for s in signals %}
+        <li class="saved-item">
+            <div class="saved-meta">{{ s.created_at }} · {{ s.topic_label or "" }}</div>
+            <div class="saved-summary">{{ s.summary }}</div>
+            {% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener">原文 ↗</a>{% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</div>
+{% endblock %}

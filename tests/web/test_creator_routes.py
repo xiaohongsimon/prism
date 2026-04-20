@@ -53,12 +53,14 @@ def _seed_creators(db):
 
 
 def test_follow_tab_shows_creators(client, db):
-    """Follow tab should show creator cards, not mixed feed."""
+    """Creator profiles are accessible via /creator/<key> (/?tab=follow removed in W2)."""
     _seed_creators(db)
-    resp = client.get("/?tab=follow")
-    assert resp.status_code == 200
-    assert "Test Channel" in resp.text
-    assert "karpathy" in resp.text
+    resp_yt = client.get("/creator/youtube:testchannel")
+    assert resp_yt.status_code == 200
+    assert "Test Channel" in resp_yt.text
+    resp_x = client.get("/creator/x:karpathy")
+    assert resp_x.status_code == 200
+    assert "karpathy" in resp_x.text
 
 
 def test_creator_profile_youtube(client, db):

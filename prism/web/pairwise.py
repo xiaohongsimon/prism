@@ -67,7 +67,10 @@ def _load_pref_weights(conn: sqlite3.Connection) -> dict[tuple[str, str], float]
     return {(r["dimension"], r["key"]): r["weight"] for r in rows}
 
 
-def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
+def _get_candidate_pool(
+    conn: sqlite3.Connection,
+    extra_exclude_ids: set[int] | None = None,
+) -> list[dict]:
     """Get signals eligible for pairwise comparison."""
     # Content must be published within SIGNAL_MAX_AGE_DAYS (not just synced recently)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=SIGNAL_MAX_AGE_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
@@ -87,6 +90,9 @@ def _get_candidate_pool(conn: sqlite3.Connection) -> list[dict]:
     for r in rows:
         recent_ids.add(r["signal_a_id"])
         recent_ids.add(r["signal_b_id"])
+
+    if extra_exclude_ids:
+        recent_ids = recent_ids | set(extra_exclude_ids)
 
     # Get current signals — filter by actual content publish date, not signal creation
     signals = conn.execute(
@@ -359,8 +365,8 @@ def _check_neither_streak(conn: sqlite3.Connection) -> bool:
     return all(r["winner"] == "neither" for r in rows)
 
 
-def select_pair(conn: sqlite3.Connection) -> tuple[dict, dict] | None:
-    """Select next pair for comparison. Returns None if insufficient candidates."""
+def select_pair(conn: sqlite3.Connection) -> tuple[dict, dict, str] | None:
+    """Select next pair for comparison. Returns (signal_a, signal_b, strategy) or None."""
     pool = _get_candidate_pool(conn)
     if len(pool) < 2:
         return None
@@ -368,16 +374,19 @@ def select_pair(conn: sqlite3.Connection) -> tuple[dict, dict] | None:
     # Force random if neither streak
     if _check_neither_streak(conn):
         chosen = random.sample(pool, 2)
-        return chosen[0], chosen[1]
+        return chosen[0], chosen[1], "neither_fallback"
 
     # Pick strategy
     r = random.random()
     if r < PAIR_STRATEGY_WEIGHTS["exploit"]:
-        return _pick_exploit(pool)
+        a, b = _pick_exploit(pool)
+        return a, b, "exploit"
     elif r < PAIR_STRATEGY_WEIGHTS["exploit"] + PAIR_STRATEGY_WEIGHTS["explore"]:
-        return _pick_explore(pool)
+        a, b = _pick_explore(pool)
+        return a, b, "explore"
     else:
-        return _pick_random(pool)
+        a, b = _pick_random(pool)
+        return a, b, "random"
 
 
 def _pick_exploit(pool: list[dict]) -> tuple[dict, dict]:
@@ -514,11 +523,9 @@ def record_vote(
     winner: str,
     comment: str = "",
     response_time_ms: int = 0,
+    strategy: str = "exploit",
 ) -> None:
     """Record a pairwise vote and update all dependent scores."""
-    # Determine strategy used (stored for analytics)
-    strategy = "exploit"  # default; actual strategy tracked in select_pair
-
     # Record comparison
     conn.execute(
         "INSERT INTO pairwise_comparisons "

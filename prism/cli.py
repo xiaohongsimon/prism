@@ -1,5 +1,8 @@
 """Prism CLI — Click-based command interface."""
 
+import os
+from pathlib import Path
+
 import click
 from prism.config import settings
 from prism.db import get_connection
@@ -821,3 +824,85 @@ def practice(note):
         click.echo(f"Saved practice note (id={item_id}): {note[:80]}")
     else:
         click.echo("Note already recorded.")
+
+
+@cli.command("process-external-feeds")
+def process_external_feeds_cmd():
+    """Process pending external_feeds rows: LLM extract + propose sources."""
+    from prism.pipeline.external_feed import run_external_feed_consumer
+
+    db_path = Path(os.environ.get("PRISM_DB_PATH", str(settings.db_path)))
+    conn = get_connection(db_path)
+    try:
+        n = run_external_feed_consumer(conn)
+    finally:
+        conn.close()
+    click.echo(f"Processed {n} external feed(s).")
+
+
+@cli.group("sources")
+def sources_group():
+    """Source configuration tools."""
+
+
+@sources_group.command("prune")
+@click.option("--threshold", type=float, default=-5.0,
+              help="Prune sources with preference weight below this.")
+@click.option("--dry-run", is_flag=True, help="Show proposed changes without writing.")
+@click.option("--yes", is_flag=True, help="Apply without prompting.")
+def sources_prune_cmd(threshold: float, dry_run: bool, yes: bool):
+    """Comment out sources.yaml entries whose preference weight is below threshold."""
+    import json
+    from datetime import date
+    from prism.pipeline.external_feed import _sources_yaml_path
+    from prism.sources.yaml_editor import load_sources_list, comment_out_source, _source_key
+
+    yaml_path = _sources_yaml_path()
+    db_path = Path(os.environ.get("PRISM_DB_PATH", str(settings.db_path)))
+    conn = get_connection(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT key, weight FROM preference_weights "
+            "WHERE dimension = 'source' AND weight < ? ORDER BY weight ASC",
+            (threshold,),
+        ).fetchall()
+
+        if not rows:
+            click.echo(f"No sources below threshold {threshold}.")
+            return
+
+        current = {_source_key(s): s for s in load_sources_list(yaml_path)}
+        to_prune = [(k, w) for k, w in rows if k in current]
+
+        if not to_prune:
+            click.echo("No matching sources in yaml.")
+            return
+
+        click.echo("Candidates to prune:")
+        for k, w in to_prune:
+            click.echo(f"  {k}  weight={w:.1f}")
+
+        if dry_run:
+            click.echo("(dry-run; no changes written)")
+            return
+
+        if not yes:
+            if not click.confirm(f"Prune {len(to_prune)} source(s)?", default=False):
+                click.echo("Aborted.")
+                return
+
+        today = date.today().isoformat()
+        pruned = 0
+        for k, w in to_prune:
+            if comment_out_source(yaml_path, k, reason=f"pruned weight={w:.1f} {today}"):
+                pruned += 1
+                conn.execute(
+                    "INSERT INTO decision_log (layer, action, reason, context_json) "
+                    "VALUES ('recall', 'prune_source', ?, ?)",
+                    (f"pruned {k} (weight={w:.1f})",
+                     json.dumps({"weight": w, "source_key": k})),
+                )
+                conn.commit()
+        click.echo(f"Pruned {pruned} source(s) in {yaml_path}.")
+    finally:
+        conn.close()
