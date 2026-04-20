@@ -1547,6 +1547,15 @@ details[open] > .source-group-header::before { content: "▾"; }
   border-left: 2px solid var(--border-accent);
   line-height: 1.5;
 }
+.feed-card.variant-video .vid-extra-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  margin: 6px 0 4px;
+}
+.feed-card.variant-video .vid-extra-links a { color: var(--text-secondary); }
+.feed-card.variant-video .vid-extra-links a:first-child { color: var(--brand-accent, #e8c878); font-weight: 500; }
 .feed-card.variant-video .feed-actions { padding: 0 16px 12px; margin-top: 6px; }
 
 /* ── Variant: article (HN / arxiv / GitHub / Reddit / PH …) ─ */

@@ -142,14 +142,19 @@ def _get_candidate_pool(
             tags = json.loads(s["tags_json"]) if s["tags_json"] else []
         except (json.JSONDecodeError, TypeError):
             pass
-        # Get URLs, source_keys, authors, source_types, published_at, raw_json for this signal
+        # Get URLs, source_keys, authors, source_types, published_at, raw_json for this signal.
+        # LEFT JOIN articles so the card can link to the full Chinese article
+        # (/article/{id}) when articlize.py has produced one — avoids sending
+        # the reader out to YouTube just to see the title.
         detail_rows = conn.execute(
             """SELECT ri.url, ri.author, ri.published_at, ri.raw_json,
                       src.source_key, src.type AS source_type,
-                      COALESCE(ri.body_zh, ri.body) AS raw_body
+                      COALESCE(ri.body_zh, ri.body) AS raw_body,
+                      a.id AS article_id
                FROM cluster_items ci
                JOIN raw_items ri ON ri.id = ci.raw_item_id
                JOIN sources src ON src.id = ri.source_id
+               LEFT JOIN articles a ON a.raw_item_id = ri.id
                WHERE ci.cluster_id = ?""",
             (s["cluster_id"],),
         ).fetchall()
@@ -167,6 +172,7 @@ def _get_candidate_pool(
         source_types = set()
         published_at = None
         full_body = ""
+        article_id = None  # first available /article/{id} for this cluster
         _aggregator_domains = ("news.ycombinator.com", "twitter.com", "x.com", "xcancel.com")
         for dr in detail_rows:
             if dr["raw_body"] and len(dr["raw_body"]) > len(full_body):
@@ -185,6 +191,9 @@ def _get_candidate_pool(
             # Use earliest published_at as the real content date
             if dr["published_at"] and (published_at is None or dr["published_at"] < published_at):
                 published_at = dr["published_at"]
+            # First cluster member with a rendered article wins
+            if article_id is None and dr["article_id"]:
+                article_id = dr["article_id"]
 
         # Extract engagement metrics, avatar, media from raw_json (any source with tweet data)
         engagement = {}
@@ -312,6 +321,7 @@ def _get_candidate_pool(
             "quoted_tweet": quoted_tweet,
             "content_zh": s["content_zh"] or "",
             "full_body": full_body,
+            "article_id": article_id,
             # Universal card header
             "card_avatar": "",
             "card_name": "",
