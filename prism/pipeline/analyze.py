@@ -86,7 +86,9 @@ def _split_batches(clusters: list[sqlite3.Row], max_tokens: int = 60000) -> tupl
     return main, supplementary
 
 
-def _analyze_one_cluster(cluster_data: dict, model: Optional[str] = None) -> Optional[dict]:
+def _analyze_one_cluster(cluster_data: dict, model: Optional[str] = None,
+                         job_id: Optional[int] = None,
+                         job_type: Optional[str] = None) -> Optional[dict]:
     """Analyze a single cluster via LLM (thread-safe, no DB access)."""
     is_video = cluster_data.get("is_video", False)
     if is_video and len(cluster_data.get("merged_context", "")) > 500:
@@ -102,7 +104,12 @@ def _analyze_one_cluster(cluster_data: dict, model: Optional[str] = None) -> Opt
         merged_context=cluster_data["merged_context"],
     )
     try:
-        result = call_llm_json(prompt, system=system, model=model)
+        result = call_llm_json(
+            prompt, system=system, model=model,
+            max_tokens=6000,
+            session_id=f"job-{job_id}" if job_id else None,
+            project="簇级摘要",
+        )
         # LLM sometimes returns a list instead of dict — take first element
         if isinstance(result, list):
             result = result[0] if result else {}
@@ -157,7 +164,10 @@ def run_incremental_analysis(conn: sqlite3.Connection, model: Optional[str] = No
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_cluster = {
-            executor.submit(_analyze_one_cluster, cd, model): cd
+            executor.submit(
+                _analyze_one_cluster, cd, model,
+                job_id, "analyze_incremental",
+            ): cd
             for cd in cluster_dicts
         }
         for future in as_completed(future_to_cluster):
@@ -246,7 +256,9 @@ def run_daily_analysis(conn: sqlite3.Connection, dt: Optional[str] = None,
         )
         try:
             narrative = call_llm(narrative_prompt, system=NARRATIVE_SYSTEM,
-                                model=daily_model, max_tokens=2048)
+                                model=daily_model, max_tokens=2048,
+                                session_id=f"job-{job_id}",
+                                project="日级综述")
             # Strip thinking tags if present
             import re
             narrative = re.sub(r"<think>.*?</think>", "", narrative, flags=re.DOTALL).strip()
@@ -254,7 +266,9 @@ def run_daily_analysis(conn: sqlite3.Connection, dt: Optional[str] = None,
             if re.search(r'(.{2,})\1{2,}', narrative):
                 logger.warning("Narrative has repetition, retrying...")
                 retry = call_llm(narrative_prompt, system=NARRATIVE_SYSTEM,
-                                model=daily_model, max_tokens=2048)
+                                model=daily_model, max_tokens=2048,
+                                session_id=f"job-{job_id}",
+                                project="日级综述")
                 retry = re.sub(r"<think>.*?</think>", "", retry, flags=re.DOTALL).strip()
                 if not re.search(r'(.{2,})\1{2,}', retry):
                     narrative = retry

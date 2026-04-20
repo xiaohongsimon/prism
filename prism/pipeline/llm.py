@@ -1,18 +1,56 @@
-"""OpenAI-compatible LLM client and prompt templates."""
+"""OpenAI-compatible LLM client and prompt templates.
 
+OMLX calls go through omlx_sdk.OmlxSyncClient so that every request
+emits a telemetry bill to omlx-manager (caller/project/session_id/intent
+dimensions). Claude calls still go through curl to the premium proxy —
+untouched here.
+"""
+
+import atexit
 import json
 import logging
+import re
 import subprocess
 import time
-from typing import Optional
+from typing import Any, Optional
 
-import httpx
+from omlx_sdk import OmlxSyncClient, SdkSettings
+from omlx_sdk.types import OmlxSdkError
 
 from prism.config import settings
 
 logger = logging.getLogger(__name__)
 
 PROMPT_VERSION = "v1"
+
+# Module-level SDK client. Lazily constructed on first call so import-time
+# config errors don't break tests that never call LLM.
+_omlx_client: Optional[OmlxSyncClient] = None
+
+
+def _strip_v1_suffix(base_url: str) -> str:
+    """prism's env has base_url ending in /v1; SDK wants just the host."""
+    return re.sub(r"/v1/?$", "", base_url.rstrip("/"))
+
+
+def _get_client() -> OmlxSyncClient:
+    global _omlx_client
+    if _omlx_client is not None:
+        return _omlx_client
+    if not settings.llm_base_url or not settings.llm_api_key:
+        raise ValueError("LLM base_url and api_key must be configured")
+    sdk_settings = SdkSettings(
+        endpoint=_strip_v1_suffix(settings.llm_base_url),
+        api_key=settings.llm_api_key,
+        # Manager ingest URL comes from env (OMLX_MANAGER_INGEST_URL) or
+        # defaults to http://127.0.0.1:8003/v1/ingest.
+        manager_ingest_url=SdkSettings.from_env().manager_ingest_url,
+        manager_enabled=SdkSettings.from_env().manager_enabled,
+        ingest_timeout_s=1.0,
+    )
+    _omlx_client = OmlxSyncClient(caller="prism", settings=sdk_settings)
+    atexit.register(_omlx_client.close)
+    return _omlx_client
 
 # ---------------------------------------------------------------------------
 # Prompt templates
@@ -114,46 +152,59 @@ NARRATIVE_USER_TEMPLATE = """今日日期：{date}
 
 def call_llm(prompt: str, system: str = "", model: Optional[str] = None,
              base_url: Optional[str] = None, api_key: Optional[str] = None,
-             timeout: int = 300, max_tokens: int = 2048) -> str:
-    """Call OpenAI-compatible LLM API, return response text."""
-    base_url = base_url or settings.llm_base_url
-    api_key = api_key or settings.llm_api_key
-    model = model or settings.llm_model
+             timeout: int = 300, max_tokens: int = 2048,
+             *,
+             intent: Optional[str] = None,
+             session_id: Optional[str] = None,
+             project: Optional[str] = None) -> str:
+    """Call OMLX (OpenAI-compatible), return response text.
 
-    if not base_url or not api_key:
-        raise ValueError("LLM base_url and api_key must be configured")
+    New kwargs (all optional, backward compatible):
+        intent:     e.g. "fast" — SDK resolves to a model from the intent table
+        session_id: e.g. f"job-{job_run_id}" — groups related calls
+        project:    e.g. job_type — labels what pipeline this call belongs to
 
-    messages = []
+    base_url/api_key kwargs are deprecated at this layer: the SDK client
+    is constructed once from prism.config.settings. They are accepted for
+    call-site compatibility but ignored with a debug log.
+    """
+    if base_url or api_key:
+        logger.debug("call_llm: base_url/api_key args ignored (SDK uses module client)")
+
+    # model resolution: explicit model > intent > settings.llm_model
+    resolved_model = model if model else (None if intent else settings.llm_model)
+
+    messages: list[dict[str, Any]] = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
-    url = f"{base_url.rstrip('/')}/chat/completions"
-    payload = {"model": model, "messages": messages, "temperature": 0.3, "max_tokens": max_tokens,
-               "repetition_penalty": 1.2}
+    client = _get_client()
 
+    last_exc: Exception | None = None
     for attempt in range(4):
         try:
-            result = subprocess.run(
-                ["curl", "-sS", "--max-time", str(timeout),
-                 url,
-                 "-H", f"Authorization: Bearer {api_key}",
-                 "-H", "Content-Type: application/json",
-                 "-d", json.dumps(payload, ensure_ascii=False)],
-                capture_output=True, text=True, timeout=timeout + 10,
+            # Note: `timeout` arg is the legacy caller-side hint; SDK's
+            # actual HTTP timeout is SdkSettings.request_timeout_s.
+            resp = client.chat(
+                messages=messages,
+                model=resolved_model,
+                intent=intent,
+                session_id=session_id,
+                project=project,
+                temperature=0.3,
+                max_tokens=max_tokens,
+                repetition_penalty=1.2,
             )
-            if result.returncode != 0:
-                raise RuntimeError(f"curl failed: {result.stderr}")
-            body = json.loads(result.stdout)
-            if "error" in body:
-                raise RuntimeError(f"API error: {body['error']}")
-            return body["choices"][0]["message"]["content"]
-        except (json.JSONDecodeError, KeyError, RuntimeError) as exc:
+            return resp.content
+        except OmlxSdkError as exc:
+            last_exc = exc
             wait = 2 ** attempt
-            logger.warning("LLM call failed (attempt %d/4): %s, retrying in %ds", attempt + 1, exc, wait)
+            logger.warning("LLM call failed (attempt %d/4): %s, retrying in %ds",
+                           attempt + 1, exc, wait)
             time.sleep(wait)
 
-    raise RuntimeError("LLM call failed after 4 attempts")
+    raise RuntimeError(f"LLM call failed after 4 attempts: {last_exc}")
 
 
 def call_claude(prompt: str, system: str = "", model: str = "claude-sonnet-4-20250514",
@@ -231,10 +282,15 @@ def call_claude_json(prompt: str, system: str = "", model: str = "claude-sonnet-
 
 def call_llm_json(prompt: str, system: str = "", model: Optional[str] = None,
                   base_url: Optional[str] = None, api_key: Optional[str] = None,
-                  timeout: int = 300, max_tokens: int = 2048) -> dict:
+                  timeout: int = 300, max_tokens: int = 2048,
+                  *,
+                  intent: Optional[str] = None,
+                  session_id: Optional[str] = None,
+                  project: Optional[str] = None) -> dict:
     """Call LLM and parse JSON from response."""
     text = call_llm(prompt, system, model, base_url, api_key, timeout=timeout,
-                    max_tokens=max_tokens)
+                    max_tokens=max_tokens,
+                    intent=intent, session_id=session_id, project=project)
 
     # Extract JSON from response (handle thinking tags, code blocks, extra text)
     text = text.strip()

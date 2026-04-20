@@ -235,7 +235,7 @@ def generate_slides_fast(conn: sqlite3.Connection, signal_id: int) -> str | None
     prompt = EXTRACT_PROMPT.format(title=title, content=content[:5000])
 
     try:
-        result = call_llm_json(prompt, model=FAST_MODEL, timeout=60)
+        result = call_llm_json(prompt, model=FAST_MODEL, timeout=60, project="幻灯片生成")
         if not result.get("format"):
             return None
 

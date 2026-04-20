@@ -151,7 +151,7 @@ def run_articlize(conn: sqlite3.Connection) -> dict:
     for item in items:
         prompt = ARTICLIZE_USER_TEMPLATE.format(title=item["title"], body=item["body"])
         try:
-            raw_response = call_llm_json(prompt, system=ARTICLIZE_SYSTEM, max_tokens=4096)
+            raw_response = call_llm_json(prompt, system=ARTICLIZE_SYSTEM, max_tokens=4096, project="内容结构化")
             if isinstance(raw_response, dict) and _validate_article(raw_response):
                 parsed = raw_response
             else:

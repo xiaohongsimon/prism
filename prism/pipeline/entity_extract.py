@@ -264,7 +264,7 @@ def extract_entities_llm(
 
     prompt = build_extraction_prompt(signal, candidates, known_entities, date)
     try:
-        result = call_llm_json(prompt, system=ENTITY_EXTRACT_SYSTEM, model=model)
+        result = call_llm_json(prompt, system=ENTITY_EXTRACT_SYSTEM, model=model, project="实体抽取")
         if not isinstance(result, dict) or "entities" not in result:
             logger.warning("LLM returned unexpected structure: %r", result)
             return {"entities": []}

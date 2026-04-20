@@ -16,15 +16,19 @@ def _extract_video_id(url: str) -> str | None:
 
 
 def _fetch_via_api(video_id: str) -> str | None:
-    """Fast path: youtube-transcript-api (no subprocess, no file I/O)."""
+    """Fast path: youtube-transcript-api (no subprocess, no file I/O).
+
+    Uses the 1.x instance API (fetch/list). For videos without manual
+    captions we fall back to auto-generated transcripts in the same
+    language preference order.
+    """
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
 
-        # Try Chinese first, then English
-        transcript = YouTubeTranscriptApi.get_transcript(
-            video_id, languages=["zh-Hans", "zh-Hant", "zh", "en"]
-        )
-        lines = [entry["text"] for entry in transcript if entry.get("text")]
+        api = YouTubeTranscriptApi()
+        langs = ["zh-Hans", "zh-Hant", "zh", "en"]
+        fetched = api.fetch(video_id, languages=langs)
+        lines = [s.text for s in fetched if getattr(s, "text", "").strip()]
         if not lines:
             return None
         return _join_paragraphs(lines)
