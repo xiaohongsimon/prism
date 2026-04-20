@@ -1,0 +1,206 @@
+[
+  {
+    "id": "2042334451611693415",
+    "text": "Judging by my tl there is a growing gap in understanding of AI capability.\n\nThe first issue I think is around recency and tier of use. I think a lot of people tried the free tier of ChatGPT somewhere  last year and allowed it to inform their views on AI a little too much. This is a group of reactions laughing at various quirks of the models, hallucinations, etc. Yes I also saw the viral videos of OpenAI's Advanced Voice mode fumbling simple queries like \"should I drive or walk to the carwash\". The thing is that these free and old/deprecated models don't reflect the capability in the latest round of state of the art agentic models of this year, especially OpenAI Codex and Claude Code.\n\nBut that brings me to the second issue. Even if people paid $200/month to use the state of the art models, a lot of the capabilities are relatively \"peaky\" in highly technical areas. Typical queries around search, writing, advice, etc. are *not* the domain that has made the most noticeable and dramatic strides in capability. Partly,  this is due to the technical details of reinforcement learning and its use of verifiable rewards. But partly, it's also because these use cases are not sufficiently prioritized by the companies in their hillclimbing because they don't lead to as much $$$ value. The goldmines are elsewhere, and the focus comes along.\n\nSo that brings me to the second group of people, who *both* 1) pay for and use the state of the art frontier agentic models (OpenAI Codex / Claude Code) and 2) do so professionally in technical domains like programming, math and research. This group of people is subject to the highest amount of \"AI Psychosis\" because the recent improvements in these domains as of this year have been nothing short of staggering. When you hand a computer terminal to one of these models, you can now watch them melt programming problems that you'd normally expect to take days/weeks of work. It's this second group of people that assigns a much greater gravity to the capabilities, their slope, and various cyber-related repercussions.\n\nTLDR the people in these two groups are speaking past each other. It really is simultaneously the case that OpenAI's free and I think slightly orphaned (?) \"Advanced Voice Mode\" will fumble the dumbest questions in your Instagram's reels and *at the same time*, OpenAI's highest-tier and paid Codex model will go off for 1 hour to coherently restructure an entire code base, or find and exploit vulnerabilities in computer systems. This part really works and has made dramatic strides because 2 properties: 1) these domains offer explicit reward functions that are verifiable meaning they are easily amenable to reinforcement learning training (e.g. unit tests passed yes or no, in contrast to writing, which is much harder to explicitly judge),  but also 2) they are a lot more valuable in b2b settings, meaning that the biggest fraction of the team is focused on improving them. So here we are.",
+    "createdAt": "Thu Apr 09 20:10:52 +0000 2026",
+    "replyCount": 1102,
+    "retweetCount": 2434,
+    "likeCount": 20110,
+    "conversationId": "2042334451611693415",
+    "author": {
+      "username": "karpathy",
+      "name": "Andrej Karpathy"
+    },
+    "authorId": "33836629",
+    "quotedTweet": {
+      "id": "2042063369432183238",
+      "text": "The degree to which you are awed by AI is perfectly correlated with how much you use AI to code.",
+      "createdAt": "Thu Apr 09 02:13:41 +0000 2026",
+      "replyCount": 77,
+      "retweetCount": 174,
+      "likeCount": 1658,
+      "conversationId": "2042063369432183238",
+      "author": {
+        "username": "staysaasy",
+        "name": "staysaasy"
+      },
+      "authorId": "1254131357774733312"
+    }
+  },
+  {
+    "id": "2042341482531864741",
+    "text": "Someone recently suggested to me that the reason OpenClaw moment was so big is because it's the first time a large group of non-technical people (who otherwise only knew AI as synonymous with ChatGPT as a website) experienced the latest agentic models.",
+    "createdAt": "Thu Apr 09 20:38:48 +0000 2026",
+    "replyCount": 237,
+    "retweetCount": 156,
+    "likeCount": 3635,
+    "conversationId": "2042334451611693415",
+    "inReplyToStatusId": "2042334451611693415",
+    "author": {
+      "username": "karpathy",
+      "name": "Andrej Karpathy"
+    },
+    "authorId": "33836629"
+  },
+  {
+    "id": "2040470801506541998",
+    "text": "Wow, this tweet went very viral!\n\nI wanted share a possibly slightly improved version of the tweet in an \"idea file\". The idea of the idea file is that in this era of LLM agents, there is less of a point/need of sharing the specific code/app, you just share the idea, then the other person's agent customizes & builds it for your specific needs.\n\nSo here's the idea in a gist format: https://t.co/NlAfEJjtJV\n\nYou can give this to your agent and it can build you your own LLM wiki and guide you on how to use it etc. It's intentionally kept a little bit abstract/vague because there are so many directions to take this in. And ofc, people can adjust the idea or contribute their own in the Discussion which is cool.",
+    "createdAt": "Sat Apr 04 16:45:23 +0000 2026",
+    "replyCount": 1076,
+    "retweetCount": 2756,
+    "likeCount": 26236,
+    "conversationId": "2040470801506541998",
+    "author": {
+      "username": "karpathy",
+      "name": "Andrej Karpathy"
+    },
+    "authorId": "33836629",
+    "quotedTweet": {
+      "id": "2039805659525644595",
+      "text": "LLM Knowledge Bases\n\nSomething I'm finding very useful recently: using LLMs to build personal knowledge bases for various topics of research interest. In this way, a large fraction of my recent token throughput is going less into manipulating code, and more into manipulating knowledge (stored as markdown and images). The latest LLMs are quite good at it. So:\n\nData ingest:\nI index source documents (articles, papers, repos, datasets, images, etc.) into a raw/ directory, then I use an LLM to incrementally \"compile\" a wiki, which is just a collection of .md files in a directory structure. The wiki includes summaries of all the data in raw/, backlinks, and then it categorizes data into concepts, writes articles for them, and links them all. To convert web articles into .md files I like to use the Obsidian Web Clipper extension, and then I also use a hotkey to download all the related images to local so that my LLM can easily reference them.\n\nIDE:\nI use Obsidian as the IDE \"frontend\" where I can view the raw data, the the compiled wiki, and the derived visualizations. Important to note that the LLM writes and maintains all of the data of the wiki, I rarely touch it directly. I've played with a few Obsidian plugins to render and view data in other ways (e.g. Marp for slides).\n\nQ&A:\nWhere things get interesting is that once your wiki is big enough (e.g. mine on some recent research is ~100 articles and ~400K words), you can ask your LLM agent all kinds of complex questions against the wiki, and it will go off, research the answers, etc. I thought I had to reach for fancy RAG, but the LLM has been pretty good about auto-maintaining index files and brief summaries of all the documents and it reads all the important related data fairly easily at this ~small scale.\n\nOutput:\nInstead of getting answers in text/terminal, I like to have it render markdown files for me, or slide shows (Marp format), or matplotlib images, all of which I then view again in Obsidian. You can imagine many other visual output formats depending on the query. Often, I end up \"filing\" the outputs back into the wiki to enhance it for further queries. So my own explorations and queries always \"add up\" in the knowledge base.\n\nLinting:\nI've run some LLM \"health checks\" over the wiki to e.g. find inconsistent data, impute missing data (with web searchers), find interesting connections for new article candidates, etc., to incrementally clean up the wiki and enhance its overall data integrity. The LLMs are quite good at suggesting further questions to ask and look into.\n\nExtra tools:\nI find myself developing additional tools to process the data, e.g. I vibe coded a small and naive search engine over the wiki, which I both use directly (in a web ui), but more often I want to hand it off to an LLM via CLI as a tool for larger queries. \n\nFurther explorations:\nAs the repo grows, the natural desire is to also think about synthetic data generation + finetuning to have your LLM \"know\" the data in its weights instead of just context windows.\n\nTLDR: raw data from a given number of sources is collected, then compiled by an LLM into a .md wiki, then operated on by various CLIs by the LLM to do Q&A and to incrementally enhance the wiki, and all of it viewable in Obsidian. You rarely ever write or edit the wiki manually, it's the domain of the LLM. I think there is room here for an incredible new product instead of a hacky collection of scripts.",
+      "createdAt": "Thu Apr 02 20:42:21 +0000 2026",
+      "replyCount": 2785,
+      "retweetCount": 6793,
+      "likeCount": 56664,
+      "conversationId": "2039805659525644595",
+      "author": {
+        "username": "karpathy",
+        "name": "Andrej Karpathy"
+      },
+      "authorId": "33836629"
+    }
+  },
+  {
+    "id": "2040806346556428585",
+    "text": "Surprised with how good the comments on github gists are. A lot more helpful, insightful, constructive, a lot less AI... Is it the user community? The markdown format? The (lack of) incentives?\n\nSuddenly feeling like I should gist more.\n@github consider competing with X (?)",
+    "createdAt": "Sun Apr 05 14:58:44 +0000 2026",
+    "replyCount": 167,
+    "retweetCount": 37,
+    "likeCount": 1030,
+    "conversationId": "2040470801506541998",
+    "inReplyToStatusId": "2040470801506541998",
+    "author": {
+      "username": "karpathy",
+      "name": "Andrej Karpathy"
+    },
+    "authorId": "33836629"
+  },
+  {
+    "id": "2040572272944324650",
+    "text": "Farzapedia, personal wikipedia of Farza, good example following my Wiki LLM tweet.\n\nI really like this approach to personalization in a number of ways, compared to \"status quo\" of an AI that allegedly gets better the more you use it or something:\n\n1. Explicit. The memory artifact is explicit and navigable (the wiki), you can see exactly what the AI does and does not know and you can inspect and manage this artifact, even if you don't do the direct text writing (the LLM does). The knowledge of you is not implicit and unknown, it's explicit and viewable.\n2. Yours. Your data is yours, on your local computer, it's not in some particular AI provider's system without the ability to extract it. You're in control of your information. \n3. File over app. The memory here is a simple collection of files in universal formats (images, markdown). This means the data is interoperable: you can use a very large collection of tools/CLIs or whatever you want over this information because it's just files. The agents can apply the entire Unix toolkit over them. They can natively read and understand them. Any kind of data can be imported into files as input, and any kind of interface can be used to view them as the output. E.g. you can use Obsidian to view them or vibe code something of your own. Search \"File over app\" for an article on this philosophy.\n4. BYOAI. You can use whatever AI you want to \"plug into\" this information - Claude, Codex, OpenCode, whatever. You can even think about taking an open source AI and finetuning it on your wiki - in principle, this AI could \"know\" you in its weights, not just attend over your data.\n\nSo this approach to personalization puts *you* in full control. The data is yours. In Universal formats. Explicit and inspectable. Use whatever AI you want over it, keep the AI companies on their toes! :)\n\nCertainly this is not the simplest way to get an AI to know you - it does require you to manage file directories and so on, but agents also make it quite simple and they can help you a lot. I imagine a number of products might come out to make this all easier, but imo \"agent proficiency\" is a CORE SKILL of the 21st century. These are extremely powerful tools - they speak English and they do all the computer stuff for you. Try this opportunity to play with one.",
+    "createdAt": "Sat Apr 04 23:28:36 +0000 2026",
+    "replyCount": 436,
+    "retweetCount": 800,
+    "likeCount": 8808,
+    "conversationId": "2040572272944324650",
+    "author": {
+      "username": "karpathy",
+      "name": "Andrej Karpathy"
+    },
+    "authorId": "33836629",
+    "quotedTweet": {
+      "id": "2040563939797504467",
+      "text": "This is Farzapedia.\n\nI had an LLM take 2,500 entries from my diary, Apple Notes, and some iMessage convos to create a personal Wikipedia for me.\n\nIt made 400 detailed articles for my friends, my startups, research areas, and even my favorite animes and their impact on me complete with backlinks.\n\nBut, this Wiki was not built for me! I built it for my agent!\n\nThe structure of the wiki files and how it's all backlinked is very easily crawlable by any agent + makes it a truly useful knowledge base.\n\nI can spin up Claude Code on the wiki and starting at index.md (a catalog of all my articles) the agent does a really good job at drilling into the specific pages on my wiki it needs context on when I have a query.\n\nFor example, when trying to cook up a new landing page I may ask:\n\n\"I'm trying to design this landing page for a new idea I have. Please look into the images and films that inspired me recently and give me ideas for new copy and aesthetics\".\n\nIn my diary I kept track of everything from: learnings, people, inspo, interesting links, images.\n\nSo the agent reads my wiki and pulls up my \"Philosophy\" articles from notes on a Studio Ghibli documentary, \"Competitor\" articles with YC companies whose landing pages I screenshotted, and pics of 1970s Beatles merch I saved years ago. And it delivers a great answer.\n\nI built a similar system to this a year ago with RAG but it was ass.\n\nA knowledge base that lets an agent find what it needs via a file system it actually understands just works better.\n\nThe most magical thing now is as I add new things to my wiki (articles, images of inspo, meeting notes) the system will likely update 2-3 different articles where it feels that context belongs, or, just creates a new article.\n\nIt's like this super genius librarian for your brain that's always filing stuff for your perfectly and also let's you easily query the knowledge for tasks useful to you (ex. design, product, writing, etc) and it never gets tired.\n\nI might spend next week productizing this, if that's of interest to you DM me + tell me your usecase!",
+      "createdAt": "Sat Apr 04 22:55:29 +0000 2026",
+      "replyCount": 233,
+      "retweetCount": 370,
+      "likeCount": 4744,
+      "conversationId": "2040563939797504467",
+      "author": {
+        "username": "FarzaTV",
+        "name": "Farza 🇵🇰🇺🇸"
+      },
+      "authorId": "327403216",
+      "media": [
+        {
+          "type": "video",
+          "url": "https://pbs.twimg.com/amplify_video_thumb/2040562032819486720/img/jVrKry6tC4BPFnCg.jpg",
+          "width": 1680,
+          "height": 1080,
+          "previewUrl": "https://pbs.twimg.com/amplify_video_thumb/2040562032819486720/img/jVrKry6tC4BPFnCg.jpg:small",
+          "videoUrl": "https://video.twimg.com/amplify_video/2040562032819486720/vid/avc1/1680x1080/TVdUCbM1akMYC6hL.mp4?tag=21",
+          "durationMs": 144768
+        }
+      ]
+    }
+  },
+  {
+    "id": "2040549459193704852",
+    "text": "Something I've been thinking about - I am bullish on people (empowered by AI) increasing the visibility, legibility and accountability of their governments.\n\nHistorically, it is the governments that act to make society legible (e.g. \"Seeing like a state\" is the common reference), but with AI, society can dramatically improve its ability to do this in reverse. Government accountability has not been constrained by access (the various branches of government publish an enormous amount of data), it has been constrained by intelligence - the ability to process a lot of raw data, combine it with domain expertise and derive insights. As an example, the 4000-page omnibus bill is \"transparent\" in principle and in a legal sense, but certainly not in a practical sense for most people. There's a lot more like it: laws, spending bills, federal budgets, freedom of information act responses, lobbying disclosures... Only a few highly trained professionals (investigative journalists) could historically process this information. This bottleneck might dissolve - not only are the professionals further empowered, but a lot more people can participate.\n\nSome examples to be precise: Detailed accounting of spending and budgets, diff tracking of legislation, individual voting trends w.r.t. stated positions or speeches, lobbying and influence (e.g. graph of lobbyist -> firm -> client -> legislator -> committee -> vote -> regulation), procurement and contracting, regulatory capture warning lights, judicial and legal patterns, campaign finance... Local governments might be even more interesting because the governed population is smaller so there is less national coverage: city council meetings, decisions around zoning, policing, schools, utilities...\n\nCertainly, the same tools can easily cut the other way and it's worth being very mindful of that, but I lean optimistic overall that added participation, transparency and accountability will improve democratic, free societies.\n\n(the quoted tweet is half-ish related, but inspired me to post some recent thoughts)",
+    "createdAt": "Sat Apr 04 21:57:57 +0000 2026",
+    "replyCount": 404,
+    "retweetCount": 721,
+    "likeCount": 5844,
+    "conversationId": "2040549459193704852",
+    "author": {
+      "username": "karpathy",
+      "name": "Andrej Karpathy"
+    },
+    "authorId": "33836629",
+    "quotedTweet": {
+      "id": "2040406616806179001",
+      "text": "The British Government is a complicated beast. Dozens of departments, hundreds of public bodies, more corporations than one can count...\n\nSuch is its complexity that there isn't an org chart for it.\n\nWell, there wasn't...\n\nIntroducing ⚙️Machinery of Government⚙️ https://t.co/YRt8r3yHyn",
+      "createdAt": "Sat Apr 04 12:30:21 +0000 2026",
+      "replyCount": 101,
+      "retweetCount": 420,
+      "likeCount": 2912,
+      "conversationId": "2040406616806179001",
+      "author": {
+        "username": "Hrushworth",
+        "name": "Harry Rushworth"
+      },
+      "authorId": "272923763",
+      "media": [
+        {
+          "type": "photo",
+          "url": "https://pbs.twimg.com/media/HFD4KSmWkAAdI3Z.jpg",
+          "width": 2048,
+          "height": 1411,
+          "previewUrl": "https://pbs.twimg.com/media/HFD4KSmWkAAdI3Z.jpg:small"
+        }
+      ]
+    }
+  },
+  {
+    "id": "2039805659525644595",
+    "text": "LLM Knowledge Bases\n\nSomething I'm finding very useful recently: using LLMs to build personal knowledge bases for various topics of research interest. In this way, a large fraction of my recent token throughput is going less into manipulating code, and more into manipulating knowledge (stored as markdown and images). The latest LLMs are quite good at it. So:\n\nData ingest:\nI index source documents (articles, papers, repos, datasets, images, etc.) into a raw/ directory, then I use an LLM to incrementally \"compile\" a wiki, which is just a collection of .md files in a directory structure. The wiki includes summaries of all the data in raw/, backlinks, and then it categorizes data into concepts, writes articles for them, and links them all. To convert web articles into .md files I like to use the Obsidian Web Clipper extension, and then I also use a hotkey to download all the related images to local so that my LLM can easily reference them.\n\nIDE:\nI use Obsidian as the IDE \"frontend\" where I can view the raw data, the the compiled wiki, and the derived visualizations. Important to note that the LLM writes and maintains all of the data of the wiki, I rarely touch it directly. I've played with a few Obsidian plugins to render and view data in other ways (e.g. Marp for slides).\n\nQ&A:\nWhere things get interesting is that once your wiki is big enough (e.g. mine on some recent research is ~100 articles and ~400K words), you can ask your LLM agent all kinds of complex questions against the wiki, and it will go off, research the answers, etc. I thought I had to reach for fancy RAG, but the LLM has been pretty good about auto-maintaining index files and brief summaries of all the documents and it reads all the important related data fairly easily at this ~small scale.\n\nOutput:\nInstead of getting answers in text/terminal, I like to have it render markdown files for me, or slide shows (Marp format), or matplotlib images, all of which I then view again in Obsidian. You can imagine many other visual output formats depending on the query. Often, I end up \"filing\" the outputs back into the wiki to enhance it for further queries. So my own explorations and queries always \"add up\" in the knowledge base.\n\nLinting:\nI've run some LLM \"health checks\" over the wiki to e.g. find inconsistent data, impute missing data (with web searchers), find interesting connections for new article candidates, etc., to incrementally clean up the wiki and enhance its overall data integrity. The LLMs are quite good at suggesting further questions to ask and look into.\n\nExtra tools:\nI find myself developing additional tools to process the data, e.g. I vibe coded a small and naive search engine over the wiki, which I both use directly (in a web ui), but more often I want to hand it off to an LLM via CLI as a tool for larger queries. \n\nFurther explorations:\nAs the repo grows, the natural desire is to also think about synthetic data generation + finetuning to have your LLM \"know\" the data in its weights instead of just context windows.\n\nTLDR: raw data from a given number of sources is collected, then compiled by an LLM into a .md wiki, then operated on by various CLIs by the LLM to do Q&A and to incrementally enhance the wiki, and all of it viewable in Obsidian. You rarely ever write or edit the wiki manually, it's the domain of the LLM. I think there is room here for an incredible new product instead of a hacky collection of scripts.",
+    "createdAt": "Thu Apr 02 20:42:21 +0000 2026",
+    "replyCount": 2785,
+    "retweetCount": 6793,
+    "likeCount": 56664,
+    "conversationId": "2039805659525644595",
+    "author": {
+      "username": "karpathy",
+      "name": "Andrej Karpathy"
+    },
+    "authorId": "33836629"
+  },
+  {
+    "id": "2038849654423798197",
+    "text": "New supply chain attack this time for npm axios, the most popular HTTP client library with 300M weekly downloads.\n\nScanning my system I found a use imported from googleworkspace/cli from a few days ago when I was experimenting with gmail/gcal cli. The installed version (luckily) resolved to an unaffected 1.13.5, but the project dependency is not pinned, meaning that if I did this earlier today the code would have resolved to latest and I'd be pwned.\n\nIt's possible to personally defend against these to some extent with local settings e.g. release-age constraints, or containers or etc, but I think ultimately the defaults of package management projects (pip, npm etc) have to change so that a single infection (usually luckily fairly temporary in nature due to security scanning) does not spread through users at random and at scale via unpinned dependencies.\n\nMore comprehensive article:\nhttps://t.co/EJAZbqAPIQ",
+    "createdAt": "Tue Mar 31 05:23:32 +0000 2026",
+    "replyCount": 558,
+    "retweetCount": 1120,
+    "likeCount": 10535,
+    "conversationId": "2038849654423798197",
+    "author": {
+      "username": "karpathy",
+      "name": "Andrej Karpathy"
+    },
+    "authorId": "33836629",
+    "quotedTweet": {
+      "id": "2038807290422370479",
+      "text": "🚨 CRITICAL: Active supply chain attack on axios -- one of npm's most depended-on packages.\n\nThe latest axios@1.14.1 now pulls in plain-crypto-js@4.2.1, a package that did not exist before today. This is a live compromise.\n\nThis is textbook supply chain installer malware. axios has 100M+ weekly downloads. Every npm install pulling the latest version is potentially compromised right now.\n\nSocket AI analysis confirms this is malware. plain-crypto-js is an obfuscated dropper/loader that:\n\n• Deobfuscates embedded payloads and operational strings at runtime\n• Dynamically loads fs, os, and execSync to evade static analysis\n• Executes decoded shell commands\n• Stages and copies payload files into OS temp and Windows ProgramData directories\n• Deletes and renames artifacts post-execution to destroy forensic evidence\n\nIf you use axios, pin your version immediately and audit your lockfiles. Do not upgrade.",
+      "createdAt": "Tue Mar 31 02:35:11 +0000 2026",
+      "replyCount": 543,
+      "retweetCount": 4059,
+      "likeCount": 16283,
+      "conversationId": "2038807290422370479",
+      "author": {
+        "username": "feross",
+        "name": "Feross"
+      },
+      "authorId": "15692193"
+    }
+  }
+]

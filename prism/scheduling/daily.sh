@@ -8,6 +8,10 @@ mkdir -p data
 echo "=== $(date) ===" >> "$LOG"
 # Health check + auto-repair before sync (reset stuck sources, detect issues)
 python scripts/health_check.py >> "$LOG" 2>&1 || true
+# Pull latest X follows into sources.yaml (best-effort; bird may lack cookies)
+# Source X cookies from a local-only env file (see ~/.config/prism/x_cookies.env.example)
+[ -f "$HOME/.config/prism/x_cookies.env" ] && source "$HOME/.config/prism/x_cookies.env"
+prism sync-follows --apply --max-new 30 >> "$LOG" 2>&1 || true
 # Fresh sync before daily analysis to ensure latest content
 prism sync >> "$LOG" 2>&1
 prism cluster >> "$LOG" 2>&1

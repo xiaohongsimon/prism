@@ -3,6 +3,8 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 source .venv/bin/activate
 [ -f .env ] && source .env
+# X cookies for bird-backed XAdapter (private GraphQL via cookie auth)
+[ -f "$HOME/.config/prism/x_cookies.env" ] && source "$HOME/.config/prism/x_cookies.env"
 LOG=data/sync.log
 mkdir -p data
 echo "=== $(date) ===" >> "$LOG"

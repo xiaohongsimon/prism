@@ -472,7 +472,8 @@ def publish_videos(limit):
             # Always use gemma-4-31b for structuring — 26b has repetition issues
             result = call_llm(body[:6000], system=STRUCTURE_PROMPT,
                               model="gemma-4-31b-it-8bit",
-                              max_tokens=4096, timeout=600)
+                              max_tokens=4096, timeout=600,
+                              project="内容结构化")
             # Strip thinking tags
             result = _re.sub(r"<think>.*?</think>", "", result, flags=_re.DOTALL).strip()
             if "##" in result and len(result) > 200:
@@ -908,6 +909,107 @@ def sources_prune_cmd(threshold: float, dry_run: bool, yes: bool):
         conn.close()
 
 
+@cli.command("sync-follows")
+@click.option("--apply", "do_apply", is_flag=True,
+              help="Write changes to sources.yaml. Default is dry-run.")
+@click.option("--max-new", default=30, show_default=True,
+              help="Cap on new handles added per run (防爆量).")
+@click.option("--depth", default="thread", show_default=True,
+              type=click.Choice(["tweet", "thread"]),
+              help="depth field for newly added X sources.")
+@click.option("--check-orphans", is_flag=True,
+              help="Log accounts in yaml but not in bird's view. OFF by default "
+                   "because bird's following endpoint can return incomplete data, "
+                   "causing false orphans.")
+def sync_follows_cmd(do_apply: bool, max_new: int, depth: str, check_orphans: bool):
+    """Sync X following list into config/sources.yaml via bird CLI."""
+    from prism.discovery.x_follows import sync_follows
+
+    conn = get_connection(settings.db_path)
+    outcome, diff = sync_follows(
+        conn, settings.source_config,
+        dry_run=not do_apply, max_new=max_new, depth=depth,
+        check_orphans=check_orphans,
+    )
+
+    if outcome.status != "ok":
+        click.echo(f"[{outcome.status}] {outcome.message}")
+        if outcome.status == "blocked":
+            click.echo("  Fix: login to x.com in Safari/Chrome OR set AUTH_TOKEN + CT0 env vars.")
+            click.echo("  Diagnose: run `bird check`")
+        return
+
+    if diff is None:
+        return
+
+    mode = "DRY-RUN" if not do_apply else "APPLIED"
+    click.echo(f"=== sync-follows [{mode}] ===")
+    click.echo(f"  in yaml (type:x): {len(diff.yaml_x_handles)}")
+    click.echo(f"  to add:           {len(diff.to_add)}"
+               + (f"  (truncated to {max_new})" if outcome.truncated else ""))
+    orphan_tag = "[will log]" if check_orphans else "[ignored — bird view often incomplete]"
+    click.echo(f"  not in bird view: {len(diff.orphans)}  {orphan_tag}")
+
+    if diff.to_add:
+        sample = diff.to_add[: min(20, max_new)]
+        click.echo("\n  + new follows:")
+        for f in sample:
+            tag = f" — {f.display_name}" if f.display_name else ""
+            click.echo(f"    @{f.handle}{tag}")
+        if len(diff.to_add) > len(sample):
+            click.echo(f"    ... +{len(diff.to_add) - len(sample)} more")
+
+    if diff.orphans:
+        marker = "" if check_orphans else "  [will NOT log; pass --check-orphans to record]"
+        click.echo(f"\n  - not in bird's view (still in yaml):{marker}")
+        for h in diff.orphans[:20]:
+            click.echo(f"    @{h}")
+        if len(diff.orphans) > 20:
+            click.echo(f"    ... +{len(diff.orphans) - 20} more")
+
+    if not do_apply:
+        click.echo("\n(re-run with --apply to write changes)")
+    else:
+        click.echo(f"\nApplied: +{outcome.added} added, {outcome.orphan} orphans logged.")
+
+
+@cli.command("translate-bodies")
+@click.option("--limit", default=100, show_default=True,
+              help="Max raw_items to translate this run.")
+@click.option("--source-type", multiple=True, default=("x", "follow_builders"),
+              show_default=True,
+              help="Restrict to these source types (repeatable).")
+@click.option("--since-days", default=7, show_default=True,
+              help="Only translate items published in the last N days. 0 = no date filter.")
+@click.option("--source-key", default="",
+              help="Restrict to a single source_key (e.g. 'x:karpathy').")
+def translate_bodies_cmd(
+    limit: int,
+    source_type: tuple[str, ...],
+    since_days: int,
+    source_key: str,
+):
+    """Pre-translate raw_items.body → body_zh for creator pages.
+
+    Runs gemma-4-26b-a4b-it-8bit via OMLX. Idempotent — only touches rows
+    where body_zh is empty. Hooked into hourly.sh after sync.
+    """
+    from prism.pipeline.translate import translate_pending
+    conn = get_connection(settings.db_path)
+    outcome = translate_pending(
+        conn,
+        limit=limit,
+        source_types=source_type,
+        since_days=since_days,
+        source_key=source_key,
+    )
+    click.echo(
+        f"translate-bodies: scanned={outcome.scanned} "
+        f"translated={outcome.translated} skipped={outcome.skipped} "
+        f"failed={outcome.failed}"
+    )
+
+
 @cli.command("quality-scan")
 def quality_scan():
     """Capture health metrics and evaluate anomaly rules."""
@@ -927,5 +1029,127 @@ def quality_scan():
         click.echo(f"Open anomalies ({len(open_anomalies)}):")
         for a in open_anomalies:
             click.echo(f"  [{a['severity']}] {a['title']} — {a['detail']}")
+    finally:
+        conn.close()
+
+
+@cli.group()
+def ctr():
+    """CTR ranker — skip-above training on feed impressions."""
+    pass
+
+
+@ctr.command("samples")
+def ctr_samples():
+    """Summarize the training samples that would be built right now."""
+    from prism.ctr.samples import build_samples, summarize
+    conn = get_connection(settings.db_path)
+    try:
+        samples = build_samples(conn)
+        s = summarize(samples)
+        click.echo(
+            f"groups={s['groups']}  positives={s['positives']}  "
+            f"negatives={s['negatives']}  avg_group_size={s['avg_group_size']:.2f}  "
+            f"max_group_size={s['max_group_size']}"
+        )
+        if not samples:
+            click.echo(
+                "No samples yet — save a few signals from the feed; "
+                "impressions are logged per /feed/more call."
+            )
+    finally:
+        conn.close()
+
+
+@ctr.command("backfill")
+def ctr_backfill():
+    """Replay every historical save → ctr_samples (positives + skip-above)."""
+    from prism.ctr.collect import backfill
+    conn = get_connection(settings.db_path)
+    try:
+        stats = backfill(conn)
+        click.echo(
+            f"scanned={stats['scanned']}  "
+            f"groups_written={stats['groups_written']}  "
+            f"positives={stats['positives']}  "
+            f"negatives={stats['negatives']}"
+        )
+        if stats["skipped"]:
+            click.echo("skipped:")
+            for reason, n in stats["skipped"].items():
+                click.echo(f"  {reason}: {n}")
+    finally:
+        conn.close()
+
+
+@ctr.command("stats")
+@click.option("--days", default=30, type=int, help="Trailing window in days.")
+def ctr_stats(days):
+    """Bucket every recent signal: unseen / impressed / clicked / saved."""
+    from prism.ctr.stats import classify, format_report
+    conn = get_connection(settings.db_path)
+    try:
+        report = classify(conn, days=days)
+        click.echo(format_report(report))
+    finally:
+        conn.close()
+
+
+@ctr.command("train")
+@click.option("--model-path", default=None, help="Destination for the booster JSON.")
+def ctr_train(model_path):
+    """Train the XGBoost ranker and persist it under data/ctr/."""
+    from prism.ctr.train import DEFAULT_MODEL_PATH, train
+    dest = model_path or str(DEFAULT_MODEL_PATH)
+    report = train(settings.db_path, model_path=dest)
+    click.echo(
+        f"trained on {report.train_groups} groups ({report.total_samples} samples); "
+        f"test={report.test_groups}  ndcg@5={report.ndcg_at_5:.4f}  "
+        f"ndcg@10={report.ndcg_at_10:.4f}"
+    )
+    click.echo(f"model → {report.model_path}")
+    top = sorted(report.feature_importance.items(), key=lambda kv: -kv[1])[:10]
+    if top:
+        click.echo("top features by gain:")
+        for name, val in top:
+            click.echo(f"  {name:24s} {val:.3f}")
+
+
+@ctr.command("eval")
+def ctr_eval():
+    """Re-evaluate the persisted model on the current sample set."""
+    from prism.ctr.model import CTRRanker, DEFAULT_MODEL_PATH
+    from prism.ctr.samples import build_samples
+    from prism.ctr.train import _build_frame, _mean_ndcg
+
+    ranker = CTRRanker.load(DEFAULT_MODEL_PATH)
+    if ranker is None:
+        click.echo("No model on disk — run `prism ctr train` first.")
+        return
+    conn = get_connection(settings.db_path)
+    try:
+        samples = build_samples(conn)
+        if not samples:
+            click.echo("No samples — nothing to evaluate.")
+            return
+        df = _build_frame(conn, samples)
+
+        # Adapt CTRRanker (which wraps a Booster) to the predict-shape
+        # _mean_ndcg expects. A tiny shim object with .predict works.
+        import numpy as np
+
+        class _Shim:
+            def __init__(self, ranker):
+                self.ranker = ranker
+
+            def predict(self, X):
+                import xgboost as xgb
+                dmat = xgb.DMatrix(np.asarray(X, dtype=float))
+                return self.ranker._booster.predict(dmat)
+
+        ndcg5 = _mean_ndcg(_Shim(ranker), df, 5)
+        ndcg10 = _mean_ndcg(_Shim(ranker), df, 10)
+        click.echo(f"ndcg@5={ndcg5:.4f}  ndcg@10={ndcg10:.4f}  "
+                   f"(over {len(samples)} samples)")
     finally:
         conn.close()

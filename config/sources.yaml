@@ -1,156 +1,140 @@
 sources:
-  # === X (Twitter) — priority follows ===
-  - type: x
+  - depth: thread
+    display_name: Andrej Karpathy
     handle: karpathy
-    display_name: "Andrej Karpathy"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Simon Willison
     handle: simonw
-    display_name: "Simon Willison"
-    depth: thread
-
-  # === X — Claude Code core team & ecosystem ===
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Boris Cherny
     handle: bcherny
-    display_name: "Boris Cherny"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Alex Albert
     handle: alexalbert__
-    display_name: "Alex Albert"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Cat Wu
     handle: _catwu
-    display_name: "Cat Wu"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Vas
     handle: vasuman
-    display_name: "Vas"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Claude
     handle: ClaudeAI
-    display_name: "Claude"
-    depth: thread
-
-  # === X — Claude Code power users & content creators ===
-  - type: x
+    type: x
+  - depth: thread
+    display_name: IndyDevDan
     handle: IndyDevDan
-    display_name: "IndyDevDan"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Matt Pocock
     handle: mattpocock
-    display_name: "Matt Pocock"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Theo Browne
     handle: t3dotgg
-    display_name: "Theo Browne"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Riley Goodside
     handle: skirano
-    display_name: "Riley Goodside"
-    depth: thread
-
-  # === X — AI frontier labs & researchers ===
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Google DeepMind
     handle: GoogleDeepMind
-    display_name: "Google DeepMind"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Meta AI
     handle: AIatMeta
-    display_name: "Meta AI"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Yann LeCun
     handle: ylecun
-    display_name: "Yann LeCun"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Hugging Face
     handle: huggingface
-    display_name: "Hugging Face"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Artificial Analysis
     handle: ArtificialAnlys
-    display_name: "Artificial Analysis"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Clem Delangue
     handle: labordepierre
-    display_name: "Clem Delangue"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Vaibhav Srivastav
     handle: reach_vb
-    display_name: "Vaibhav Srivastav"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Jeff Dean
     handle: JeffDean
-    display_name: "Jeff Dean"
-    depth: thread
-
-  # === X — Multimodal / Video AI ===
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Emad Mostaque
     handle: EMostaque
-    display_name: "Emad Mostaque"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: AK
     handle: _akhaliq
-    display_name: "AK"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: 歸藏
     handle: op7418
-    display_name: "歸藏"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: 小互
     handle: xiaohuggg
-    display_name: "小互"
-    depth: thread
-
-  # === X — Indie builders (from follow-builders + manual) ===
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Pieter Levels
     handle: levelsio
-    display_name: "Pieter Levels"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Amjad Masad
     handle: amasad
-    display_name: "Amjad Masad"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Peter Steinberger
     handle: steipete
-    display_name: "Peter Steinberger"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Garry Tan
     handle: garrytan
-    display_name: "Garry Tan"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Aaron Levie
     handle: levie
-    display_name: "Aaron Levie"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Guillermo Rauch
     handle: rauchg
-    display_name: "Guillermo Rauch"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Peter Yang
     handle: petergyang
-    display_name: "Peter Yang"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Nan Yu
     handle: thenanyu
-    display_name: "Nan Yu"
-    depth: thread
-  - type: x
+    type: x
+  - depth: thread
+    display_name: Zara Zhang
     handle: zarazhangrui
-    display_name: "Zara Zhang"
-    depth: thread
-
-  # === HN ===
-  - type: hackernews
-    key: "hn:best"
-    feed_url: "https://hnrss.org/best"
+    type: x
+  - feed_url: https://hnrss.org/best
+    key: hn:best
     max_items: 15
-
-  # === GitHub Releases ===
-  - type: github_releases
-    key: "github:releases"
+    type: hackernews
+  - key: github:releases
     orgs:
-      - anthropics        # Claude Code releases
-      - openai            # Codex, API updates
+      - anthropics
+      - openai
       - vllm-project
       - sgl-project
       - deepseek-ai
@@ -162,92 +146,71 @@ sources:
       - mistralai
       - apple
       - XiaoMi
-      - google-deepmind    # Gemma models
-      - google             # Google AI releases
-
-  # YouTube — 每频道一个 source
-  - type: youtube
-    key: "youtube:bestpartners"
-    channel_id: UCGWYKICLOE8Wxy7q3eYXmPA
-    display_name: "最佳拍档"
-
-  - type: youtube
-    key: "youtube:sunriches"
-    channel_id: UCkHrq03gWLLx6vjS2DOJ8aA
-    display_name: "孙富贵"
-
-  - type: youtube
-    key: "youtube:storytellerfan"
-    channel_id: UCUGLhcs3-3y_yhZZsgRzrzw
-    display_name: "老范讲故事"
-
-  - type: youtube
-    key: "youtube:maskfinance"
-    channel_id: UCjJklW6MyT2yjHEOrRu-FOA
-    display_name: "蒙面财经MaskFinance"
-
-  - type: youtube
-    key: "youtube:a16z"
-    channel_id: UCQ1VQj-37kl2yS_VUhfQHsw
-    display_name: "a16z Deep Dives"
-
-  - type: youtube
-    key: "youtube:sunlao"
-    channel_id: UC1Lk6WO-eKuYc6GHYbKVY2g
-    display_name: "政經孫老師"
-
-  - type: youtube
-    key: "youtube:ltshijie"
-    channel_id: UCVThAeUXPZcUfdYBvWGV3UA
-    display_name: "LT+"
-
-  - type: youtube
-    key: "youtube:caijinglengyan"
-    channel_id: UCn9_KbNANeyYREePe8YA2DA
-    display_name: "财经冷眼"
-
-  # === Model Economics ===
-  - type: model_economics
-    key: "economics:models"
-
-  # === Practice ===
-  - type: git_practice
-    key: "practice:git"
-    repos:
-      - .  # project root (relative path)
+      - google-deepmind
+      - google
+    type: github_releases
+  - channel_id: UCGWYKICLOE8Wxy7q3eYXmPA
+    display_name: 最佳拍档
+    key: youtube:bestpartners
+    type: youtube
+  - channel_id: UCkHrq03gWLLx6vjS2DOJ8aA
+    display_name: 孙富贵
+    key: youtube:sunriches
+    type: youtube
+  - channel_id: UCUGLhcs3-3y_yhZZsgRzrzw
+    display_name: 老范讲故事
+    key: youtube:storytellerfan
+    type: youtube
+  - channel_id: UCjJklW6MyT2yjHEOrRu-FOA
+    display_name: 蒙面财经MaskFinance
+    key: youtube:maskfinance
+    type: youtube
+  - channel_id: UCQ1VQj-37kl2yS_VUhfQHsw
+    display_name: a16z Deep Dives
+    key: youtube:a16z
+    type: youtube
+  - channel_id: UC1Lk6WO-eKuYc6GHYbKVY2g
+    display_name: 政經孫老師
+    key: youtube:sunlao
+    type: youtube
+  - channel_id: UCVThAeUXPZcUfdYBvWGV3UA
+    display_name: LT+
+    key: youtube:ltshijie
+    type: youtube
+  - key: economics:models
+    type: model_economics
+  - key: practice:git
     lookback_hours: 24
-
-  - type: claude_sessions
-    key: "practice:claude"
+    repos:
+      - .
+    type: git_practice
+  - key: practice:claude
     memory_dirs:
       - ~/.claude/projects
-
-  # === HN Keyword Search (topic-based discovery) ===
-  - type: hn_search
-    key: "hn:search"
-    queries:
-      - "AI agent"
-      - "LLM"
-      - "open source AI"
-      - "Claude"
-      - "GPT"
-      - "coding agent"
-      - "design to code"
-      - "AI startup"
-      - "Gemma"
-      - "Llama"
-      - "benchmark SOTA"
-      - "open weights model"
-      - "video generation"
-      - "text to video"
-      - "image generation"
-      - "multimodal model"
-    max_per_query: 8
+    type: claude_sessions
+  - key: hn:search
     lookback_hours: 48
-
-  # === Reddit (community signals) ===
-  - type: reddit
-    key: "reddit:ai"
+    max_per_query: 8
+    queries:
+      - AI agent
+      - LLM
+      - open source AI
+      - Claude
+      - GPT
+      - coding agent
+      - design to code
+      - AI startup
+      - Gemma
+      - Llama
+      - benchmark SOTA
+      - open weights model
+      - video generation
+      - text to video
+      - image generation
+      - multimodal model
+    type: hn_search
+  - key: reddit:ai
+    max_per_sub: 8
     subreddits:
       - MachineLearning
       - LocalLLaMA
@@ -255,29 +218,442 @@ sources:
       - ClaudeAI
       - StableDiffusion
       - aivideo
-    max_per_sub: 8
-
-  # === Product Hunt (new product launches) ===
-  - type: producthunt
-    key: "ph:daily"
+    type: reddit
+  - key: ph:daily
     max_items: 10
-
-  # === Deprioritized (kept for coverage) ===
-  - type: x
+    type: producthunt
+  - depth: thread
+    display_name: swyx
     handle: swyx
-    display_name: "swyx"
-    depth: thread
-
-  - type: arxiv
-    key: "arxiv:daily"
-    categories: [cs.LG, cs.CL, cs.AI]
+    type: x
+  - categories:
+      - cs.LG
+      - cs.CL
+      - cs.AI
     filter: keyword
-
-  - type: github_trending
-    key: "github:trending"
+    key: arxiv:daily
+    type: arxiv
+  - deep_fetch: true
+    key: github:trending
     track_days: 7
-    deep_fetch: true
-
-  - type: follow_builders
-    key: "feed:follow-builders"
+    type: github_trending
+  - key: feed:follow-builders
+    type: follow_builders
     url: https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-x.json
+  - depth: thread
+    display_name: Yuchen Jin
+    handle: Yuchenj_UW
+    type: x
+  - depth: thread
+    display_name: Leopold Aschenbrenner
+    handle: leopoldasch
+    type: x
+  - depth: thread
+    display_name: AGI House SF
+    handle: AGIHouseSF
+    type: x
+  - depth: thread
+    display_name: xh66465
+    handle: xh66465
+    type: x
+  - depth: thread
+    display_name: Elon Musk
+    handle: elonmusk
+    type: x
+  - depth: thread
+    display_name: Mike Knoop
+    handle: mikeknoop
+    type: x
+  - depth: thread
+    display_name: 真相傳媒
+    handle: TruthMedia123
+    type: x
+  - depth: thread
+    display_name: 柴静
+    handle: Chai20230817
+    type: x
+  - depth: thread
+    display_name: 财经数据库
+    handle: caijingshujuku
+    type: x
+  - depth: thread
+    display_name: 宏观边际MacroMargin
+    handle: MacroMargin
+    type: x
+  - depth: thread
+    display_name: Denise
+    handle: denise161616
+    type: x
+  - depth: thread
+    display_name: 王海滨的财经闲谈
+    handle: wangwatchworld
+    type: x
+  - depth: thread
+    display_name: 沈彤=TongShen
+    handle: jessyshen
+    type: x
+  - depth: thread
+    display_name: 证势集团
+    handle: cxks888
+    type: x
+  - depth: thread
+    display_name: 左撇子内参
+    handle: kevinpabloFR
+    type: x
+  - depth: thread
+    display_name: 政经鲁社长
+    handle: xzzzjpl
+    type: x
+  - depth: thread
+    display_name: Petrichor
+    handle: Jam79922967
+    type: x
+  - depth: thread
+    display_name: David Tsai/蔡慎坤
+    handle: cskun1989
+    type: x
+  - depth: thread
+    display_name: 蔡英文 Tsai Ing-wen
+    handle: iingwen
+    type: x
+  - depth: thread
+    display_name: Time Horizon📊
+    handle: Time_HorizonX
+    type: x
+  - depth: thread
+    display_name: 张杰
+    handle: ZJ20672066
+    type: x
+  - depth: thread
+    display_name: 易富贤Yi Fuxian《大国空巢》
+    handle: fuxianyi
+    type: x
+  - depth: thread
+    display_name: 请叫我小老虎涂涂
+    handle: meiguoxiong001
+    type: x
+  - depth: thread
+    display_name: 时代传媒
+    handle: LoquatGrape
+    type: x
+  - depth: thread
+    display_name: 股票股市A股政策牛🐮期货外汇
+    handle: sunplant9
+    type: x
+  - depth: thread
+    display_name: 薛蛮子Charles
+    handle: xuemanzi8848
+    type: x
+  - depth: thread
+    display_name: Hao HONG 洪灝, CFA
+    handle: HAOHONG_CFA
+    type: x
+  - depth: thread
+    display_name: 王局志安
+    handle: wangzhian8848
+    type: x
+  - depth: thread
+    display_name: 林园
+    handle: linyuan57
+    type: x
+  - depth: thread
+    display_name: 李隽
+    handle: juanli324324
+    type: x
+  - depth: thread
+    display_name: 亚洲金融 Asia Finance
+    handle: AsiaFinance
+    type: x
+  - depth: thread
+    display_name: 唐靖遠
+    handle: tangjingyuan99
+    type: x
+  - depth: thread
+    display_name: Domo
+    handle: fuzzyface
+    type: x
+  - depth: thread
+    display_name: Jim Rickards
+    handle: JamesGRickards
+    type: x
+  - depth: thread
+    display_name: 中国股市猎人
+    handle: zhongguo1668
+    type: x
+  - depth: thread
+    display_name: 新大陆
+    handle: lrhj0OsbqajwWyg
+    type: x
+  - depth: thread
+    display_name: 荣剑
+    handle: rongjian1957
+    type: x
+  - depth: thread
+    display_name: 金融Angel
+    handle: 82WztfvhHqZz0Ub
+    type: x
+  - depth: thread
+    display_name: 翻身两周半的咸鱼
+    handle: Ein1981
+    type: x
+  - depth: thread
+    display_name: Huawei Europe
+    handle: Huawei_Europe
+    type: x
+  - depth: thread
+    display_name: 首席财经
+    handle: micro_vix_
+    type: x
+  - depth: thread
+    display_name: Andrew Ng
+    handle: AndrewYNg
+    type: x
+  - depth: thread
+    display_name: Anastasia Lin 林耶凡
+    handle: AnastasiaLinTO
+    type: x
+  - depth: thread
+    display_name: Ray Dalio
+    handle: RayDalio
+    type: x
+  - depth: thread
+    display_name: LT 視界
+    handle: ltshijie
+    type: x
+  - depth: thread
+    display_name: 陈秋实 Chen Qiushi
+    handle: chenqiushi404
+    type: x
+  - depth: thread
+    display_name: KUI YANG-葵阳先生
+    handle: KUI__YANG
+    type: x
+  - depth: thread
+    display_name: 李大宇
+    handle: dayubozhu
+    type: x
+  - depth: thread
+    display_name: 师涛-文牤
+    handle: shitao1989
+    type: x
+  - depth: thread
+    display_name: 新高地
+    handle: 5xyxh
+    type: x
+  - depth: thread
+    display_name: 阿波罗网唯一官方推号
+    handle: aboluowang
+    type: x
+  - depth: thread
+    display_name: 张林视野
+    handle: libert_zlin
+    type: x
+  - depth: thread
+    display_name: 股票交易
+    handle: mozi8888
+    type: x
+  - depth: thread
+    display_name: 横眉
+    handle: baobuping
+    type: x
+  - depth: thread
+    display_name: 证势交易
+    handle: xiajingfa8
+    type: x
+  - depth: thread
+    display_name: 田北铭
+    handle: chinayvan
+    type: x
+  - depth: thread
+    display_name: Joe Wong
+    handle: JoeWongComedy
+    type: x
+  - depth: thread
+    display_name: 美国驻华使领馆 U.S. Mission to China
+    handle: USA_China_Talk
+    type: x
+  - depth: thread
+    display_name: 猫总
+    handle: catmangox
+    type: x
+  - depth: thread
+    display_name: 一剑飘尘06
+    handle: yjpc06
+    type: x
+  - depth: thread
+    display_name: Hua Chunying 华春莹
+    handle: SpokespersonCHN
+    type: x
+  - depth: thread
+    display_name: Jack Ma
+    handle: JackMa
+    type: x
+  - depth: thread
+    display_name: The Lancet
+    handle: TheLancet
+    type: x
+  - depth: thread
+    display_name: 变态辣椒RebelPepper
+    handle: RebelCartoon
+    type: x
+  - depth: thread
+    display_name: 章立凡 ©️Zhang Lifan💎
+    handle: zhanglifan
+    type: x
+  - depth: thread
+    display_name: Lijian Zhao 赵立坚
+    handle: zlj517
+    type: x
+  - depth: thread
+    display_name: 吴祚来
+    handle: wuzuolai
+    type: x
+  - depth: thread
+    display_name: 王剑 Wong Kim
+    handle: wongkim728
+    type: x
+  - depth: thread
+    display_name: Hu Ping胡平
+    handle: HuPing1
+    type: x
+  - depth: thread
+    display_name: 高伐林
+    handle: GaoFalin
+    type: x
+  - depth: thread
+    display_name: 草祭
+    handle: caojitw
+    type: x
+  - depth: thread
+    display_name: 何頻
+    handle: MJTVHoPin
+    type: x
+  - depth: thread
+    display_name: 财经真相
+    handle: Rumoreconomy
+    type: x
+  - depth: thread
+    display_name: 戴维
+    handle: david_david1968
+    type: x
+  - depth: thread
+    display_name: Barack Obama
+    handle: BarackObama
+    type: x
+  - depth: thread
+    display_name: 外汇交易员
+    handle: fxtrader
+    type: x
+  - depth: thread
+    display_name: Meina 理财不焦虑
+    handle: InvestMeina
+    type: x
+  - depth: thread
+    display_name: 秦鹏
+    handle: shijianxingzou
+    type: x
+  - depth: thread
+    display_name: 雷锋网
+    handle: leiphone_com
+    type: x
+  - depth: thread
+    display_name: 财经冷眼
+    handle: caijinglengyan
+    type: x
+  - depth: thread
+    display_name: 韩连潮
+    handle: lianchaohan
+    type: x
+  - depth: thread
+    display_name: He Qinglian
+    handle: HeQinglian
+    type: x
+  - depth: thread
+    display_name: alex
+    handle: whoisalexmiller
+    type: x
+  - depth: thread
+    display_name: Inty News
+    handle: __Inty__
+    type: x
+  - depth: thread
+    display_name: 🐧
+    handle: ttttteeeee2020
+    type: x
+  - depth: thread
+    display_name: 阳光沙滩遛个狗
+    handle: h5streamer
+    type: x
+  - depth: thread
+    display_name: 朱韵和
+    handle: zhu0588
+    type: x
+  - depth: thread
+    display_name: 方舟子
+    handle: fangshimin
+    type: x
+  - depth: thread
+    display_name: Yunchao Wen 💙💛
+    handle: wenyunchao
+    type: x
+  - depth: thread
+    display_name: LUCY
+    handle: zhanglucy88
+    type: x
+  - depth: thread
+    display_name: 高瑜
+    handle: gaoyu200812
+    type: x
+  - depth: thread
+    display_name: BBC News 中文
+    handle: bbcchinese
+    type: x
+  - depth: thread
+    display_name: 美国之音中文网
+    handle: VOAChinese
+    type: x
+  - depth: thread
+    display_name: 华尔街日报中文网
+    handle: ChineseWSJ
+    type: x
+  - depth: thread
+    display_name: 纽约时报中文网
+    handle: nytchinese
+    type: x
+  - depth: thread
+    display_name: Hu Xijin 胡锡进
+    handle: HuXijin_GT
+    type: x
+  - depth: thread
+    display_name: China Xinhua News
+    handle: XHNews
+    type: x
+  - depth: thread
+    display_name: 阿里妞妞
+    handle: aliniuniu
+    type: x
+  - depth: thread
+    display_name: RFI 华语 - 法国国际广播电台
+    handle: RFI_Cn
+    type: x
+  - depth: thread
+    display_name: South China Morning Post
+    handle: SCMPNews
+    type: x
+  - depth: thread
+    display_name: William Long
+    handle: williamlong
+    type: x
+  - depth: thread
+    display_name: Donald J. Trump
+    handle: realDonaldTrump
+    type: x
+  - depth: thread
+    display_name: LeBron James
+    handle: KingJames
+    type: x
+  - type: youtube
+    key: youtube:deeplearningai
+    channel_id: UCcIXc5mJsHVYTZR1maL5l9w
+    display_name: DeepLearning.AI
+    handle: deeplearningai
