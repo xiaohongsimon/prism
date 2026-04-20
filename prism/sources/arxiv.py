@@ -148,7 +148,9 @@ def llm_relevance_filter(items: list[RawItem]) -> list[RawItem]:
             f"Reply with ONLY a single digit 1-5."
         )
         try:
-            score_text = call_llm(prompt, model=settings.llm_cheap_model)
+            # intent="fast" → SDK resolves to the fast model from the intent
+            # table (decouples this call site from llm_cheap_model env var).
+            score_text = call_llm(prompt, intent="fast", project="论文打分")
             score = int("".join(c for c in score_text.strip() if c.isdigit())[:1] or "0")
             if score >= 3:
                 filtered.append(item)

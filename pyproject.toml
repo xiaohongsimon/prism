@@ -27,6 +27,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 thread = ["playwright>=1.40"]
+ctr = [
+    "xgboost>=2.0",
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "scikit-learn>=1.3",
+]
 
 [project.urls]
 Homepage = "https://github.com/xiaohongsimon/prism"

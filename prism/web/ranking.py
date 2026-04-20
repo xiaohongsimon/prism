@@ -23,7 +23,7 @@ ACTION_DELTAS = {"like": 1.0, "dislike": -1.0, "save": 2.0}
 BLOCK_THRESHOLD = -3.0
 
 # "Follow" tab source types: personal/curated channels (not aggregators)
-FOLLOW_SOURCE_TYPES = {"x", "youtube", "follow_builders", "github_releases"}
+FOLLOW_SOURCE_TYPES = {"x", "youtube", "follow_builders", "github_releases", "xiaoyuzhou"}
 
 
 def _time_decay(published_at: str | None) -> float:

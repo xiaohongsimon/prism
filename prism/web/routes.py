@@ -619,6 +619,8 @@ def channel_page(request: Request, source_key: str):
 @web_router.post("/channel/{source_key:path}/unfollow", response_class=HTMLResponse)
 def channel_unfollow(request: Request, source_key: str):
     """Unfollow a channel — returns follow button HTML fragment."""
+    if not _get_user(request):
+        return HTMLResponse("", status_code=401)
     conn = _db(request)
     conn.execute(
         "UPDATE sources SET enabled = 0 WHERE source_key = ?", (source_key,)
@@ -635,6 +637,8 @@ def channel_unfollow(request: Request, source_key: str):
 @web_router.post("/channel/{source_key:path}/follow", response_class=HTMLResponse)
 def channel_follow(request: Request, source_key: str):
     """Follow a channel — returns unfollow button HTML fragment."""
+    if not _get_user(request):
+        return HTMLResponse("", status_code=401)
     conn = _db(request)
     conn.execute(
         "UPDATE sources SET enabled = 1 WHERE source_key = ?", (source_key,)

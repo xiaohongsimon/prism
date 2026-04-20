@@ -72,6 +72,7 @@ def _get_candidate_pool(
     extra_exclude_ids: set[int] | None = None,
     apply_pairwise_recent_filter: bool = True,
     apply_diversity_cap: bool = True,
+    max_age_days: int | None = SIGNAL_MAX_AGE_DAYS,
 ) -> list[dict]:
     """Get signals eligible for pairwise comparison (and feed ranking).
 
@@ -80,9 +81,16 @@ def _get_candidate_pool(
     pairwise pool (don't re-show same pair). For the feed this should be
     False; the feed is not a comparison, and excluding every X signal
     that was ever pairwise-compared starves the pool.
+
+    max_age_days: when None, skip the publish-date cutoff entirely. Used
+    by the creator profile page which wants full history regardless of age.
     """
-    # Content must be published within SIGNAL_MAX_AGE_DAYS (not just synced recently)
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=SIGNAL_MAX_AGE_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
+    # Content must be published within max_age_days (not just synced recently).
+    # max_age_days=None means no cutoff — caller wants full history.
+    if max_age_days is not None:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).strftime("%Y-%m-%dT%H:%M:%S")
+    else:
+        cutoff = ""  # empty string sorts before any real ISO timestamp
 
     # Load preference weights for filtering
     pref_map = _load_pref_weights(conn)
