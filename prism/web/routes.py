@@ -241,24 +241,41 @@ def index(request: Request):
     return RedirectResponse(url="/feed", status_code=307)
 
 
-from prism.web.feed import rank_feed, record_feed_action
+from prism.web.feed import (
+    rank_feed,
+    rank_feed_following,
+    record_feed_action,
+    get_followed_authors,
+)
 
 
 @web_router.get("/feed", response_class=HTMLResponse)
 def feed_index(request: Request):
     tpl = _jinja_env.get_template("feed.html")
-    return HTMLResponse(tpl.render(next_offset=0))
+    return HTMLResponse(tpl.render(next_offset=0, view="all"))
+
+
+@web_router.get("/feed/following", response_class=HTMLResponse)
+def feed_following_index(request: Request):
+    tpl = _jinja_env.get_template("feed.html")
+    return HTMLResponse(tpl.render(next_offset=0, view="following"))
 
 
 @web_router.get("/feed/more", response_class=HTMLResponse)
-def feed_more(request: Request, offset: int = 0, limit: int = 10):
+def feed_more(request: Request, offset: int = 0, limit: int = 10, view: str = "all"):
     conn = _db(request)
-    rows = rank_feed(conn, limit=limit, offset=offset)
+    if view == "following":
+        rows = rank_feed_following(conn, limit=limit, offset=offset)
+    else:
+        rows = rank_feed(conn, limit=limit, offset=offset)
     if not rows:
         tpl = _jinja_env.get_template("partials/feed_empty.html")
-        return HTMLResponse(tpl.render())
+        return HTMLResponse(tpl.render(view=view))
+    followed = get_followed_authors(conn)
     card_tpl = _jinja_env.get_template("partials/feed_card.html")
-    html = "".join(card_tpl.render(signal=r) for r in rows)
+    html = "".join(
+        card_tpl.render(signal=r, followed_authors=followed) for r in rows
+    )
     return HTMLResponse(html)
 
 

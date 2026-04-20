@@ -1,12 +1,26 @@
 <article class="feed-card" id="feed-card-{{ signal.signal_id }}">
-    <header class="feed-meta">
-        <span class="feed-topic">{{ signal.topic_label }}</span>
-        {% if signal.source_keys %}<span class="feed-source">{{ signal.source_keys[0] }}</span>{% endif %}
-        {% if signal.authors %}<span class="feed-author">@{{ signal.authors[0] }}</span>{% endif %}
+    <header class="feed-card-header">
+        {% if signal.card_avatar %}
+        <img class="feed-avatar" src="{{ signal.card_avatar }}" alt=""
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div class="feed-avatar-fallback" style="display:none">{{ (signal.card_name or '?')[:1] }}</div>
+        {% else %}
+        <div class="feed-avatar-fallback">{{ (signal.card_name or '?')[:1] }}</div>
+        {% endif %}
+        <div class="feed-author-block">
+            {% if signal.source_keys %}
+            <a class="feed-author-name" href="/creator/{{ signal.source_keys[0] }}">{{ signal.card_name or signal.authors[0] if signal.authors else signal.source_keys[0] }}</a>
+            {% else %}
+            <span class="feed-author-name">{{ signal.card_name or (signal.authors[0] if signal.authors else '') }}</span>
+            {% endif %}
+            <span class="feed-author-sub">
+                {% if signal.authors %}@{{ signal.authors[0] }} · {% endif %}{{ signal.topic_label }}
+            </span>
+        </div>
     </header>
     <div class="feed-body">
-        <p class="feed-summary">{{ signal.summary }}</p>
-        {% if signal.why_it_matters %}<p class="feed-why">{{ signal.why_it_matters }}</p>{% endif %}
+        <p class="feed-summary">{{ signal.content_zh or signal.summary }}</p>
+        {% if signal.why_it_matters %}<p class="feed-why">💡 {{ signal.why_it_matters }}</p>{% endif %}
         {% if signal.urls %}<p class="feed-links"><a href="{{ signal.urls[0] }}" target="_blank" rel="noopener">原文 ↗</a></p>{% endif %}
     </div>
     <footer class="feed-actions">
@@ -16,12 +30,18 @@
             <button type="submit" class="btn btn-save">👍 Save</button>
         </form>
         {% if signal.authors %}
-        <form hx-post="/feed/action" hx-target="this" hx-swap="outerHTML" style="display:inline">
-            <input type="hidden" name="signal_id" value="{{ signal.signal_id }}">
-            <input type="hidden" name="action" value="follow_author">
-            <input type="hidden" name="target_key" value="{{ signal.authors[0] }}">
-            <button type="submit" class="btn btn-follow">🔔 Follow {{ signal.authors[0] }}</button>
-        </form>
+            {% set author0 = signal.authors[0] %}
+            {% set is_followed = followed_authors and author0 and author0.lower() in followed_authors %}
+            {% if is_followed %}
+            <span class="btn btn-following">✓ Following {{ author0 }}</span>
+            {% else %}
+            <form hx-post="/feed/action" hx-target="this" hx-swap="outerHTML" style="display:inline">
+                <input type="hidden" name="signal_id" value="{{ signal.signal_id }}">
+                <input type="hidden" name="action" value="follow_author">
+                <input type="hidden" name="target_key" value="{{ author0 }}">
+                <button type="submit" class="btn btn-follow">🔔 Follow {{ author0 }}</button>
+            </form>
+            {% endif %}
         {% endif %}
         {% if signal.tags %}
         <form hx-post="/feed/action" hx-target="this" hx-swap="outerHTML" style="display:inline">

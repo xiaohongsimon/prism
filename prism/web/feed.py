@@ -124,6 +124,33 @@ def _score_signal(signal: dict, pref_map: dict[tuple[str, str], float]) -> float
     return score
 
 
+def get_followed_authors(conn: sqlite3.Connection) -> set[str]:
+    """Authors the user follows.
+
+    Union of two sources:
+    1. X-type entries in `sources` (sources.yaml is the source of truth for
+       the user's existing follow graph — handle == author).
+    2. `preference_weights` rows where dimension='author' and weight reaches
+       the follow threshold (set via the feed 'follow_author' action).
+
+    Handles are compared case-insensitively because `raw_items.author` and
+    `sources.handle` occasionally differ in case.
+    """
+    followed: set[str] = set()
+    for row in conn.execute(
+        "SELECT handle FROM sources "
+        "WHERE type = 'x' AND enabled = 1 AND handle != ''"
+    ).fetchall():
+        followed.add(row[0].lower())
+    for row in conn.execute(
+        "SELECT key FROM preference_weights "
+        "WHERE dimension = 'author' AND weight >= ?",
+        (FOLLOW_AUTHOR_WEIGHT,),
+    ).fetchall():
+        followed.add(row[0].lower())
+    return followed
+
+
 def _recent_feed_excludes(conn: sqlite3.Connection, days: int = 7) -> set[int]:
     rows = conn.execute(
         "SELECT DISTINCT signal_id FROM feed_interactions "
@@ -140,4 +167,22 @@ def rank_feed(conn: sqlite3.Connection, limit: int = 10, offset: int = 0) -> lis
     pool = _get_candidate_pool(conn, extra_exclude_ids=excl)
     pref_map = _load_pref_weights(conn)
     ranked = sorted(pool, key=lambda s: _score_signal(s, pref_map), reverse=True)
+    return ranked[offset:offset + limit]
+
+
+def rank_feed_following(
+    conn: sqlite3.Connection, limit: int = 10, offset: int = 0
+) -> list[dict]:
+    """Same as rank_feed but filtered to signals whose authors are followed."""
+    followed = get_followed_authors(conn)
+    if not followed:
+        return []
+    excl = _recent_feed_excludes(conn)
+    pool = _get_candidate_pool(conn, extra_exclude_ids=excl)
+    filtered = [
+        s for s in pool
+        if any((a or "").lower() in followed for a in (s.get("authors") or []))
+    ]
+    pref_map = _load_pref_weights(conn)
+    ranked = sorted(filtered, key=lambda s: _score_signal(s, pref_map), reverse=True)
     return ranked[offset:offset + limit]

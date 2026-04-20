@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Feed · Prism{% endblock %}
 {% block content %}
+{% set view = view | default('all') %}
 <div class="feed-container">
     <nav class="feed-nav">
-        <a href="/feed" class="active">Feed</a>
+        <a href="/feed" class="{% if view == 'all' %}active{% endif %}">Feed</a>
+        <a href="/feed/following" class="{% if view == 'following' %}active{% endif %}">关注</a>
         <a href="/feed/saved">Saved</a>
         <a href="/pairwise">Pairwise 校准</a>
         <a href="/pairwise/sources">Sources</a>
@@ -18,7 +20,7 @@
     </form>
 
     <div id="feed-list" class="feed-list"
-         hx-get="/feed/more?offset=0"
+         hx-get="/feed/more?offset=0&view={{ view }}"
          hx-trigger="load"
          hx-swap="innerHTML">
         <p class="feed-loading">加载中...</p>
@@ -26,7 +28,7 @@
 
     <div class="feed-more-wrapper">
         <button id="feed-load-more"
-                hx-get="/feed/more?offset={{ next_offset }}"
+                hx-get="/feed/more?offset={{ next_offset }}&view={{ view }}"
                 hx-target="#feed-list"
                 hx-swap="beforeend">加载更多</button>
     </div>
