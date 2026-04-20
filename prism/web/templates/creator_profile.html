@@ -45,6 +45,7 @@
 
   {# Signal cards — identical layout to the main feed #}
   <div class="feed-list">
+  {% set in_creator_profile = true %}
   {% for signal in signals %}
     {% include 'partials/feed_card.html' %}
   {% else %}

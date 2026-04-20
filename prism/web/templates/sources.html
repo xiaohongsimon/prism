@@ -1,14 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
-<nav class="top-nav">
-    <a class="logo" href="/" onclick="location.reload();return false;">⬡ Prism</a>
-    <div class="tabs">
-        <a class="tab" href="/?tab=recommend">推荐</a>
-        <a class="tab" href="/briefing">必看</a>
-        <a class="tab" href="/?tab=follow">关注</a>
-        <a class="tab active" href="/pairwise/sources">来源</a>
-        <a class="tab" href="/pairwise/liked">收藏</a>
-    </div>
+<nav class="feed-nav">
+    <a href="/feed">Feed</a>
+    <a href="/feed/following">关注</a>
+    <a href="/feed/saved">收藏</a>
+    <a href="/pairwise/sources" class="active">Sources</a>
+    <a href="/pairwise/profile">画像</a>
 </nav>
 <div class="sources-page">
     <div class="sources-summary">
