@@ -685,3 +685,8 @@ sources:
     channel_id: UCcIXc5mJsHVYTZR1maL5l9w
     display_name: DeepLearning.AI
     handle: deeplearningai
+  - type: x_home
+    key: x_home:fyp
+    display_name: X For You (home timeline)
+    handle: me
+    count: 50

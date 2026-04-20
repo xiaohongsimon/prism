@@ -1,4 +1,5 @@
 from prism.sources.x import XAdapter
+from prism.sources.x_home import XHomeAdapter
 from prism.sources.arxiv import ArxivAdapter
 from prism.sources.github import GithubAdapter
 from prism.sources.follow_builders import FollowBuildersAdapter
@@ -15,6 +16,7 @@ from prism.sources.xiaoyuzhou import XiaoyuzhouAdapter
 
 ADAPTERS = {
     "x": XAdapter,
+    "x_home": XHomeAdapter,
     "arxiv": ArxivAdapter,
     "github_trending": GithubAdapter,
     "follow_builders": FollowBuildersAdapter,
