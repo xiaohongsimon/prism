@@ -179,11 +179,75 @@ def _feed_pool(conn: sqlite3.Connection) -> list[dict]:
     )
 
 
+# Channel diversity cap: in any trailing window of FEED_DIVERSITY_WINDOW
+# items, at most FEED_DIVERSITY_MAX_PER_TYPE come from the same
+# source_type. Prevents YouTube (or any one channel) from filling a full
+# screen when its signals happen to dominate raw score.
+FEED_DIVERSITY_WINDOW = 5
+FEED_DIVERSITY_MAX_PER_TYPE = 2
+
+
+def _primary_type(signal: dict) -> str:
+    types = signal.get("source_types") or []
+    return types[0] if types else ""
+
+
+def _diversify_by_channel(
+    ranked: list[dict],
+    window: int = FEED_DIVERSITY_WINDOW,
+    max_per_type: int = FEED_DIVERSITY_MAX_PER_TYPE,
+) -> list[dict]:
+    """Balanced-greedy interleave.
+
+    Bucket remaining items by source_type (preserving score order
+    within each bucket). At each step pick from the bucket whose head
+    fits in the trailing window AND which has the LARGEST remaining —
+    so usage stays balanced throughout and we don't end up with a
+    monochrome tail. If no bucket fits (pool too skewed for this
+    stretch), fall back to the bucket with the most remaining.
+    """
+    buckets: dict[str, list[dict]] = {}
+    for s in ranked:
+        buckets.setdefault(_primary_type(s), []).append(s)
+
+    result: list[dict] = []
+    remaining_total = len(ranked)
+    while remaining_total > 0:
+        trailing = result[-(window - 1):] if window > 1 else []
+        trailing_count: dict[str, int] = {}
+        for r in trailing:
+            t = _primary_type(r)
+            trailing_count[t] = trailing_count.get(t, 0) + 1
+
+        fitters = [
+            t for t, b in buckets.items()
+            if b and trailing_count.get(t, 0) < max_per_type
+        ]
+        if fitters:
+            # Balance tail: prefer the type with the largest remaining.
+            pick_type = max(fitters, key=lambda t: len(buckets[t]))
+        else:
+            # Pool too skewed — pick whichever still has items.
+            pick_type = max(
+                (t for t, b in buckets.items() if b),
+                key=lambda t: len(buckets[t]),
+            )
+        result.append(buckets[pick_type].pop(0))
+        remaining_total -= 1
+    return result
+
+
 def rank_feed(conn: sqlite3.Connection, limit: int = 10, offset: int = 0) -> list[dict]:
-    """Return signals ranked by feed_score desc, paged by limit/offset."""
+    """Return signals ranked by feed_score desc with channel-diversity
+    interleaving, then paged by limit/offset.
+
+    Diversify BEFORE paging so offset/limit slices through a stable
+    interleaved list — consecutive pages remain consistent.
+    """
     pool = _feed_pool(conn)
     pref_map = _load_pref_weights(conn)
     ranked = sorted(pool, key=lambda s: _score_signal(s, pref_map), reverse=True)
-    return ranked[offset:offset + limit]
+    diversified = _diversify_by_channel(ranked)
+    return diversified[offset:offset + limit]
 
 
