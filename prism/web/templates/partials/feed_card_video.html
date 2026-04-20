@@ -22,16 +22,13 @@
             {% if pub_date %} · <time datetime="{{ pub }}">{{ pub_date }}</time>{% endif %}
         </div>
         <h3 class="vid-title">
-            {% if signal.article_id %}<a href="/article/{{ signal.article_id }}">{{ title }}</a>
-            {% elif first_url %}<a href="{{ first_url }}" target="_blank" rel="noopener">{{ title }}</a>
-            {% else %}{{ title }}{% endif %}
+            {% if first_url %}<a href="{{ first_url }}" target="_blank" rel="noopener">{{ title }}</a>{% else %}{{ title }}{% endif %}
         </h3>
         {% if snippet and snippet != title %}<p class="vid-snippet">{{ snippet }}</p>{% endif %}
         {% if signal.why_it_matters %}<p class="vid-why">💡 {{ signal.why_it_matters }}</p>{% endif %}
         {% if signal.article_id %}
         <div class="vid-extra-links">
             <a href="/article/{{ signal.article_id }}">阅读中文全文 →</a>
-            {% if first_url %}<a href="{{ first_url }}" target="_blank" rel="noopener">在 YouTube 打开 ↗</a>{% endif %}
         </div>
         {% endif %}
     </div>
