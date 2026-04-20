@@ -250,7 +250,7 @@ def enrich_youtube(limit):
         SELECT ri.id, ri.url, ri.title, LENGTH(ri.body) as body_len
         FROM raw_items ri
         JOIN sources s ON s.id = ri.source_id
-        WHERE s.type = 'youtube'
+        WHERE s.type IN ('youtube', 'youtube_home')
           AND ri.url NOT LIKE '%/shorts/%'
           AND LENGTH(ri.body) < 500
         ORDER BY ri.id DESC

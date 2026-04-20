@@ -690,3 +690,15 @@ sources:
     display_name: X For You (home timeline)
     handle: me
     count: 50
+  - type: youtube_home
+    key: youtube_home:recommended
+    display_name: YouTube Recommended (home)
+    handle: me
+    feed: recommended
+    count: 30
+  - type: youtube_home
+    key: youtube_home:subscriptions
+    display_name: YouTube Subscriptions
+    handle: me
+    feed: subscriptions
+    count: 30

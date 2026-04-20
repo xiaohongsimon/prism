@@ -6,6 +6,7 @@ from prism.sources.follow_builders import FollowBuildersAdapter
 from prism.sources.hackernews import HackernewsAdapter
 from prism.sources.github_releases import GithubReleasesAdapter
 from prism.sources.youtube import YoutubeAdapter
+from prism.sources.youtube_home import YoutubeHomeAdapter
 from prism.sources.model_economics import ModelEconomicsAdapter
 from prism.sources.git_practice import GitPracticeAdapter
 from prism.sources.claude_sessions import ClaudeSessionsAdapter
@@ -26,6 +27,7 @@ ADAPTERS = {
     "producthunt": ProductHuntAdapter,
     "github_releases": GithubReleasesAdapter,
     "youtube": YoutubeAdapter,
+    "youtube_home": YoutubeHomeAdapter,
     "model_economics": ModelEconomicsAdapter,
     "git_practice": GitPracticeAdapter,
     "claude_sessions": ClaudeSessionsAdapter,
