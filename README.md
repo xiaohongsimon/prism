@@ -5,8 +5,8 @@
 <h1 align="center">Prism</h1>
 
 <p align="center">
-  <b>The best recommendation system is the one you can open, audit, and argue with.</b><br>
-  <sub>So I built mine — local LLMs, pairwise preference learning, every autonomous decision logged.</sub>
+  <b>Information triage at $0/token — because local compute inverts the economics that make good recommendation impossible on cloud.</b><br>
+  <sub>136 sources, 9M tokens/week, $0 API bill. The system can afford to run 100 LLM passes to surface the 1 signal worth my time. A personal preference layer (pairwise + Bradley–Terry) handles the last-mile filtering.</sub>
 </p>
 
 <p align="center">
@@ -24,32 +24,39 @@
 
 ---
 
-## The problem I was trying to solve
+## Why cloud-economics can't solve information overload
 
-I work in ML. Every day, there are ~200 things on X, Hacker News, arXiv, YouTube, and Xiaoyuzhou (中文 podcasts) that *might* be worth my attention. I tried every reader, every "AI news digest" service, every GPT-wrapper "personalized feed." They all failed in the same way: they decided what I should read, then showed me a headline, and I had no way to argue back. When they were wrong, I couldn't correct them. When they were right, I couldn't tell *why*.
+I work in ML. Every day, ~200 things on X, Hacker News, arXiv, YouTube, and Xiaoyuzhou (中文 podcasts) might matter. I tried every AI news app, every "personalized digest," every GPT-wrapper feed. They all failed the same way: **not enough coverage, no auditability, no way to correct them.**
 
-So I built the opposite. Prism reads everything overnight on my Mac Studio, clusters and summarises it with local LLMs, and every morning asks me one question at a time: **"which of these two signals is more interesting?"** My 1-bit answer trains a Bradley–Terry preference model. Over weeks, the system learns what I care about — and more importantly, it **shows me exactly why** any signal made the cut, and logs every autonomous decision it made on my behalf (reweighting a source, flagging an anomaly, proposing a new feed).
+Once I looked at the unit economics, the reason became obvious.
 
-This README is also a deliberate artifact. If you're here because you want to see how I think about recommendation, systems design, and self-hosted AI, read on.
+> **API economics:** every token costs. Every LLM call has to be high-probability useful, or you go broke. So cloud-based readers cover 1–2 sources, do one cheap summarisation pass, and ship. They physically cannot afford to be thorough.
+>
+> **Local-compute economics:** marginal cost ≈ 0. Once the hardware is paid for, running 100 LLM passes to surface the 1 thing worth my time is fine. You can afford to translate everything, re-score historical items when a better prompt lands, A/B ensemble prompts overnight, and cluster aggressively.
+
+Prism is what happens when you rebuild information triage under the second set of economics. Multi-channel ingestion + generous LLM processing does the wide-net part. A personal preference model (pairwise + Bradley–Terry) does the last-mile filtering. Every autonomous decision gets logged so the system is actually debuggable.
+
+Net effect on me: **faster access to signal, faster technical-taste growth.** That's the whole point.
 
 ## Three bets this project is making
 
 Every design choice in Prism comes from one of these three bets. If the bet is wrong, the project is wrong.
 
-1. **Pairwise > ratings > thumbs-up.** Humans are terrible at absolute ratings but excellent at relative ones. Asking "which of these two?" produces a cleaner, more stable preference signal than a 5-star slider ever will — and it costs the user less cognitive effort. Bradley–Terry ELO turns those pairwise bits directly into a score. ([~40 lines of code](prism/web/ranking.py) do the math.)
+1. **Local compute inverts the economics of recommendation.** On cloud, every token has to be high-probability useful. On a Mac Studio with 512 GB unified memory, "100 scans for 1 hit" is the business model. This unlocks modes cloud APIs can't afford: reprocess yesterday's raw items when a better prompt ships, run ensemble prompts for high-value signals, translate every 中文 podcast by default, re-rank continuously. Same workload would cost **~$3,400/year on Claude Sonnet 4.5** (see Benchmark); local runs for **$0**. Privacy and tweakability come along for the ride.
 
-2. **Auditability is a feature, not a compliance checkbox.** Every autonomous action the system takes — throttling a low-performing source, flagging a spike, proposing a new feed — is written to a single [`decision_log`](https://prism.simon-ai.net/decisions/weekly) table with a reason. I can replay the system's history. I can ask "why did you add this source on March 28?" and get a real answer. No recommendation system I pay for will tell me that.
+2. **Multi-channel ingestion is non-negotiable.** Single-feed filters (HN-only, X-only) will always miss the thing that actually mattered. The only way to beat overload is to cast a wide net — 136 sources across EN + 中文, text + video + audio — and rely on the LLM pipeline to compress brutally. That scale is only affordable under bet #1.
 
-3. **Local LLMs crossed a threshold in 2025.** A Mac Studio with 512 GB of unified memory can now run Qwen3-30B or Gemma-3-27B at conversational latency. Throw in Bradley–Terry and some careful prompt design, and you get a personal news system that costs **$0/week in API fees** instead of ~$3,400/year on Claude Sonnet 4.5. Privacy and tweakability come along for the ride.
+3. **Personal preference is the last-mile filter — and must be auditable.** After the wide-net LLM pipeline, the system still doesn't know what *you* care about. Pairwise comparisons ("which of these two?") turn humans' good relative-judgment into 1-bit training signals; Bradley–Terry ELO turns those bits into scores in [~40 lines of code](prism/web/ranking.py). Every autonomous action (reweight a source, flag an anomaly, propose a new feed) is written to a single [`decision_log`](https://prism.simon-ai.net/decisions/weekly) with a reason. I can ask "why did you add this source on March 28?" and get a real answer. No cloud recommender will tell me that.
 
 If you disagree with any of these, I'd genuinely like to hear why — [open an issue](https://github.com/xiaohongsimon/prism/issues).
 
 ## What it does
 
-- **Pairwise UI.** Two signals side-by-side. Pick A, B, both, neither, or drop a free-text note. Every interaction trains the model.
-- **Local LLM pipeline.** `sync → cluster → analyze` turns raw items (tweets, HN threads, arXiv abstracts, YouTube transcripts, podcast episodes) into summarised signals with a bilingual summary, a "why it matters" line, and a strategic-vs-tactical tier.
-- **Self-tuning recall.** Each source has a weight that drifts with the win-rate of the signals it produces. Sources you consistently pick over get crawled more often; dead weight gets throttled. All rule-based, zero LLM overhead in the ranking loop.
+- **Wide-net ingestion.** 136 sources across X, Hacker News, arXiv, YouTube, GitHub Trending/Releases, Reddit, Product Hunt, Xiaoyuzhou (中文 podcasts) and more. All configured in one [`config/sources.yaml`](config/sources.yaml).
+- **Local LLM pipeline, used generously.** `sync → cluster → analyze` turns raw items (tweets, HN threads, arXiv abstracts, YouTube transcripts, podcast episodes) into summarised signals with a bilingual summary, a "why it matters" line, and a strategic-vs-tactical tier. Because every token is free, the pipeline can re-process, re-score, and re-translate at will.
 - **Podcast → structured article.** Feed a Xiaoyuzhou or YouTube episode in; get a 3-section markdown article with highlighted quotes out. See [`prism/pipeline/articlize.py`](prism/pipeline/articlize.py) for the prompt — and [article 118](https://prism.simon-ai.net/article/118) for an actual output (24 k characters of podcast transcript → 4.5 k-character structured article with quotes).
+- **Pairwise preference UI.** Two signals side by side. Pick A, B, both, neither, or drop a free-text note. Every interaction feeds the Bradley–Terry model. This is the only place where *your* taste enters the system.
+- **Self-tuning recall.** Each source has a weight that drifts with the win-rate of the signals it produces. Sources you consistently prefer get crawled more often; dead weight gets throttled. All rule-based, zero LLM overhead in the ranking loop.
 - **External-feed injection.** Paste a URL from *any* other channel (WeChat, Slack, a friend) — it's treated as a 3× positive preference signal, stronger than any in-feed action.
 - **Decision Log.** Every autonomous decision is logged with a reason. Browsable at [`/decisions/weekly`](https://prism.simon-ai.net/decisions/weekly).
 
@@ -197,9 +204,9 @@ docs/
 
 ## Who built this
 
-I'm Simon — algorithm team TL at a major tech company, managing ~40 people and a 1,500+ GPU cluster by day. Prism is my nights-and-weekends project, built because I wanted a recommendation system that **respects my attention the way a good editor would** — with a point of view, a memory, and a paper trail.
+I'm Simon — algorithm team TL at a major tech company, managing ~40 people and a 1,500+ GPU cluster by day. My job requires staying on top of what's shipping across AI research, infra, and open-source, and the existing tooling was drowning me. Prism is a nights-and-weekends answer to one concrete question: *how fast can a well-designed personal system grow my technical taste, if I stop paying per-token and start paying per-kWh?*
 
-If you use this, break it, or disagree with any of the choices above — [open an issue](https://github.com/xiaohongsimon/prism/issues) or find me on X [@xiaohongsimon](https://x.com/xiaohongsimon). I care about the feedback.
+If you use this, break it, or disagree with any of the bets above — [open an issue](https://github.com/xiaohongsimon/prism/issues) or find me on X [@xiaohongsimon](https://x.com/xiaohongsimon). I care about the feedback.
 
 If you want to contribute, the most valuable things right now:
 
@@ -209,13 +216,13 @@ If you want to contribute, the most valuable things right now:
 
 ## 中文简介
 
-**一句话：** AI 替你读 136 个信息源，每次给你两条，你选更喜欢的那个；选择就是训练信号。整套系统跑在你自己的机器上，LLM 零成本，数据不出设备。
+**一句话：** 用本地算力的经济学解决信息过载——因为边际成本 ≈ 0，所以可以 136 源广撒网、LLM 任意加工、翻译、重打分。再用一个可审计的个人偏好模型做最后一公里筛选。结果是：我获取信息、提高技术品味的速度大幅上升。
 
-这个项目的三个核心判断：
+三个核心判断：
 
-1. **Pairwise 比打分更能学到真实偏好。** 人做绝对打分一塌糊涂，做相对选择很稳。Bradley–Terry ELO 把每个 1-bit 选择直接变成分数。
-2. **自动决策必须可审计。** 系统每一次调权、加源、标异常，都写进 `decision_log`，你可以回溯每一步为什么发生。不写日志的推荐系统不可信。
-3. **本地 LLM 在 2025 年跨过了临界点。** 一台 Mac Studio 跑 Qwen3-30B 就够了，LLM 月账单从 ~\$270 变成 \$0，隐私和可调性是白送的。
+1. **本地算力倒置了推荐的经济学。** 云 API 上，每个 token 都得高概率有用；本地上，"扫 100 次命中 1 次"反而是常态。这个差别决定了你能覆盖多少源、能做多少次 re-processing、能不能给所有中文播客都翻译一遍。同样的工作量在 Claude Sonnet 4.5 上大约 **\$3,400/年**，本地 **\$0**。
+2. **多渠道摄入是必须的。** 单源过滤（只看 HN、只看 X）必然错过真正重要的东西。只有广撒网——136 个源横跨中英文、视频、播客、文本——再靠 LLM 压缩，才能赢过信息过载。这个规模只有本地经济学扛得住。
+3. **个人偏好是最后一公里的筛子。** Pairwise 对比 + Bradley–Terry ELO 把人做相对判断的优势变成训练信号；每一次自动决策（调源权重、加源、标异常）都写进 `decision_log`。不会被黑盒决策。
 
 [在线实例](https://prism.simon-ai.net/showcase) · [决策日志](https://prism.simon-ai.net/decisions/weekly) · [一个输出样本（播客→文章）](https://prism.simon-ai.net/article/118)
 
