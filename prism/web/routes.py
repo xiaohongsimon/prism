@@ -49,7 +49,7 @@ web_router = APIRouter()
 # Public paths that don't need auth
 _PUBLIC_PATHS = {"/login", "/register", "/auth/login", "/auth/register", "/static",
                  "/article", "/briefing", "/creator", "/translate", "/showcase",
-                 "/decisions", "/feed", "/slides", "/sw.js"}
+                 "/decisions", "/feed", "/sw.js"}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -486,29 +486,6 @@ def feed_saved(request: Request):
             LIMIT 200"""
     ).fetchall()
     return _render("feed_saved.html", request=request, signals=rows)
-
-
-@web_router.get("/slides/{signal_id}", response_class=HTMLResponse)
-def slides_page(request: Request, signal_id: int):
-    """Generate or serve cached HTML slides for a signal."""
-    conn = _db(request)
-    from prism.web.slides import get_or_generate_slides
-    html = get_or_generate_slides(conn, signal_id)
-    if not html:
-        return HTMLResponse("<div class='empty'>该内容暂不支持生成精华 PPT</div>", status_code=404)
-    return HTMLResponse(html)
-
-
-@web_router.get("/slides/{signal_id}/alt", response_class=HTMLResponse)
-def slides_runner_up(request: Request, signal_id: int):
-    """Serve the runner-up slides (2nd place from horse race)."""
-    conn = _db(request)
-    row = conn.execute(
-        "SELECT html, model_id FROM signal_slides WHERE signal_id = ?", (-signal_id,)
-    ).fetchone()
-    if not row:
-        return HTMLResponse("<div class='empty'>无备选 PPT</div>", status_code=404)
-    return HTMLResponse(row["html"])
 
 
 @web_router.post("/feedback", response_class=HTMLResponse)

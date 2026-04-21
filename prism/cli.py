@@ -291,58 +291,6 @@ def expand_links(limit):
     click.echo(f"Enriched {enriched} items with expanded links")
 
 
-@cli.command("generate-slides")
-@click.option("--limit", default=50, help="Max signals to process")
-@click.option("--race", is_flag=True, help="Use 3-model horse race (slower, higher quality)")
-def generate_slides(limit, race):
-    """Batch generate PPT slides for all eligible signals."""
-    from prism.config import settings
-    from prism.db import get_connection
-
-    conn = get_connection(settings.db_path)
-    # Find signals with enough content but no slides yet
-    rows = conn.execute(
-        """
-        SELECT signal_id, topic_label, body_len FROM (
-            SELECT s.id as signal_id, c.topic_label, LENGTH(ri.body) as body_len, src.type,
-                   ROW_NUMBER() OVER (PARTITION BY src.type ORDER BY s.signal_strength DESC) as rn
-            FROM signals s
-            JOIN clusters c ON c.id = s.cluster_id
-            JOIN cluster_items ci ON ci.cluster_id = c.id
-            JOIN raw_items ri ON ri.id = ci.raw_item_id
-            JOIN sources src ON src.id = ri.source_id
-            WHERE s.is_current = 1
-              AND LENGTH(ri.body) > 80
-              AND s.id NOT IN (SELECT signal_id FROM signal_slides WHERE signal_id > 0)
-        )
-        ORDER BY rn, body_len DESC
-        LIMIT ?
-        """,
-        (limit,),
-    ).fetchall()
-
-    click.echo(f"Found {len(rows)} signals without slides")
-    success = 0
-    for i, row in enumerate(rows, 1):
-        click.echo(f"  [{i}/{len(rows)}] {row['topic_label'][:60]}...")
-        try:
-            if race:
-                from prism.web.slides import get_or_generate_slides
-                html = get_or_generate_slides(conn, row["signal_id"])
-            else:
-                from prism.web.slides import generate_slides_fast
-                html = generate_slides_fast(conn, row["signal_id"])
-            if html:
-                success += 1
-                click.echo(f"    ✓ {len(html)} bytes")
-            else:
-                click.echo("    ✗ generation failed")
-        except Exception as exc:
-            click.echo(f"    ✗ {exc}")
-
-    click.echo(f"\nGenerated {success}/{len(rows)} slides")
-
-
 @cli.command()
 def status():
     """Show system status: sources, items, signals."""
@@ -1153,3 +1101,47 @@ def ctr_eval():
                    f"(over {len(samples)} samples)")
     finally:
         conn.close()
+
+
+@cli.group("xyz-queue")
+def xyz_queue():
+    """Backfill xiaoyuzhou episodes incrementally (load-aware queue)."""
+    pass
+
+
+@xyz_queue.command("discover")
+def xyz_queue_discover():
+    """Scan xyz:* sources; enqueue last-30d episodes as pending."""
+    from prism.pipeline import xyz_queue as q
+    conn = get_connection(settings.db_path)
+    stats = q.discover(conn)
+    click.echo(f"discover: sources={stats['sources']} seen={stats['seen']} added={stats['added']}")
+
+
+@xyz_queue.command("tick")
+@click.option("--max", "max_steps", default=1, type=int,
+              help="How many stage advances to attempt in this run")
+def xyz_queue_tick(max_steps):
+    """Advance one episode by one stage if omlx load is light."""
+    from prism.pipeline import xyz_queue as q
+    conn = get_connection(settings.db_path)
+    for _ in range(max(1, max_steps)):
+        msg = q.tick(conn)
+        click.echo(msg)
+        if msg in ("idle", "busy"):
+            break
+
+
+@xyz_queue.command("status")
+def xyz_queue_status():
+    """Show queue counts per source and total."""
+    from prism.pipeline import xyz_queue as q
+    conn = get_connection(settings.db_path)
+    s = q.status(conn)
+    click.echo("Totals:")
+    for k, v in sorted(s["totals"].items()):
+        click.echo(f"  {k:12s} {v}")
+    click.echo("\nBy source:")
+    for src, counts in sorted(s["by_source"].items()):
+        parts = "  ".join(f"{k}={v}" for k, v in sorted(counts.items()))
+        click.echo(f"  {src:30s}  {parts}")

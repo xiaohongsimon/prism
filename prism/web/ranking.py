@@ -114,11 +114,6 @@ def compute_feed(
         if dim in blocked and weight <= BLOCK_THRESHOLD:
             blocked[dim].add(key)
 
-    # Load cached slides set
-    slides_set = {r["signal_id"] for r in conn.execute(
-        "SELECT signal_id FROM signal_slides WHERE signal_id > 0"
-    ).fetchall()}
-
     # Load source keys, types, authors, and URLs for each cluster
     cluster_sources: dict[int, list[str]] = {}
     cluster_source_types: dict[int, set[str]] = {}
@@ -196,7 +191,6 @@ def compute_feed(
 
         authors = cluster_authors.get(r["cluster_id"], [])
         urls = cluster_urls.get(r["cluster_id"], [])
-        has_slides = r["signal_id"] in slides_set
 
         item = {
             "signal_id": r["signal_id"],
@@ -211,7 +205,6 @@ def compute_feed(
             "source_keys": source_keys,
             "authors": authors,
             "urls": urls,
-            "has_slides": has_slides,
             "full_body": cluster_bodies.get(r["cluster_id"], ""),
             "cluster_date": r["cluster_date"],
             "created_at": r["created_at"],

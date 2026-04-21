@@ -61,9 +61,4 @@ def create_app(conn: Optional[sqlite3.Connection] = None) -> FastAPI:
     # Web frontend routes
     app.include_router(web_router)
 
-    # Start background slides worker (only in production, not tests)
-    if conn is None:
-        from prism.web.slides import start_slides_worker
-        start_slides_worker(app.state.db)
-
     return app

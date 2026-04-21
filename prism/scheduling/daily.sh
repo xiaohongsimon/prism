@@ -20,7 +20,6 @@ prism enrich-youtube --limit 20 >> "$LOG" 2>&1
 prism articlize >> "$LOG" 2>&1
 prism analyze --daily >> "$LOG" 2>&1
 prism trends >> "$LOG" 2>&1
-prism generate-slides --limit 50 >> "$LOG" 2>&1
 prism briefing --save >> "$LOG" 2>&1
 prism publish --notion >> "$LOG" 2>&1
 prism publish-videos --limit 10 >> "$LOG" 2>&1
