@@ -5,8 +5,8 @@
 <h1 align="center">Prism</h1>
 
 <p align="center">
-  <b>Information triage at $0/token — because local compute inverts the economics that make good recommendation impossible on cloud.</b><br>
-  <sub>136 sources, 9M tokens/week, $0 API bill. The system can afford to run 100 LLM passes to surface the 1 signal worth my time. A personal preference layer (pairwise + Bradley–Terry) handles the last-mile filtering.</sub>
+  <b>A multi-channel, multi-lingual, multi-modal subscription reader — because local compute makes it affordable to translate, transcribe, and structure <i>everything</i> you follow.</b><br>
+  <sub>136 sources, 9M tokens/week, $0 API bill. Cast a wide net; let local LLMs do the heavy lifting; skim what matters in your language, in minutes.</sub>
 </p>
 
 <p align="center">
@@ -26,39 +26,41 @@
 
 ## Why cloud-economics can't solve information overload
 
-I work in ML. Every day, ~200 things on X, Hacker News, arXiv, YouTube, and Xiaoyuzhou (中文 podcasts) might matter. I tried every AI news app, every "personalized digest," every GPT-wrapper feed. They all failed the same way: **not enough coverage, no auditability, no way to correct them.**
+I work in ML. Every day, ~200 things on X, Hacker News, arXiv, YouTube, and Xiaoyuzhou (中文 podcasts) might matter. I tried every AI news app, every "personalized digest," every GPT-wrapper feed. They all failed the same way: **not enough coverage, no translation, no structured preview, no way to scan fast.**
 
 Once I looked at the unit economics, the reason became obvious.
 
-> **API economics:** every token costs. Every LLM call has to be high-probability useful, or you go broke. So cloud-based readers cover 1–2 sources, do one cheap summarisation pass, and ship. They physically cannot afford to be thorough.
+> **API economics:** every token costs. Every LLM call has to be high-probability useful, or you go broke. So cloud-based readers cover 1–2 sources, do one cheap summarisation pass, and ship. They physically cannot afford to translate every post, transcribe every podcast, or structure every long article.
 >
-> **Local-compute economics:** marginal cost ≈ 0. Once the hardware is paid for, running 100 LLM passes to surface the 1 thing worth my time is fine. You can afford to translate everything, re-score historical items when a better prompt lands, A/B ensemble prompts overnight, and cluster aggressively.
+> **Local-compute economics:** marginal cost ≈ 0. Once the hardware is paid for, running 100 LLM passes on a single Mac Studio is fine. You can afford to translate everything, transcribe every 中文 podcast, structure every YouTube video into tl;dr + chapters, and re-process yesterday's items when a better prompt lands.
 
-Prism is what happens when you rebuild information triage under the second set of economics. Multi-channel ingestion + generous LLM processing does the wide-net part. A personal preference model (pairwise + Bradley–Terry) does the last-mile filtering. Every autonomous decision gets logged so the system is actually debuggable.
+Prism is what happens when you rebuild a subscription reader under the second set of economics. You follow sources across text/video/audio in multiple languages; the local LLMs translate, transcribe, and structure in the background; the UI is a clean "what did the people I follow say today" stream that you can skim in minutes.
 
 Net effect on me: **faster access to signal, faster technical-taste growth.** That's the whole point.
 
 ## Three bets this project is making
 
-Every design choice in Prism comes from one of these three bets. If the bet is wrong, the project is wrong.
+Every design choice comes from one of these three bets. If the bet is wrong, the project is wrong.
 
-1. **Local compute inverts the economics of recommendation.** On cloud, every token has to be high-probability useful. On a Mac Studio with 512 GB unified memory, "100 scans for 1 hit" is the business model. This unlocks modes cloud APIs can't afford: reprocess yesterday's raw items when a better prompt ships, run ensemble prompts for high-value signals, translate every 中文 podcast by default, re-rank continuously. Same workload would cost **~$3,400/year on Claude Sonnet 4.5** (see Benchmark); local runs for **$0**. Privacy and tweakability come along for the ride.
+1. **Local compute inverts the economics of information processing.** On cloud, every token has to be high-probability useful. On a Mac Studio with 512 GB unified memory, "translate everything, transcribe everything, structure everything, re-process on demand" is the business model. Same workload would cost **~$3,400/year on Claude Sonnet 4.5** (see Benchmark); local runs for **$0**. Privacy and tweakability come along for the ride.
 
-2. **Multi-channel ingestion is non-negotiable.** Single-feed filters (HN-only, X-only) will always miss the thing that actually mattered. The only way to beat overload is to cast a wide net — 136 sources across EN + 中文, text + video + audio — and rely on the LLM pipeline to compress brutally. That scale is only affordable under bet #1.
+2. **Multi-channel + multi-modal + multi-lingual ingestion is non-negotiable.** Single-feed filters (HN-only, X-only) will always miss the thing that actually mattered. Single-modality readers (text-only) can't touch podcasts or YouTube. Single-language tools (EN-only or 中文-only) miss half the world. The only way to beat overload is to cast a wide net — 136 sources across EN + 中文, text + video + audio — and rely on the LLM pipeline to compress brutally. That scale is only affordable under bet #1.
 
-3. **Personal preference is the last-mile filter — and must be auditable.** After the wide-net LLM pipeline, the system still doesn't know what *you* care about. Pairwise comparisons ("which of these two?") turn humans' good relative-judgment into 1-bit training signals; Bradley–Terry ELO turns those bits into scores in [~40 lines of code](prism/web/ranking.py). Every autonomous action (reweight a source, flag an anomaly, propose a new feed) is written to a single [`decision_log`](https://prism.simon-ai.net/decisions/weekly) with a reason. I can ask "why did you add this source on March 28?" and get a real answer. No cloud recommender will tell me that.
+3. **The shareable layer and the personal layer are different products.** Translation + transcription + structured summaries are *public goods* — once the Mac Studio has paid the inference cost for me, the marginal cost of serving the same output to other readers is ~0, and the result is equally useful to everyone. Personal preference / recommendation is the opposite — it only fits one person, can't be shared, and is intentionally kept as a **pluggable seam** rather than hard-coded into the public pipeline. Open-source users get a clean structuring reader out of the box; private forks can plug in their own preference layer on top.
 
-If you disagree with any of these, I'd genuinely like to hear why — [open an issue](https://github.com/xiaohongsimon/prism/issues).
+If you disagree with any of these, I'd genuinely like to hear why — [open an issue](https://github.com/xiaohongsimon/prism/issues) or start a [Discussion](https://github.com/xiaohongsimon/prism/discussions).
 
 ## What it does
 
-- **Wide-net ingestion.** 136 sources across X, Hacker News, arXiv, YouTube, GitHub Trending/Releases, Reddit, Product Hunt, Xiaoyuzhou (中文 podcasts) and more. All configured in one [`config/sources.yaml`](config/sources.yaml).
-- **Local LLM pipeline, used generously.** `sync → cluster → analyze` turns raw items (tweets, HN threads, arXiv abstracts, YouTube transcripts, podcast episodes) into summarised signals with a bilingual summary, a "why it matters" line, and a strategic-vs-tactical tier. Because every token is free, the pipeline can re-process, re-score, and re-translate at will.
-- **Podcast → structured article.** Feed a Xiaoyuzhou or YouTube episode in; get a 3-section markdown article with highlighted quotes out. See [`prism/pipeline/articlize.py`](prism/pipeline/articlize.py) for the prompt — and [article 118](https://prism.simon-ai.net/article/118) for an actual output (24 k characters of podcast transcript → 4.5 k-character structured article with quotes).
-- **Pairwise preference UI.** Two signals side by side. Pick A, B, both, neither, or drop a free-text note. Every interaction feeds the Bradley–Terry model. This is the only place where *your* taste enters the system.
-- **Self-tuning recall.** Each source has a weight that drifts with the win-rate of the signals it produces. Sources you consistently prefer get crawled more often; dead weight gets throttled. All rule-based, zero LLM overhead in the ranking loop.
-- **External-feed injection.** Paste a URL from *any* other channel (WeChat, Slack, a friend) — it's treated as a 3× positive preference signal, stronger than any in-feed action.
-- **Decision Log.** Every autonomous decision is logged with a reason. Browsable at [`/decisions/weekly`](https://prism.simon-ai.net/decisions/weekly).
+- **Wide-net ingestion.** 136 sources across X (personal + For You timeline), Hacker News, arXiv, YouTube (RSS + subscriptions), GitHub (Trending / Releases / received_events), Reddit, Product Hunt, Xiaoyuzhou (中文 podcasts) and more. All configured in one [`config/sources.yaml`](config/sources.yaml).
+- **Translate everything.** 中文 ⇄ EN translation runs on the local LLMs for every non-native post in your feed. No more scrolling past things because the language tax is too high.
+- **Structure everything.** `sync → cluster → analyze` turns raw items into summarised signals with a bilingual summary, a "why it matters" line, and a strategic-vs-tactical tier. Because every token is free, the pipeline can re-process, re-score, and re-translate at will.
+- **Podcast / video → structured article.** Feed a Xiaoyuzhou or YouTube episode in; get a 3-section markdown article with highlighted quotes out. See [`prism/pipeline/articlize.py`](prism/pipeline/articlize.py) for the prompt — and [article 118](https://prism.simon-ai.net/article/118) for an actual output (24 k characters of podcast transcript → 4.5 k-character structured article with quotes).
+- **Subscription-first UI.** The daily path is `/feed/following` — the people and channels you follow, grouped by source, sorted by recency, with "new since last visit" highlighting. Scan in minutes, click through to originals for the few you care about.
+- **External-feed injection.** Paste a URL from *any* other channel (WeChat, Slack, a friend) — it's ingested, translated, structured, and joins your feed.
+- **Auditable autonomy.** Every autonomous decision (a source added, a source auto-disabled, an anomaly flagged) is logged with a reason to [`/decisions/weekly`](https://prism.simon-ai.net/decisions/weekly).
+
+> **On the preference layer.** Earlier iterations of this project included a pairwise + Bradley–Terry recommendation layer as the "last-mile filter." As the system matured the daily usage converged on simple subscription scanning — the translation + structuring value proved to stand on its own. Recommendation is now a **deferred, pluggable** layer (see [`docs/SPEC.md`](docs/SPEC.md) §0). The public repo ships a clean `IdentityReRanker` that sorts by recency; a future personalization layer will live in a pluggable `prism/personalize/` module so forks can plug in their own taste.
 
 ## Benchmark
 
@@ -76,7 +78,7 @@ Numbers from my live instance (auto-updated at [prism.simon-ai.net/showcase](htt
 | **LLM cost / week (local)**        | **$0**                     |
 | Same workload on Claude Sonnet 4.5 | **~$65 / week (~$3,400 / year)** |
 
-Runs on a Mac Studio via [mlx](https://github.com/ml-explore/mlx). Swap models in `.env` — any OpenAI-compatible endpoint works. I've tested Qwen3-30B, Gemma-3-27B, and qwen-plus (cloud).
+Runs on a Mac Studio via [mlx](https://github.com/ml-explore/mlx). Local inference is accessed through [omlx-sdk](https://github.com/xiaohongsimon/omlx-manager/tree/main/sdk) with a small set of capability intents (`fast` / `reasoning` / `coding`) — the pipeline declares intent, the SDK picks the model. Swap models in one config file; any OpenAI-compatible endpoint works.
 
 ## Architecture
 
@@ -84,44 +86,47 @@ Runs on a Mac Studio via [mlx](https://github.com/ml-explore/mlx). Swap models i
 sources.yaml  ◄── single source of truth (136 adapters)
      │
      ▼
-[sync]        fetch raw items
+[sync]            fetch raw items (adapters fan-in)
      │
      ▼
-[cluster]     dedup + semantic grouping
+[cluster]         dedup + semantic grouping
      │
      ▼
-[analyze]     local LLM → summary · why_it_matters · strength · tags
+[translate]       local LLM (intent=fast) — every non-native post → your language
      │
      ▼
-[pairwise]    Bradley–Terry + your 1-bit choices → preference model
+[analyze]         local LLM (intent=fast triage → intent=reasoning expand)
+     │            → summary · why_it_matters · strength · tags
+     ▼
+[articlize]       podcast/video transcripts → structured article
+     │            (tl;dr + chapters + highlights)
+     ▼
+[personalize]     ← pluggable seam (default: IdentityReRanker = by recency)
      │
      ▼
-[decide]      adjust source weights · propose new sources · flag anomalies
-     │        (everything → decision_log)
+/feed/following · /article · /briefing · /showcase · Notion
+     │
      ▼
-signals → /feed · /briefing · /showcase · Notion
+[Freshness Warden]  observes subscription health + drains LLM backlog when idle
+                    (decision_log captures every autonomous action)
 ```
 
-The two-layer loop:
+The pipeline is a clean fan-in → normalise → process → fan-out funnel:
 
-| Layer   | Responsibility         | Implementation |
-|---------|------------------------|----------------|
-| Recall  | *Where* to look        | 17 source adapters + dynamic per-source weights (Phase 1: rules · Phase 2: LLM-suggested new sources · Phase 3: auto-trial & promote) |
-| Ranking | *How* to order         | Bradley–Terry ELO + multi-dim weights (topic/source/author) + exploration (70% high-confidence · 20% double-new · 10% random) |
-
-Feedback signal weights:
-
-| Signal type          | Weight | Interpretation      |
-|----------------------|--------|---------------------|
-| External feed (URL)  | **3.0**| Strongest positive  |
-| Save / star          | 2.0    | Explicit like       |
-| Pairwise pick        | 1.0    | Standard            |
-| "Both fine"          | 0.3    | Weak positive       |
-| "Neither"            | −0.5   | Negative            |
+| Layer          | Responsibility                                              |
+|----------------|-------------------------------------------------------------|
+| **Fan-in**     | 20+ adapters; each implements `SourceAdapter.sync()`        |
+| **Normalise**  | Everything lands in `raw_items` with `{url, title, body, author, published_at}` — downstream treats all channels the same |
+| **Process**    | Translate → cluster → two-stage analyze (cheap triage + reasoning expand) → articlize for video/podcast |
+| **Fan-out**    | `/feed/following` (main), `/article/{id}`, `/briefing`, Notion publish |
+| **Personalize**| Pluggable seam; default = recency. Private forks override.  |
+| **Observe**    | Freshness Warden tracks source health + consumes LLM backlog during idle time |
 
 ### The design was pressure-tested by LLMs
 
-The current two-layer architecture wasn't my first draft. Original design had a three-layer system with a separate "Meta" optimisation loop. I asked six different LLMs (Claude Opus, GPT-5, Gemini 2.5, DeepSeek, Qwen-Max, local Qwen3) to critique both options. Five of six argued the Meta layer was premature. I agreed, collapsed it into a background task on the ranking layer, and shipped the simpler version. The full transcript is in [`docs/reviews/synthesis/2026-04-01-prism-v2-debate.md`](docs/reviews/synthesis/2026-04-01-prism-v2-debate.md) — it's a snapshot of what multi-model design-critique looks like when used seriously.
+The current architecture wasn't my first draft. Earlier versions had a three-layer optimisation loop and a heavy pairwise-comparison UI as the primary interaction. I asked six different LLMs (Claude Opus, GPT-5, Gemini 2.5, DeepSeek, Qwen-Max, local Qwen3) to critique the design. The critique converged on "the structuring pipeline is the actual value; the recommendation layer is over-engineered for a single user" — which, after six months of usage data, turned out to be correct. The full transcript is in [`docs/reviews/synthesis/2026-04-01-prism-v2-debate.md`](docs/reviews/synthesis/2026-04-01-prism-v2-debate.md).
+
+The reverse-engineered spec that captures the current truth is [`docs/SPEC.md`](docs/SPEC.md).
 
 ## Design decisions worth arguing about
 
@@ -130,20 +135,22 @@ Every choice below has a real trade-off. If you think I picked wrong, I'd like t
 - **SQLite, not Postgres.** This is a single-user system. A 4 GB SQLite file on disk is simpler, faster, and backup is `cp`. Not planning to change.
 - **No vector DB — yet.** Embedding similarity is only used for cold-start signal scoring. For 3 k signals/week it doesn't earn its complexity. Will revisit if the corpus grows 10×.
 - **Jinja2 + HTMX, no build step.** The whole frontend is server-rendered, zero npm, one `style.css`. Total frontend code: ~1.2 k lines of CSS + Jinja. Adding React would double the complexity and halve the iteration speed.
-- **Bradley–Terry, not a neural re-ranker.** Simpler model, easier to reason about, no training loop. The multi-dim weight vector already captures topic/source/author preference. A neural re-ranker would be cool but I can't justify the opacity yet.
-- **No multi-user.** Single-user is a *feature*. Personalisation only works when the feedback signal is yours. Sharing preferences across users kills the premise.
-- **YAML as config, not DB.** `config/sources.yaml` is the source of truth. The DB tracks *runtime state* (last-synced timestamps, dynamic weights). This split lets me version-control my feed config with git.
+- **Preference layer is pluggable, not built-in.** The public repo ships an identity re-ranker (sort by recency). Recommendation is genuinely a single-user problem — burning it into the shared code would only produce something that fits me. A private fork can implement `ReRanker` and plug it into `prism/personalize/`. See SPEC §0 for the reasoning.
+- **Intent-based LLM calls, not model-name hardcoding.** The pipeline calls `omlx.chat(intent="reasoning", ...)` rather than naming a specific model. Swapping models = editing one config; zero pipeline diffs.
+- **No multi-user.** Single-user is a *feature* for the preference layer, and a conscious choice for the project scope. The public (structuring) layer is still usable by anyone who runs their own copy.
+- **YAML as source config, not DB.** `config/sources.yaml` is the source of truth. The DB tracks *runtime state* (last-synced timestamps, health metrics). This split lets me version-control my feed config with git.
 
 ## What this does NOT do (yet)
 
 I'd rather be honest about limits than oversell.
 
-- **Cold start is rough.** First 100–200 pairwise choices the model is basically random. Better onboarding is an open problem.
-- **No real LLM-driven source discovery yet.** Phase 2 and 3 (auto-propose, auto-trial new sources) are on the roadmap but not shipped.
-- **Chinese-language sources are thin.** X / HN / arXiv / YouTube are covered well. 即刻 / 知乎 / 微信公众号 don't have adapters yet. Contributions very welcome.
+- **Chinese-community source adapters are thin.** X / HN / arXiv / YouTube are covered well. 即刻 / 知乎 / 微信公众号 don't have adapters yet. Contributions very welcome.
+- **No real LLM-driven source discovery yet.** The system can flag low-value sources; it can't yet propose new ones automatically.
+- **Structured article coverage is YouTube-heavy.** Podcast and long-form text structuring exist but run less frequently. Expanding articlize to podcasts / long articles on the hourly cadence is on the near-term roadmap.
 - **Single-device.** No sync across machines. The SQLite file is my state.
-- **Entity system is paused.** An earlier effort to build a unified entity graph across signals (people, companies, papers) was over-engineered and is shelved. See [`docs/specs/2026-03-29-prism-v2-entity-system.md`](docs/specs/2026-03-29-prism-v2-entity-system.md) for why.
+- **Entity system is paused.** An earlier effort to build a unified entity graph across signals was over-engineered and shelved.
 - **No mobile app.** The web UI is responsive but not a PWA-grade experience.
+- **HN comments aren't ingested.** The submission itself is; the discussion (often where the value is) isn't yet.
 
 ## Quick start
 
@@ -170,13 +177,14 @@ PRISM_ADMIN_PASSWORD=whatever
 Run:
 
 ```bash
-prism sync                   # fetch from all sources
-prism cluster                # dedup + group
-prism analyze --incremental  # LLM pass
-prism serve --port 8080      # web UI at localhost:8080
+prism sync                           # fetch from all sources
+prism cluster                        # dedup + group
+prism analyze --triage               # cheap-model pass over every new cluster
+prism analyze --expand --limit 30    # reasoning-model deep read on high-value ones
+prism serve --port 8080              # web UI at localhost:8080
 ```
 
-First-run tip: the first few pairwise comparisons are noisy — keep picking for ~100 rounds before judging the quality.
+The main daily path is `http://localhost:8080/feed/following` once you've added sources you want to follow.
 
 For production-style unattended running, see [`prism/scheduling/`](prism/scheduling/) (macOS launchd plists).
 
@@ -186,19 +194,20 @@ For production-style unattended running, see [`prism/scheduling/`](prism/schedul
 prism/
 ├── cli.py                 # CLI entry
 ├── db.py                  # SQLite schema (init_db is the whole thing)
-├── pipeline/              # sync → cluster → analyze → articlize
-├── sources/               # 17 source adapters; base.py defines the protocol
+├── pipeline/              # sync → cluster → translate → analyze → articlize
+├── sources/               # 20+ source adapters; base.py defines the protocol
 ├── web/
 │   ├── routes.py          # FastAPI
-│   ├── pairwise.py        # pair selection + ELO update  (<200 lines)
-│   ├── ranking.py         # ranking + multi-dim weights   (<400 lines)
-│   ├── slides.py          # multi-model horse race + judge
+│   ├── feed.py            # feed assembly (/feed, /feed/following)
+│   ├── board.py           # ops dashboard (self-only)
 │   └── templates/         # Jinja2 + HTMX — zero build step
 ├── output/                # briefing + Notion publish
 └── scheduling/            # launchd plists for 24/7 operation
 
 docs/
-├── specs/                 # design specs I wrote before implementing
+├── SPEC.md                # ← current truth; reverse-engineered from code
+├── RUNTIME.md             # what's alive right now, on-call playbook
+├── specs/                 # historical design specs (multiple generations; archive)
 └── reviews/synthesis/     # multi-model design critiques
 ```
 
@@ -206,25 +215,26 @@ docs/
 
 I'm Simon — algorithm team TL at a major tech company, managing ~40 people and a 1,500+ GPU cluster by day. My job requires staying on top of what's shipping across AI research, infra, and open-source, and the existing tooling was drowning me. Prism is a nights-and-weekends answer to one concrete question: *how fast can a well-designed personal system grow my technical taste, if I stop paying per-token and start paying per-kWh?*
 
-If you use this, break it, or disagree with any of the bets above — [open an issue](https://github.com/xiaohongsimon/prism/issues) or find me on X [@xiaohongsimon](https://x.com/xiaohongsimon). I care about the feedback.
+If you use this, break it, or disagree with any of the bets above — [open an issue](https://github.com/xiaohongsimon/prism/issues), start a [Discussion](https://github.com/xiaohongsimon/prism/discussions), or find me on X [@xiaohongsimon](https://x.com/xiaohongsimon). I care about the feedback.
 
 If you want to contribute, the most valuable things right now:
 
 - Chinese-community source adapters (即刻, 知乎, 微信公众号)
-- Cold-start strategy — how do we make the first 50 rounds feel useful?
-- A smarter pair-selection policy (current is 70/20/10 rules; active learning could do better)
+- HN comment ingestion (submissions only today)
+- Podcast / long-form article structuring on the hourly cadence (currently YouTube-first)
+- Better "subscription health" UX (the Freshness Warden layer described in SPEC §6.7)
 
 ## 中文简介
 
-**一句话：** 用本地算力的经济学解决信息过载——因为边际成本 ≈ 0，所以可以 136 源广撒网、LLM 任意加工、翻译、重打分。再用一个可审计的个人偏好模型做最后一公里筛选。结果是：我获取信息、提高技术品味的速度大幅上升。
+**一句话：** 一个多渠道、多语种、多模态的个人订阅阅读器——因为本地算力边际成本 ≈ 0，所以可以把 136 个源（含中英文、文本+视频+播客）的每条内容都翻译、转写、结构化，让我在几分钟内扫完每天"我关注的人说了啥"。
 
 三个核心判断：
 
-1. **本地算力倒置了推荐的经济学。** 云 API 上，每个 token 都得高概率有用；本地上，"扫 100 次命中 1 次"反而是常态。这个差别决定了你能覆盖多少源、能做多少次 re-processing、能不能给所有中文播客都翻译一遍。同样的工作量在 Claude Sonnet 4.5 上大约 **\$3,400/年**，本地 **\$0**。
-2. **多渠道摄入是必须的。** 单源过滤（只看 HN、只看 X）必然错过真正重要的东西。只有广撒网——136 个源横跨中英文、视频、播客、文本——再靠 LLM 压缩，才能赢过信息过载。这个规模只有本地经济学扛得住。
-3. **个人偏好是最后一公里的筛子。** Pairwise 对比 + Bradley–Terry ELO 把人做相对判断的优势变成训练信号；每一次自动决策（调源权重、加源、标异常）都写进 `decision_log`。不会被黑盒决策。
+1. **本地算力倒置了信息处理的经济学。** 云 API 上，每个 token 都得高概率有用；本地上，"每条都翻、每段都转写、每个视频都结构化"才是常态。同样工作量在 Claude Sonnet 4.5 上大约 **\$3,400/年**，本地 **\$0**。
+2. **多渠道 + 多模态 + 多语种是必须的。** 只看 HN 或只看 X 必然错过真正重要的东西；只看文字漏掉播客和视频；只看一种语言漏掉半个世界。只有广撒网（136 源）再靠 LLM 压缩，才能赢过信息过载。
+3. **可分享的公共层 vs 不可分享的个人层，是两件不同的事。** 翻译、转写、结构化是公共产物——Mac Studio 已经为我付过的推理，再给其他读者消费几乎零成本。个性化推荐刚好相反——只拟合一个人，不能分享。所以公共 repo 只发一个干净的结构化阅读器（按时间倒排），未来的偏好层留作可插拔模块（`prism/personalize/`），任何 fork 都能装自己的口味。
 
-[在线实例](https://prism.simon-ai.net/showcase) · [决策日志](https://prism.simon-ai.net/decisions/weekly) · [一个输出样本（播客→文章）](https://prism.simon-ai.net/article/118)
+[在线实例](https://prism.simon-ai.net/showcase) · [决策日志](https://prism.simon-ai.net/decisions/weekly) · [一个输出样本（播客→文章）](https://prism.simon-ai.net/article/118) · [完整 spec](docs/SPEC.md)
 
 ## License
 
