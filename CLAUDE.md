@@ -50,6 +50,9 @@
 - 所有自动决策（调源权重、修改探索比例、纳入新源）必须经过此表
 - 支持回溯和调试
 
+## Runtime State (当前在跑什么)
+**→ 看 `docs/RUNTIME.md`** — 活/死功能清单、launchd 拓扑、已知坑、排查手册。排查问题从这里开始。改架构必须同步更新。
+
 ## Codebase Navigation
 入口 CLI: prism/cli.py
 数据管道: prism/pipeline/ (sync → cluster → analyze → trends)
