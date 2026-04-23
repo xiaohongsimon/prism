@@ -1,0 +1,418 @@
+{% extends "base.html" %}
+{% block title %}看板 · Prism{% endblock %}
+
+{% block content %}
+<div class="feed-container">
+  {% set active_nav = 'board' %}
+  {% include 'partials/feed_nav.html' %}
+
+  <div class="board">
+    <div class="board-head">
+      <h1 class="board-h1">看板</h1>
+      <div class="board-sub">最近 24 小时 · {{ now }}</div>
+    </div>
+
+    {# === A. Source-type summary === #}
+    <section class="board-card">
+      <h2 class="board-h2">📡 各类型更新概览</h2>
+      <div class="board-grid">
+      {% for t in source_types %}
+        <div class="board-tile">
+          <div class="board-tile-head">
+            <span class="board-tile-emoji">{{ t.emoji }}</span>
+            <span class="board-tile-label">{{ t.label }}</span>
+          </div>
+          <div class="board-tile-num">{{ t.items_today }}</div>
+          <div class="board-tile-meta">
+            {{ t.active }}/{{ t.total }} 活跃
+            {% if t.delta_pct is not none %}
+              {% if t.delta_pct >= 0 %}
+                <span class="board-delta board-delta-up">↑{{ t.delta_pct }}%</span>
+              {% else %}
+                <span class="board-delta board-delta-down">↓{{ -t.delta_pct }}%</span>
+              {% endif %}
+            {% elif t.items_yesterday == 0 and t.items_today > 0 %}
+              <span class="board-delta board-delta-up">新</span>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+      </div>
+    </section>
+
+    {# === B. Articles articlized today === #}
+    <section class="board-card">
+      <h2 class="board-h2">📄 今日成文 <span class="board-badge">{{ articles_today|length }}</span></h2>
+      {% if articles_today %}
+      <div class="board-article-list">
+      {% for a in articles_today %}
+        <a class="board-article" href="/article/{{ a.id }}">
+          <div class="board-article-head">
+            <span class="board-tag">{{ a.type_emoji }} {{ a.type_label }}</span>
+            <span class="board-article-meta">{{ (a.updated_at or '')[11:16] }} · {{ a.word_count }} 字</span>
+          </div>
+          <div class="board-article-title">{{ a.title }}</div>
+          {% if a.subtitle %}
+          <div class="board-article-sub">{{ a.subtitle }}</div>
+          {% endif %}
+        </a>
+      {% endfor %}
+      </div>
+      {% else %}
+      <div class="board-empty">最近 24 小时还没有新成文</div>
+      {% endif %}
+    </section>
+
+    {# === C. Pipeline progress (6 stages) === #}
+    <section class="board-card">
+      <h2 class="board-h2">⚙️ 流水线（今日）</h2>
+      <div class="board-sub" style="margin-bottom:12px">
+        并非每条内容都经过所有阶段 · 转写仅音视频 · 翻译仅非中文 · 文章加工/结构化仅长文本
+      </div>
+      <div class="board-pipeline">
+
+        <div class="board-stage">
+          <div class="board-stage-label">① 召回</div>
+          <div class="board-stage-num">{{ pipeline.recall_total }}</div>
+          <div class="board-stage-meta">条原始信号</div>
+        </div>
+        <div class="board-arrow">→</div>
+
+        <div class="board-stage">
+          <div class="board-stage-label">② 转写</div>
+          <div class="board-stage-num">
+            {{ pipeline.transcribe_done }}<span class="board-stage-of">/{{ pipeline.transcribe_total }}</span>
+          </div>
+          <div class="board-bar"><div class="board-bar-fill" style="width:{{ pipeline.transcribe_pct }}%"></div></div>
+          <div class="board-stage-meta">{{ pipeline.transcribe_pct }}% · 音视频 → 文本
+            {% if pipeline.transcribe_pending > 0 %}<span class="board-pending">· {{ pipeline.transcribe_pending }} 待转</span>{% endif %}
+          </div>
+        </div>
+        <div class="board-arrow">→</div>
+
+        <div class="board-stage">
+          <div class="board-stage-label">③ 翻译</div>
+          <div class="board-stage-num">
+            {{ pipeline.translate_done }}<span class="board-stage-of">/{{ pipeline.translate_total }}</span>
+          </div>
+          <div class="board-bar"><div class="board-bar-fill" style="width:{{ pipeline.translate_pct }}%"></div></div>
+          <div class="board-stage-meta">{{ pipeline.translate_pct }}% · 非中文 → 中文
+            {% if pipeline.translate_pending > 0 %}<span class="board-pending">· {{ pipeline.translate_pending }} 待译</span>{% endif %}
+          </div>
+        </div>
+        <div class="board-arrow">→</div>
+
+        <div class="board-stage">
+          <div class="board-stage-label">④ 生成卡片</div>
+          <div class="board-stage-num">
+            {{ pipeline.card_done }}<span class="board-stage-of">/{{ pipeline.card_total }}</span>
+          </div>
+          <div class="board-bar"><div class="board-bar-fill" style="width:{{ pipeline.card_pct }}%"></div></div>
+          <div class="board-stage-meta">{{ pipeline.card_pct }}% · 摘要+要点
+            · {{ pipeline.signals_today }} 条 signal
+          </div>
+        </div>
+        <div class="board-arrow">→</div>
+
+        <div class="board-stage">
+          <div class="board-stage-label">⑤ 文章加工</div>
+          <div class="board-stage-num">
+            {{ pipeline.article_processed }}<span class="board-stage-of">/{{ pipeline.article_total }}</span>
+          </div>
+          <div class="board-bar"><div class="board-bar-fill" style="width:{{ pipeline.article_processed_pct }}%"></div></div>
+          <div class="board-stage-meta">{{ pipeline.article_processed_pct }}% · 通顺中文长文</div>
+        </div>
+        <div class="board-arrow">→</div>
+
+        <div class="board-stage">
+          <div class="board-stage-label">⑥ 结构化</div>
+          <div class="board-stage-num">
+            {{ pipeline.article_structured }}<span class="board-stage-of">/{{ pipeline.article_total }}</span>
+          </div>
+          <div class="board-bar"><div class="board-bar-fill" style="width:{{ pipeline.article_structured_pct }}%"></div></div>
+          <div class="board-stage-meta">{{ pipeline.article_structured_pct }}% · 章节+亮点
+            · 今日 +{{ pipeline.article_structured_today }}
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    {# === D. Health: stale / disabled / failing / backlogs === #}
+    <section class="board-card">
+      <h2 class="board-h2">🩺 健康状态</h2>
+
+      <div class="board-health-row">
+        <div class="board-mini">
+          <div class="board-mini-label">待转写 (xyz)</div>
+          <div class="board-mini-num {% if health.backlog.transcribe > 0 %}warn{% endif %}">{{ health.backlog.transcribe }}</div>
+        </div>
+        <div class="board-mini">
+          <div class="board-mini-label">待翻译</div>
+          <div class="board-mini-num {% if health.backlog.translate > 100 %}warn{% endif %}">{{ health.backlog.translate }}</div>
+        </div>
+        <div class="board-mini">
+          <div class="board-mini-label">待结构化</div>
+          <div class="board-mini-num {% if health.backlog.articlize > 5 %}warn{% endif %}">{{ health.backlog.articlize }}</div>
+        </div>
+        <div class="board-mini">
+          <div class="board-mini-label">沉默源 (24h)</div>
+          <div class="board-mini-num {% if health.stale|length > 0 %}warn{% endif %}">{{ health.stale|length }}</div>
+        </div>
+        <div class="board-mini">
+          <div class="board-mini-label">自动禁用</div>
+          <div class="board-mini-num {% if health.disabled|length > 0 %}warn{% endif %}">{{ health.disabled|length }}</div>
+        </div>
+        <div class="board-mini">
+          <div class="board-mini-label">失败计数</div>
+          <div class="board-mini-num {% if health.failing|length > 0 %}warn{% endif %}">{{ health.failing|length }}</div>
+        </div>
+      </div>
+
+      {% if health.disabled %}
+      <details class="board-details">
+        <summary>自动禁用的源 ({{ health.disabled|length }})</summary>
+        <table class="board-table">
+          <thead><tr><th>Source</th><th>类型</th><th>失败次数</th><th>下次重试</th></tr></thead>
+          <tbody>
+          {% for s in health.disabled %}
+            <tr>
+              <td><a href="/creator/{{ s.source_key }}">{{ s.source_key }}</a></td>
+              <td>{{ s.type_label }}</td>
+              <td>{{ s.consecutive_failures }}</td>
+              <td>{{ s.auto_retry_at or '—' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </details>
+      {% endif %}
+
+      {% if health.failing %}
+      <details class="board-details">
+        <summary>失败累积中 ({{ health.failing|length }})</summary>
+        <table class="board-table">
+          <thead><tr><th>Source</th><th>类型</th><th>连续失败</th></tr></thead>
+          <tbody>
+          {% for s in health.failing %}
+            <tr>
+              <td><a href="/creator/{{ s.source_key }}">{{ s.source_key }}</a></td>
+              <td>{{ s.type_label }}</td>
+              <td>{{ s.consecutive_failures }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </details>
+      {% endif %}
+
+      {% if health.stale %}
+      <details class="board-details">
+        <summary>24h 内无更新的源 ({{ health.stale|length }})</summary>
+        <table class="board-table">
+          <thead><tr><th>Source</th><th>类型</th><th>上次同步</th></tr></thead>
+          <tbody>
+          {% for s in health.stale %}
+            <tr>
+              <td><a href="/creator/{{ s.source_key }}">{{ s.source_key }}</a></td>
+              <td>{{ s.type_label }}</td>
+              <td>{{ s.last_synced_at or '从未' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </details>
+      {% endif %}
+    </section>
+
+    {# === F. Xiaoyuzhou podcast queue === #}
+    <section class="board-card">
+      <h2 class="board-h2">
+        🎙 小宇宙处理队列
+        <span class="board-badge">{{ xyz_progress.totals.done }}/{{ xyz_progress.totals.done + xyz_progress.totals.remaining }}</span>
+      </h2>
+      <div class="board-health-row" style="margin-bottom:14px">
+        <div class="board-mini">
+          <div class="board-mini-label">待处理</div>
+          <div class="board-mini-num {% if xyz_progress.totals.remaining > 0 %}warn{% endif %}">{{ xyz_progress.totals.remaining }}</div>
+        </div>
+        <div class="board-mini">
+          <div class="board-mini-label">已完成</div>
+          <div class="board-mini-num">{{ xyz_progress.totals.done }}</div>
+        </div>
+        <div class="board-mini">
+          <div class="board-mini-label">进行中</div>
+          <div class="board-mini-num {% if xyz_progress.totals.in_flight > 0 %}warn{% endif %}">{{ xyz_progress.totals.in_flight }}</div>
+        </div>
+        <div class="board-mini">
+          <div class="board-mini-label">近 1h 完成</div>
+          <div class="board-mini-num">{{ xyz_progress.totals.done_1h }}</div>
+        </div>
+        <div class="board-mini">
+          <div class="board-mini-label">近 24h 完成</div>
+          <div class="board-mini-num">{{ xyz_progress.totals.done_24h }}</div>
+        </div>
+        <div class="board-mini">
+          <div class="board-mini-label">错误</div>
+          <div class="board-mini-num {% if xyz_progress.totals.errored > 0 %}warn{% endif %}">{{ xyz_progress.totals.errored }}</div>
+        </div>
+      </div>
+
+      <div class="board-xyz-list">
+        {% for p in xyz_progress.podcasts %}
+        <div class="board-xyz-row">
+          <div class="board-xyz-head">
+            <a class="board-xyz-name" href="/creator/{{ p.source_key }}">{{ p.display_name }}</a>
+            <span class="board-xyz-counts">
+              {% if p.never_discovered %}
+                <span class="board-pending">等待 discover</span>
+              {% else %}
+                <span>完成 <b>{{ p.done }}</b>/{{ p.total }}</span>
+                {% if p.pending > 0 %}<span class="board-pending">待转 {{ p.pending }}</span>{% endif %}
+                {% if p.transcribed > 0 %}<span class="board-pending">待入库 {{ p.transcribed }}</span>{% endif %}
+                {% if p.inserted > 0 %}<span class="board-pending">待加工 {{ p.inserted }}</span>{% endif %}
+                {% if p.in_flight > 0 %}<span class="board-delta board-delta-up">进行 {{ p.in_flight }}</span>{% endif %}
+                {% if p.errored > 0 %}<span class="board-delta board-delta-down">错 {{ p.errored }}</span>{% endif %}
+              {% endif %}
+            </span>
+          </div>
+          {% if not p.never_discovered %}
+          <div class="board-bar"><div class="board-bar-fill" style="width:{{ p.done_pct }}%"></div></div>
+          <div class="board-xyz-meta">
+            {{ p.done_pct }}%
+            {% if p.last_done_at %}· 最近完成 {{ p.last_done_at[:16] }}{% endif %}
+            {% if p.oldest_pending_at %}· 最老待转 {{ p.oldest_pending_at[:10] }}{% endif %}
+            {% if not p.enabled %}· <span class="board-pending">已禁用</span>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    {# === F2. YouTube channel pipeline === #}
+    {% if youtube_progress and youtube_progress.channels %}
+    <section class="board-card">
+      <h2 class="board-h2">
+        📺 YouTube 处理队列
+        <span class="board-badge">{{ youtube_progress.totals.done }}/{{ youtube_progress.totals.total }}</span>
+      </h2>
+      <div class="board-health-row" style="margin-bottom:14px">
+        <div class="board-mini">
+          <div class="board-mini-label">待处理</div>
+          <div class="board-mini-num {% if youtube_progress.totals.remaining > 0 %}warn{% endif %}">{{ youtube_progress.totals.remaining }}</div>
+        </div>
+        <div class="board-mini">
+          <div class="board-mini-label">已完成</div>
+          <div class="board-mini-num">{{ youtube_progress.totals.done }}</div>
+        </div>
+        <div class="board-mini">
+          <div class="board-mini-label">无字幕</div>
+          <div class="board-mini-num {% if youtube_progress.totals.no_subtitle > 0 %}warn{% endif %}">{{ youtube_progress.totals.no_subtitle }}</div>
+        </div>
+        <div class="board-mini">
+          <div class="board-mini-label">待结构化</div>
+          <div class="board-mini-num">{{ youtube_progress.totals.awaiting_articlize }}</div>
+        </div>
+        <div class="board-mini">
+          <div class="board-mini-label">加工中</div>
+          <div class="board-mini-num">{{ youtube_progress.totals.articlize_in_progress }}</div>
+        </div>
+        <div class="board-mini">
+          <div class="board-mini-label">近 24h 完成</div>
+          <div class="board-mini-num">{{ youtube_progress.totals.done_24h }}</div>
+        </div>
+      </div>
+
+      <div class="board-xyz-list">
+        {% for c in youtube_progress.channels %}
+        <div class="board-xyz-row">
+          <div class="board-xyz-head">
+            <a class="board-xyz-name" href="/creator/{{ c.source_key }}">{{ c.display_name }}</a>
+            <span class="board-xyz-counts">
+              {% if c.total == 0 %}
+                <span class="board-pending">尚未抓取</span>
+              {% else %}
+                <span>完成 <b>{{ c.done }}</b>/{{ c.total }}</span>
+                {% if c.awaiting_articlize > 0 %}<span class="board-pending">待加工 {{ c.awaiting_articlize }}</span>{% endif %}
+                {% if c.articlize_in_progress > 0 %}<span class="board-delta board-delta-up">加工中 {{ c.articlize_in_progress }}</span>{% endif %}
+                {% if c.no_subtitle > 0 %}<span class="board-pending">无字幕 {{ c.no_subtitle }}</span>{% endif %}
+              {% endif %}
+            </span>
+          </div>
+          {% if c.total > 0 %}
+          <div class="board-bar"><div class="board-bar-fill" style="width:{{ c.done_pct }}%"></div></div>
+          <div class="board-xyz-meta">
+            {{ c.done_pct }}%
+            {% if c.last_done_at %}· 最近完成 {{ c.last_done_at[:16] }}{% endif %}
+            {% if c.last_fetched_at %}· 最近抓取 {{ c.last_fetched_at[:16] }}{% endif %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {# === G. Candidate head podcasts (Apple CN top, not yet subscribed) === #}
+    {% if xyz_candidates and xyz_candidates.candidates %}
+    <section class="board-card" id="candidates">
+      <h2 class="board-h2">
+        🏆 候选小宇宙
+        <span class="board-badge">{{ xyz_candidates.candidates|length }}</span>
+      </h2>
+      <div class="board-sub" style="margin-bottom:12px">
+        来自苹果播客中国区 Top {{ xyz_candidates.total }}，已订阅 {{ xyz_candidates.subscribed_cnt }} 档 · 剩余候选可人肉挑选后粘贴 URL 加入
+        {% if xyz_candidates.last_refresh %}· 刷新于 {{ xyz_candidates.last_refresh[:16] }}{% endif %}
+      </div>
+
+      {# Paste URL → /sources/add-xyz #}
+      <form class="board-xyz-add"
+            hx-post="/sources/add-xyz"
+            hx-target="#add-xyz-result"
+            hx-swap="innerHTML"
+            style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <input type="text" name="url"
+               placeholder="粘贴小宇宙 URL：https://www.xiaoyuzhoufm.com/podcast/xxxxxxxxxxxxxxxxxxxx"
+               required
+               style="flex:1;min-width:280px;padding:6px 10px;border:1px solid #333;border-radius:4px;background:#111;color:#ddd">
+        <button type="submit"
+                style="padding:6px 16px;border:1px solid #555;border-radius:4px;background:#222;color:#ddd;cursor:pointer">
+          加入订阅
+        </button>
+      </form>
+      <div id="add-xyz-result" style="margin-bottom:12px"></div>
+
+      <div class="board-xyz-cand-grid">
+      {% for c in xyz_candidates.candidates %}
+        <a class="board-xyz-cand" href="{{ c.xyz_search_url }}" target="_blank" rel="noopener">
+          <span class="board-xyz-cand-rank">#{{ c.rank }}</span>
+          <span class="board-xyz-cand-body">
+            <span class="board-xyz-cand-name">{{ c.name }}</span>
+            <span class="board-xyz-cand-artist">{{ c.artist }}</span>
+          </span>
+          <span class="board-xyz-cand-go">搜 ↗</span>
+        </a>
+      {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {# === Active sources today (collapsible) === #}
+    {% if active_sources %}
+    <section class="board-card">
+      <h2 class="board-h2">🔥 今日有更新的源 <span class="board-badge">{{ active_sources|length }}</span></h2>
+      <div class="board-active-grid">
+      {% for s in active_sources %}
+        <a class="board-active-row" href="/creator/{{ s.source_key }}">
+          <span class="board-active-emoji">{{ s.type_emoji }}</span>
+          <span class="board-active-key">{{ s.source_key }}</span>
+          <span class="board-active-num">+{{ s.items_today }}</span>
+        </a>
+      {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

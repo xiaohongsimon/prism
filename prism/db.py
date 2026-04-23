@@ -240,14 +240,6 @@ def init_db(conn: sqlite3.Connection) -> None:
             expires_at TEXT NOT NULL
         );
 
-        -- Generated HTML slides for rich signal cards
-        CREATE TABLE IF NOT EXISTS signal_slides (
-            signal_id INTEGER PRIMARY KEY REFERENCES signals(id),
-            html TEXT NOT NULL,
-            model_id TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
-        );
-
         -- Pairwise recommendation system (v2)
         CREATE TABLE IF NOT EXISTS pairwise_comparisons (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -462,6 +454,54 @@ def init_db(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass  # column already exists
 
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS xyz_episode_queue (
+            eid TEXT PRIMARY KEY,
+            source_key TEXT NOT NULL,
+            pid TEXT NOT NULL,
+            title TEXT NOT NULL,
+            pub_date TEXT NOT NULL,
+            duration_sec INTEGER,
+            audio_url TEXT NOT NULL,
+            stem TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            error TEXT,
+            article_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT,
+            done_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_xyz_queue_status_pubdate
+            ON xyz_episode_queue(status, pub_date DESC);
+        CREATE INDEX IF NOT EXISTS idx_xyz_queue_source
+            ON xyz_episode_queue(source_key, status);
+
+        -- Head-podcast candidates sourced from Apple CN top podcasts chart.
+        -- Not auto-subscribed; surfaced in the board for user to manually pick.
+        CREATE TABLE IF NOT EXISTS xyz_rank_candidate (
+            apple_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            artist TEXT NOT NULL DEFAULT '',
+            rank INTEGER NOT NULL,
+            artwork_url TEXT,
+            subscribed INTEGER NOT NULL DEFAULT 0,
+            first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+            last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_xyz_rank_subscribed_rank
+            ON xyz_rank_candidate(subscribed, rank);
+
+        -- Track subtitle-fetch attempts per raw_item so enrich-youtube
+        -- doesn't spin on the same videos that genuinely have no captions.
+        CREATE TABLE IF NOT EXISTS youtube_subtitle_attempts (
+            raw_item_id INTEGER PRIMARY KEY REFERENCES raw_items(id) ON DELETE CASCADE,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_attempt_at TEXT NOT NULL DEFAULT (datetime('now')),
+            last_outcome TEXT NOT NULL DEFAULT ''
+        );
+    """)
+
     conn.commit()
 
 
@@ -492,7 +532,7 @@ def get_enabled_sources(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 def insert_raw_item(conn: sqlite3.Connection, *, source_id: int, url: str,
                     title: str = "", body: str = "", author: str = "",
-                    published_at: str = "", raw_json: str = "{}",
+                    published_at: Optional[str] = None, raw_json: str = "{}",
                     thread_partial: bool = False) -> Optional[int]:
     try:
         cursor = conn.execute(

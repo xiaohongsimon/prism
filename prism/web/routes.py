@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Form, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from jinja2 import Environment, FileSystemLoader
 
 import markdown as _md
@@ -77,6 +77,81 @@ def _render(template_name: str, **ctx) -> HTMLResponse:
     return HTMLResponse(tmpl.render(**ctx))
 
 
+def _strip_english_sections(md_text: str) -> str:
+    """For bilingual course notes, drop the '### English' block in each lesson.
+
+    Each lesson in docs/notes/*-course-zh.md looks like:
+
+        ## L0 · Introduction
+        ### English
+        <en paragraphs>
+        ### 中文
+        <zh paragraphs>
+
+    We strip from '### English' up to (but not including) '### 中文', and also
+    drop the '### 中文' heading itself so the Chinese body flows directly
+    under the lesson's <h2>.
+    """
+    import re
+
+    # Remove "### English" and everything up to the next "### 中文" heading
+    # (lazy match, DOTALL because paragraphs span lines).
+    md_text = re.sub(
+        r"###\s*English\s*\n.*?###\s*中文\s*\n",
+        "",
+        md_text,
+        flags=re.DOTALL,
+    )
+    return md_text
+
+
+def _wrap_course_lessons(html: str) -> tuple[str, list[dict]]:
+    """Wrap each <h2>…</h2> + following block into a collapsible <details>.
+
+    Course notes use h1 for the course title and h2 for each lesson. Splitting
+    on '<h2' gives us one segment per lesson; we pull the h2's inner HTML as
+    the summary and hide the rest behind an open <details> so users can
+    collapse lessons they've already read. The markdown `toc` extension has
+    already assigned each h2 a slugified id, which we reuse as both the
+    details id (for in-page anchor links) and the TOC entry id.
+
+    Returns (body_html, toc_items) where toc_items is a list of
+    {"id": slug, "text": h2_inner_html}.
+    """
+    import re
+
+    toc: list[dict] = []
+    parts = html.split("<h2")
+    if len(parts) <= 1:
+        return html, toc
+    out = [parts[0]]
+    for p in parts[1:]:
+        segment = "<h2" + p
+        m = re.match(r'<h2([^>]*)>(.*?)</h2>(.*)', segment, re.DOTALL)
+        if not m:
+            out.append(segment)
+            continue
+        attrs = m.group(1)
+        h2_inner = m.group(2)
+        body = m.group(3).strip()
+        # Drop any trailing <hr/> that markdown inserted between lessons.
+        body = re.sub(r"<hr\s*/?>\s*$", "", body, flags=re.IGNORECASE).strip()
+
+        id_match = re.search(r'id="([^"]+)"', attrs)
+        lesson_id = id_match.group(1) if id_match else ""
+
+        toc.append({"id": lesson_id, "text": h2_inner})
+
+        id_attr = f' id="{lesson_id}"' if lesson_id else ""
+        out.append(
+            f'<details class="course-lesson" open{id_attr}>'
+            f'<summary class="course-lesson-summary">{h2_inner}</summary>'
+            f'<div class="course-lesson-body">{body}</div>'
+            f'</details>'
+        )
+    return "".join(out), toc
+
+
 def _build_creator_list(conn) -> dict:
     """Build channel-grouped creator list for /feed/following.
 
@@ -96,7 +171,7 @@ def _build_creator_list(conn) -> dict:
     from datetime import datetime, timedelta, timezone
     import yaml as _yaml
 
-    type_icons = {"youtube": "▶", "x": "𝕏", "follow_builders": "𝕏", "github_releases": "📦", "xiaoyuzhou": "🎙"}
+    type_icons = {"youtube": "▶", "x": "𝕏", "follow_builders": "𝕏", "github_releases": "📦", "xiaoyuzhou": "🎙", "course": "🎓"}
 
     sources = conn.execute(
         """SELECT s.id, s.source_key, s.type, s.handle, s.config_yaml
@@ -150,6 +225,8 @@ def _build_creator_list(conn) -> dict:
             avatar = config.get("avatar", "")
         elif src_type == "xiaoyuzhou":
             avatar = config.get("avatar", "")
+        elif src_type == "course":
+            avatar = config.get("avatar", "")
         elif src_type in ("x", "follow_builders"):
             avatar = f"https://unavatar.io/x/{handle}"
         else:
@@ -181,7 +258,7 @@ def _build_creator_list(conn) -> dict:
     week_cutoff = (now - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
 
     buckets: dict[str, list] = {
-        "youtube": [], "podcast": [], "other": [],
+        "youtube": [], "podcast": [], "course": [], "other": [],
         "x_today": [], "x_week": [], "x_silent": [],
     }
     for c in all_creators:
@@ -189,6 +266,8 @@ def _build_creator_list(conn) -> dict:
             buckets["youtube"].append(c)
         elif c["type"] == "xiaoyuzhou":
             buckets["podcast"].append(c)
+        elif c["type"] == "course":
+            buckets["course"].append(c)
         elif c["type"] in ("x", "follow_builders"):
             latest = c["latest"] or ""
             if latest >= today_cutoff:
@@ -286,7 +365,7 @@ def gen_invite(request: Request):
 @web_router.get("/", response_class=HTMLResponse)
 def index(request: Request):
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/feed", status_code=307)
+    return RedirectResponse(url="/feed/following", status_code=307)
 
 
 from prism.web.feed import (
@@ -302,6 +381,18 @@ def feed_index(request: Request):
     return _render("feed.html", request=request, next_offset=0)
 
 
+@web_router.get("/board", response_class=HTMLResponse)
+def board_page(request: Request):
+    """Owner-only dashboard: 24h updates + pipeline progress + source health."""
+    if _get_user(request) is None:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url="/login", status_code=307)
+    from prism.web.board import get_board_data
+    conn = _db(request)
+    data = get_board_data(conn)
+    return _render("board.html", request=request, **data)
+
+
 @web_router.get("/feed/following", response_class=HTMLResponse)
 def feed_following_index(request: Request):
     """Creator-level list sorted by preference score → each row links to
@@ -310,6 +401,32 @@ def feed_following_index(request: Request):
     conn = _db(request)
     buckets = _build_creator_list(conn)
     return _render("feed_following.html", request=request, buckets=buckets)
+
+
+@web_router.get("/export/epub")
+def export_following_epub(request: Request, days: int = 7):
+    """Download followed-source content from the last N days as an EPUB.
+
+    Login-gated — anonymous visitors have no 'following' context and the
+    owner's full feed is not meant to be publicly downloadable.
+    """
+    if _get_user(request) is None:
+        return RedirectResponse(url="/login", status_code=307)
+    days = max(1, min(int(days or 7), 90))  # clamp defensively
+
+    from prism.pipeline.export import build_epub, default_filename
+
+    conn = _db(request)
+    data = build_epub(conn, days=days)
+    filename = default_filename(days)
+    return Response(
+        content=data,
+        media_type="application/epub+zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @web_router.get("/feed/more", response_class=HTMLResponse)
@@ -629,6 +746,122 @@ def channel_follow(request: Request, source_key: str):
     return HTMLResponse(html)
 
 
+@web_router.post("/sources/add-xyz", response_class=HTMLResponse)
+def sources_add_xyz(request: Request, url: str = Form(...)):
+    """Accept a xiaoyuzhou.fm podcast URL → append to sources.yaml + sync.
+
+    Returns a small HTML fragment for HTMX to swap into #add-xyz-result.
+    """
+    import re
+    import json as _j
+    import urllib.request
+    from urllib.request import Request as _Req, urlopen as _urlopen
+
+    if not _get_user(request):
+        return HTMLResponse(
+            '<div style="color:#c55">请先登录</div>', status_code=401
+        )
+
+    # Parse pid from URL: https://www.xiaoyuzhoufm.com/podcast/{24-hex-id}
+    m = re.search(r"/podcast/([0-9a-fA-F]{16,32})", url or "")
+    if not m:
+        return HTMLResponse(
+            '<div style="color:#c55">❌ URL 格式不对。期望形如 '
+            'https://www.xiaoyuzhoufm.com/podcast/xxxxxxxxxxxxxxxxxxxx</div>'
+        )
+    pid = m.group(1)
+
+    # Fetch metadata via the xyz _next/data endpoint (same tactic as discover)
+    from prism.pipeline.xyz_queue import BUILD_ID, UA
+    meta_url = f"https://www.xiaoyuzhoufm.com/_next/data/{BUILD_ID}/podcast/{pid}.json"
+    try:
+        req = _Req(meta_url, headers={"User-Agent": UA})
+        with _urlopen(req, timeout=15) as r:
+            data = _j.load(r)
+    except Exception as e:
+        return HTMLResponse(
+            f'<div style="color:#c55">❌ 抓取 pid 元数据失败：{e}</div>'
+        )
+    page = (data.get("pageProps") or {}).get("podcast") or {}
+    if not page:
+        return HTMLResponse(
+            '<div style="color:#c55">❌ 该 pid 未在小宇宙找到，检查 URL</div>'
+        )
+    name = (page.get("title") or "").strip() or f"podcast_{pid[:8]}"
+    avatar = (page.get("image") or {}).get("picUrl") or ""
+
+    # Check if pid already registered in yaml
+    from prism.pipeline.external_feed import _sources_yaml_path
+    from prism.sources.yaml_editor import load_sources_list, append_source_block
+    yaml_path = _sources_yaml_path()
+    existing = load_sources_list(yaml_path)
+    for entry in existing:
+        if entry.get("type") == "xiaoyuzhou" and entry.get("pid") == pid:
+            return HTMLResponse(
+                f'<div style="color:#aaa">ℹ 已存在：{entry.get("display_name") or entry.get("key")}</div>'
+            )
+
+    # Build YAML entry. Auto-generate key from pid tail (unique).
+    new_key = f"xyz:p{pid[-10:]}"
+    new_entry = {
+        "display_name": name,
+        "key": new_key,
+        "pid": pid,
+        "type": "xiaoyuzhou",
+    }
+    if avatar:
+        new_entry["avatar"] = avatar
+
+    # append_source_block dedupes by _source_key which is too coarse for xyz
+    # (all xyz entries collide on 'xiaoyuzhou'). We already checked pid dedup
+    # above; skip the helper's check by appending directly.
+    from ruamel.yaml import YAML
+    from ruamel.yaml.comments import CommentedMap
+    y = YAML()
+    y.preserve_quotes = True
+    y.indent(mapping=2, sequence=4, offset=2)
+    y.width = 4096
+    doc = y.load(yaml_path.read_text(encoding="utf-8"))
+    cm = CommentedMap()
+    cm.update(new_entry)
+    doc["sources"].append(cm)
+    with yaml_path.open("w", encoding="utf-8") as f:
+        y.dump(doc, f)
+
+    # Sync YAML → DB so the board picks up the new source immediately.
+    from prism.source_manager import reconcile_sources
+    conn = _db(request)
+    reconcile_sources(conn, yaml_path)
+
+    # Also mark the Apple candidate (if name matches) as subscribed so it
+    # stops showing in 🏆 候选播客.
+    conn.execute(
+        "UPDATE xyz_rank_candidate SET subscribed = 1 WHERE name = ?",
+        (name,),
+    )
+    conn.commit()
+
+    # Trigger discover in background so episodes enter the queue without
+    # blocking the HTTP response.
+    def _bg_discover():
+        from prism.pipeline import xyz_queue as q
+        from prism.db import get_connection
+        from prism.config import settings
+        _c = get_connection(settings.db_path)
+        try:
+            q.discover(_c)
+        except Exception as _e:
+            pass
+
+    import threading
+    threading.Thread(target=_bg_discover, daemon=True).start()
+
+    return HTMLResponse(
+        f'<div style="color:#4c9">✅ 已加入：<b>{name}</b> ({new_key})。'
+        f'episodes 正在后台 discover，稍后刷新看板可见。</div>'
+    )
+
+
 @web_router.get("/creator/{source_key:path}", response_class=HTMLResponse)
 def creator_profile(request: Request, source_key: str):
     """Creator profile — list of videos/tweets for a specific source."""
@@ -661,9 +894,38 @@ def creator_profile(request: Request, source_key: str):
         handle = source["handle"] or source_key.split(":")[-1]
         avatar = f"https://unavatar.io/x/{handle}"
         source_url = f"https://x.com/{handle}"
+    elif source["type"] == "course":
+        avatar = config.get("avatar", "")
+        source_url = config.get("course_url", "")
     else:
         avatar = ""
         source_url = ""
+
+    # Course-specific: render the bilingual / organized notes markdown inline
+    # so the creator page actually shows the content, not just a path hint.
+    course_notes_html = ""
+    course_toc: list[dict] = []
+    if source["type"] == "course":
+        notes_rel = (config.get("notes_path") or "").strip()
+        if notes_rel:
+            project_root = Path(__file__).resolve().parents[2]
+            notes_abs = (project_root / notes_rel).resolve()
+            # Path traversal guard: the resolved file must live under project root.
+            try:
+                notes_abs.relative_to(project_root)
+            except ValueError:
+                notes_abs = None  # escape attempt — silently drop
+            if notes_abs and notes_abs.is_file():
+                try:
+                    md_text = notes_abs.read_text(encoding="utf-8")
+                    md_text = _strip_english_sections(md_text)
+                    course_notes_html = _md.markdown(
+                        md_text,
+                        extensions=["extra", "toc", "sane_lists"],
+                    )
+                    course_notes_html, course_toc = _wrap_course_lessons(course_notes_html)
+                except Exception:
+                    course_notes_html = ""
 
     # Feed-style signal cards for this creator. Pull the full signal pool
     # (no age cutoff, no pairwise-recent filter, no diversity cap) and
@@ -682,20 +944,22 @@ def creator_profile(request: Request, source_key: str):
     # Still expose the raw_items tail — creator page also wants to show
     # un-analyzed items (freshly synced, no signal yet) so the user can
     # see what's pending. We render these under the signal cards.
+    # Creator page shows ALL raw_items for the source, regardless of whether
+    # they've been clustered into a signal. Previously we excluded items with
+    # current signals and rendered them as a separate feed-card section, but
+    # that produced two inconsistent card styles on the same page. The signal
+    # abstraction is irrelevant on a creator page — the user just wants a
+    # unified list of this creator's items.
     pending = conn.execute(
         """SELECT ri.id, ri.url, ri.title, ri.body, ri.body_zh, ri.author,
                   ri.created_at, ri.published_at,
                   a.id as article_id, a.subtitle as article_subtitle, a.word_count,
+                  (a.highlights_json IS NOT NULL AND a.highlights_json != '') AS articlized,
                   EXISTS(SELECT 1 FROM item_interactions ii
                          WHERE ii.item_id = ri.id AND ii.action = 'like') AS liked
            FROM raw_items ri
            LEFT JOIN articles a ON a.raw_item_id = ri.id
            WHERE ri.source_id = ?
-             AND NOT EXISTS (
-                SELECT 1 FROM cluster_items ci
-                JOIN signals s ON s.cluster_id = ci.cluster_id AND s.is_current = 1
-                WHERE ci.raw_item_id = ri.id
-             )
            ORDER BY ri.published_at DESC, ri.created_at DESC
            LIMIT 50""",
         (source["id"],),
@@ -715,6 +979,8 @@ def creator_profile(request: Request, source_key: str):
         signals=signals,
         pending_items=[dict(r) for r in pending],
         followed_authors=followed,
+        course_notes_html=course_notes_html,
+        course_toc=course_toc,
     )
 
 

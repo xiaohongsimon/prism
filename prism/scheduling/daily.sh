@@ -14,8 +14,15 @@ python scripts/health_check.py >> "$LOG" 2>&1 || true
 prism sync-follows --apply --max-new 30 >> "$LOG" 2>&1 || true
 # Fresh sync before daily analysis to ensure latest content
 prism sync >> "$LOG" 2>&1
+prism expand-links --limit 40 >> "$LOG" 2>&1
 prism cluster >> "$LOG" 2>&1
 prism analyze --incremental >> "$LOG" 2>&1
+prism quality-scan >> "$LOG" 2>&1 || true
+# Enumerate xyz podcasts' last-30d episodes into the backfill queue;
+# the tick worker (xyz_queue.sh via launchd) advances them under low load.
+prism xyz-queue discover >> "$LOG" 2>&1 || true
+# Refresh Apple CN top-50 candidate head podcasts (non-subscribed ones surface in /board).
+prism xyz-rank >> "$LOG" 2>&1 || true
 prism enrich-youtube --limit 20 >> "$LOG" 2>&1
 prism articlize >> "$LOG" 2>&1
 prism analyze --daily >> "$LOG" 2>&1

@@ -84,15 +84,28 @@ Entity 系统: prism/pipeline/entity_*.py (已暂停，待重新规划)
 - Publish Notion: `.venv/bin/prism publish --notion`
 
 ## Current Focus
-- 阶段: Alpha → 重新定位
-- v1 MVP 核心验证: 用户是否愿意持续做 pairwise 选择
-- v1 scope: Pairwise UI + Bradley-Terry 评分 + 源权重动态调整 + Decision Log
-- 不做: LLM 源发现、Meta 层独立优化
-- Last updated: 2026-04-01
+- 阶段: 定位收敛后的 Wave 1 清理期
+- 当前定位: 多渠道 / 多语种 / 多模态个人订阅阅读器（非推荐引擎）
+- 主路径: `/feed/following`（订阅流 + 结构化加工）
+- 下一步: Wave 1 砍 BT/CTR/pairwise 上一代实现 + 预留 personalize seam
+- Last updated: 2026-04-21
 
 ## Context Links
+**单一来源（authoritative）**
+- 项目章程 / Mission: `docs/constitution/mission.md`
+- 技术栈 / 数据 / 管线: `docs/constitution/tech-stack.md`
+- 路线图 / Wave 1–4: `docs/constitution/roadmap.md`
+- 现实复盘 / 技术债地图: `docs/SPEC.md`
+- 运行状态 / on-call: `docs/RUNTIME.md`
+
+**历史 / 归档**
 - Original Design: docs/specs/2026-03-24-prism-design.md
 - Web Feed Spec: docs/superpowers/specs/2026-03-29-prism-web-feed-design.md
 - Entity System Spec: docs/specs/2026-03-29-prism-v2-entity-system.md (已暂停)
 - HN Hotness Spec: docs/superpowers/specs/2026-04-01-hn-hotness-weighting.md
-- 架构辩论记录: docs/reviews/synthesis/2026-04-01-prism-v2-debate.md
+
+**多模型辩论记录**
+- 2026-04-01 v2 架构辩论: docs/reviews/synthesis/2026-04-01-prism-v2-debate.md
+- 2026-04-05 产品辩论: docs/reviews/synthesis/2026-04-05-prism-product-debate.md
+- 2026-04-11 /feed/following 辩论: docs/reviews/synthesis/2026-04-11-following-tab-debate.md
+- 2026-04-21 SPEC 多模型辩论: docs/reviews/synthesis/2026-04-21-spec-multi-model-debate.md

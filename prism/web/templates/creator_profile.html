@@ -14,7 +14,7 @@
 {% endblock %}
 {% block content %}
 <div class="creator-profile">
-  <a class="back-link" href="/feed/following">← 关注</a>
+  <a class="back-link" href="/feed/following">← {% if is_anonymous %}精选{% else %}关注{% endif %}</a>
 
   <div class="creator-header">
     {% if avatar %}
@@ -39,54 +39,150 @@
                   hx-swap="outerHTML">关注</button>
           {% endif %}
         {% endif %}
+        <a class="gh-pitch" href="https://github.com/xiaohongsimon/prism"
+           target="_blank" rel="noopener"
+           title="Prism 是开源的 AI 个人推荐系统，欢迎 Star">
+          <span class="gh-icon" aria-hidden="true">★</span>
+          <span class="gh-label">Star on GitHub</span>
+        </a>
       </div>
     </div>
   </div>
 
-  {# Signal cards — identical layout to the main feed #}
-  <div class="feed-list">
-  {% set in_creator_profile = true %}
-  {% for signal in signals %}
-    {% include 'partials/feed_card.html' %}
-  {% else %}
-    <div class="empty" style="padding:24px;color:#888">暂无已分析的信号</div>
-  {% endfor %}
-  </div>
+  {% if course_notes_html %}
+  <section class="course-notes-layout">
+    <div class="course-notes">
+      <div class="course-notes-body">
+        {{ course_notes_html|safe }}
+      </div>
+    </div>
+    {% if course_toc %}
+    <aside class="course-toc">
+      <details class="course-toc-mobile" open>
+        <summary class="course-toc-title">目录 <span class="muted">· {{ course_toc|length }}</span></summary>
+        <ol class="course-toc-list">
+          {% for item in course_toc %}
+          <li><a href="#{{ item.id }}" data-lesson-id="{{ item.id }}">{{ item.text|safe }}</a></li>
+          {% endfor %}
+        </ol>
+      </details>
+    </aside>
+    {% endif %}
+  </section>
+  <script>
+    // Clicking a TOC link should force-open the target <details class="course-lesson">
+    // in case the user had collapsed it, then smooth-scroll to it.
+    (function () {
+      function openAndScroll(id) {
+        if (!id) return;
+        var el = document.getElementById(id);
+        if (!el) return;
+        if (el.tagName && el.tagName.toLowerCase() === 'details') {
+          el.open = true;
+        }
+        // Defer scroll until after the <details> has expanded.
+        requestAnimationFrame(function () {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
+      document.addEventListener('click', function (e) {
+        var a = e.target.closest('.course-toc a[href^="#"]');
+        if (!a) return;
+        var id = a.getAttribute('href').slice(1);
+        if (!id) return;
+        e.preventDefault();
+        history.replaceState(null, '', '#' + id);
+        openAndScroll(id);
+      });
+      // On page load, honor any existing hash so deep links still work.
+      if (window.location.hash) {
+        openAndScroll(window.location.hash.slice(1));
+      }
+    })();
+  </script>
+  {% endif %}
 
-  {# Split pending into two buckets:
-       - ready_items: already transcribed / articlized (article_id present).
-         These are a DONE state for the user; grouping them under "待分析"
-         was misleading.
-       - waiting_items: still need transcription / analysis.
-       For X-style sources (no article pipeline), everything stays in
-       waiting_items — the raw tweet is the only artifact they produce. #}
-  {% set ready_items = [] %}
+  {# Split pending into three buckets:
+       - articlized_items: article with highlights_json populated — LLM articlize
+         pass done. For user this is a truly DONE state.
+       - transcribed_items: article row exists (raw ASR/subtitle stored in
+         structured_body) but articlize hasn't restructured it yet. Viewable
+         but not yet summarized.
+       - waiting_items: no article row — still need transcription / subtitle
+         fetch. For X-style sources (no article pipeline) everything lives
+         here (the raw tweet is the only artifact). #}
+  {% set articlized_items = [] %}
+  {% set transcribed_items = [] %}
   {% set waiting_items = [] %}
   {% for item in pending_items %}
-    {% if item.article_id %}{% set _ = ready_items.append(item) %}
+    {% if item.articlized %}{% set _ = articlized_items.append(item) %}
+    {% elif item.article_id %}{% set _ = transcribed_items.append(item) %}
     {% else %}{% set _ = waiting_items.append(item) %}{% endif %}
   {% endfor %}
 
-  {% if ready_items %}
-  <h3 style="margin:24px 0 8px;font-size:14px;color:#888">{% if source_type == 'xiaoyuzhou' %}已转写{% else %}已转文章{% endif %}</h3>
+  {% if articlized_items %}
   <div class="item-list">
-  {% for item in ready_items %}
-    <a class="item-card" href="/article/{{ item.article_id }}">
-      <div class="item-card-title">{{ item.title }}</div>
-      {% if item.article_subtitle %}
-      <div class="item-card-subtitle">{{ item.article_subtitle }}</div>
-      {% endif %}
-      <div class="item-card-meta">
-        {{ (item.published_at or item.created_at or '')[:10] }}
-        · {{ item.word_count }} 字
+  {% for item in articlized_items %}
+    <div class="item-card">
+      <a class="item-card-link" href="/article/{{ item.article_id }}">
+        <div class="item-card-title">{{ item.title }}</div>
+        {% if item.article_subtitle %}
+        <div class="item-card-subtitle">{{ item.article_subtitle }}</div>
+        {% endif %}
+        <div class="item-card-meta">
+          {{ (item.published_at or item.created_at or '')[:10] }}
+          · {{ item.word_count }} 字
+        </div>
+      </a>
+      {% if not is_anonymous %}
+      <div class="item-card-actions">
+        {% if item.liked %}
+        <form hx-post="/creator/item/{{ item.id }}/unlike" hx-target="this" hx-swap="outerHTML" style="display:inline" onclick="event.stopPropagation()">
+          <button type="submit" class="item-like liked" title="取消喜欢">❤ 已喜欢</button>
+        </form>
+        {% else %}
+        <form hx-post="/creator/item/{{ item.id }}/like" hx-target="this" hx-swap="outerHTML" style="display:inline" onclick="event.stopPropagation()">
+          <button type="submit" class="item-like" title="喜欢">♡ 喜欢</button>
+        </form>
+        {% endif %}
       </div>
-    </a>
+      {% endif %}
+    </div>
+  {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if transcribed_items %}
+  <div class="item-list">
+  {% for item in transcribed_items %}
+    <div class="item-card">
+      <a class="item-card-link" href="/article/{{ item.article_id }}">
+        <div class="item-card-title">{{ item.title }}</div>
+        <div class="item-card-meta">
+          {{ (item.published_at or item.created_at or '')[:10] }}
+          · {{ item.word_count }} 字
+          · <span class="item-card-status">待结构化</span>
+        </div>
+      </a>
+      {% if not is_anonymous %}
+      <div class="item-card-actions">
+        {% if item.liked %}
+        <form hx-post="/creator/item/{{ item.id }}/unlike" hx-target="this" hx-swap="outerHTML" style="display:inline" onclick="event.stopPropagation()">
+          <button type="submit" class="item-like liked" title="取消喜欢">❤ 已喜欢</button>
+        </form>
+        {% else %}
+        <form hx-post="/creator/item/{{ item.id }}/like" hx-target="this" hx-swap="outerHTML" style="display:inline" onclick="event.stopPropagation()">
+          <button type="submit" class="item-like" title="喜欢">♡ 喜欢</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
   {% endfor %}
   </div>
   {% endif %}
 
   {% if waiting_items %}
-  <h3 style="margin:24px 0 8px;font-size:14px;color:#888">待分析</h3>
   <div class="item-list">
   {% for item in waiting_items %}
     {% if source_type in ('youtube', 'xiaoyuzhou') %}

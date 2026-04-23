@@ -131,6 +131,7 @@ def llm_relevance_filter(items: list[RawItem]) -> list[RawItem]:
 
     try:
         from prism.pipeline.llm import call_llm
+        from prism.pipeline.llm_tasks import Scope, Task
         from prism.config import settings
     except ImportError:
         return items
@@ -150,7 +151,8 @@ def llm_relevance_filter(items: list[RawItem]) -> list[RawItem]:
         try:
             # intent="fast" → SDK resolves to the fast model from the intent
             # table (decouples this call site from llm_cheap_model env var).
-            score_text = call_llm(prompt, intent="fast", project="论文打分")
+            score_text = call_llm(prompt, intent="fast",
+                                  task=Task.JUDGE, scope=Scope.ITEM)
             score = int("".join(c for c in score_text.strip() if c.isdigit())[:1] or "0")
             if score >= 3:
                 filtered.append(item)

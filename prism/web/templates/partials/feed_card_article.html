@@ -18,6 +18,11 @@
     </h3>
     {% if snippet and snippet != title %}<p class="art-snippet">{{ snippet }}</p>{% endif %}
     {% if signal.why_it_matters %}<p class="art-why">💡 {{ signal.why_it_matters }}</p>{% endif %}
+    {% if signal.article_id %}
+    <div class="art-extra-links">
+        <a href="/article/{{ signal.article_id }}">阅读中文全文 →</a>
+    </div>
+    {% endif %}
     <footer class="feed-actions compact hover-reveal">
         {% with compact=true %}{% include 'partials/feed_card_actions.html' %}{% endwith %}
     </footer>

@@ -24,6 +24,9 @@ dependencies = [
     "click>=8.0",
     "markdown>=3.10.2",
     "python-multipart>=0.0.26",
+    "ebooklib>=0.18",
+    "omlx-sdk",
+    "youtube-transcript-api>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -43,3 +46,18 @@ Issues = "https://github.com/xiaohongsimon/prism/issues"
 
 [project.scripts]
 prism = "prism.cli:cli"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+# Only package the `prism` source tree. The repo also contains a sibling
+# `prism-lens/` and top-level `tests/` that must not be auto-discovered.
+[tool.setuptools.packages.find]
+include = ["prism*"]
+exclude = ["prism-lens*", "tests*", "scripts*", "data*", "design*", "docs*"]
+
+# Install the local omlx-sdk checkout as an editable dependency so changes
+# to the sibling project reflect immediately without re-syncing.
+[tool.uv.sources]
+omlx-sdk = { path = "../omlx-manager/sdk", editable = true }

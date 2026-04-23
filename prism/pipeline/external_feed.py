@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from prism.pipeline.llm import call_llm_json
+from prism.pipeline.llm_tasks import Scope, Task
 
 
 _SYSTEM_PROMPT = (
@@ -62,7 +63,8 @@ def run_external_feed_consumer(conn: sqlite3.Connection) -> int:
             f"请分析并输出 JSON。"
         )
         try:
-            extracted = call_llm_json(prompt, system=_SYSTEM_PROMPT, max_tokens=1024, project="网页解析")
+            extracted = call_llm_json(prompt, system=_SYSTEM_PROMPT, max_tokens=1024,
+                                      task=Task.EXTRACT, scope=Scope.ITEM)
         except Exception as exc:  # noqa: BLE001
             # Leave processed=0 so next run retries; note the error in extracted_json.
             # Own transaction so prior successful rows aren't affected.

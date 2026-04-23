@@ -2,19 +2,8 @@
 {% block title %}收藏 · Prism{% endblock %}
 {% block content %}
 <div class="feed-container">
-    <nav class="feed-nav">
-        <a href="/feed">Feed</a>
-        <a href="/feed/following">关注</a>
-        <a href="/feed/saved" class="active">收藏</a>
-        {% if not is_anonymous %}
-        <a href="/pairwise/sources">Sources</a>
-        <a href="/pairwise/profile">画像</a>
-        {% else %}
-        <a href="/showcase">Showcase</a>
-        <a href="/decisions/weekly">Decisions</a>
-        <a href="/login" style="margin-left:auto">登录</a>
-        {% endif %}
-    </nav>
+    {% set active_nav = 'saved' %}
+    {% include 'partials/feed_nav.html' %}
     {% if not signals %}
     <p>还没有已保存的信号。</p>
     {% else %}

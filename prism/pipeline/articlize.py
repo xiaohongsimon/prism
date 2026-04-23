@@ -4,6 +4,7 @@ import json
 import re
 import logging
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ def find_eligible_items(conn: sqlite3.Connection) -> list[dict]:
     """Find YouTube raw_items that need article generation.
 
     Conditions:
-    - source type = youtube
+    - source type in ('youtube', 'youtube_home')
     - body is not empty and length <= MAX_BODY_LENGTH
     - no existing article for this raw_item
     """
@@ -45,7 +46,7 @@ def find_eligible_items(conn: sqlite3.Connection) -> list[dict]:
         FROM raw_items ri
         JOIN sources s ON ri.source_id = s.id
         LEFT JOIN articles a ON a.raw_item_id = ri.id
-        WHERE s.type = 'youtube'
+        WHERE s.type IN ('youtube', 'youtube_home')
           AND length(ri.body) > 0
           AND length(ri.body) <= ?
           AND a.id IS NULL
@@ -96,14 +97,37 @@ def parse_llm_response(raw: str) -> dict | None:
     return None
 
 
+_PLACEHOLDER_SUBTITLES = {"...", "一句话摘要"}
+_PLACEHOLDER_BODY_MARKERS = (
+    "Markdown 正文",
+    "Markdown 格式的正文",
+    "章节标题",
+    "正文内容",
+    "关键引用1",
+)
+
+
 def _validate_article(data: dict) -> bool:
-    """Check article JSON has required fields with valid content."""
+    """Reject empty or placeholder articles so they never reach readers.
+
+    Guards against the failure mode where the LLM echoes the prompt's JSON
+    example verbatim (e.g. subtitle='...', body='# 章节1\\n...'). Rejected
+    articles leave the raw_item eligible for a retry on the next run.
+    """
     if not isinstance(data, dict):
         return False
-    body = data.get("body", "")
-    if not body or len(body.strip()) < 1:
+    subtitle = (data.get("subtitle") or "").strip()
+    body = (data.get("body") or "").strip()
+    if not subtitle or not body:
         return False
-    if not data.get("subtitle"):
+    if subtitle in _PLACEHOLDER_SUBTITLES:
+        return False
+    if any(marker in body for marker in _PLACEHOLDER_BODY_MARKERS):
+        return False
+    # A body whose only content under headings is `...` (possibly repeated)
+    # is a placeholder dump — strip headings and see what's left.
+    stripped = re.sub(r"(?m)^\s*#+\s.*$", "", body).strip()
+    if stripped and all(line.strip() in {"", "..."} for line in stripped.splitlines()):
         return False
     return True
 
@@ -139,45 +163,65 @@ def save_article(
     return cursor.lastrowid
 
 
-def run_articlize(conn: sqlite3.Connection) -> dict:
-    """Main entry point: find eligible items and generate articles."""
+def _articlize_one(item: dict) -> tuple[int, str, dict | None, str | None]:
+    """Worker: LLM call only, no DB access. Returns (item_id, title, parsed, error)."""
     from prism.pipeline.llm import call_llm_json
+    from prism.pipeline.llm_tasks import Scope, Task
 
+    prompt = ARTICLIZE_USER_TEMPLATE.format(title=item["title"], body=item["body"])
+    try:
+        raw_response = call_llm_json(prompt, system=ARTICLIZE_SYSTEM, max_tokens=4096,
+                                     task=Task.STRUCTURIZE, scope=Scope.ITEM)
+        if isinstance(raw_response, dict) and _validate_article(raw_response):
+            parsed = raw_response
+        else:
+            parsed = parse_llm_response(
+                json.dumps(raw_response) if isinstance(raw_response, dict) else str(raw_response)
+            )
+    except Exception as exc:
+        return item["id"], item["title"], None, f"{type(exc).__name__}: {exc}"
+    return item["id"], item["title"], parsed, None
+
+
+def run_articlize(conn: sqlite3.Connection, *, max_workers: int = 4) -> dict:
+    """Main entry point: find eligible items and generate articles.
+
+    Parallelism: `max_workers` threads run LLM calls concurrently. DB writes
+    stay on the main thread (sqlite3 connection is not thread-safe for
+    concurrent writes).
+    """
     items = find_eligible_items(conn)
     logger.info("Found %d eligible items for articlize", len(items))
 
     stats = {"total": len(items), "success": 0, "failed": 0, "skipped": 0}
+    if not items:
+        return stats
 
-    for item in items:
-        prompt = ARTICLIZE_USER_TEMPLATE.format(title=item["title"], body=item["body"])
-        try:
-            raw_response = call_llm_json(prompt, system=ARTICLIZE_SYSTEM, max_tokens=4096, project="内容结构化")
-            if isinstance(raw_response, dict) and _validate_article(raw_response):
-                parsed = raw_response
-            else:
-                parsed = parse_llm_response(
-                    json.dumps(raw_response) if isinstance(raw_response, dict) else str(raw_response)
-                )
-        except Exception as exc:
-            logger.warning("LLM call failed for item %d (%s): %s", item["id"], item["title"], exc)
-            stats["failed"] += 1
-            continue
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_articlize_one, item) for item in items]
+        for future in as_completed(futures):
+            item_id, title, parsed, error = future.result()
 
-        if not parsed:
-            logger.warning("Invalid LLM response for item %d (%s)", item["id"], item["title"])
-            stats["failed"] += 1
-            continue
+            if error:
+                logger.warning("LLM call failed for item %d (%s): %s", item_id, title, error)
+                stats["failed"] += 1
+                continue
 
-        save_article(
-            conn,
-            raw_item_id=item["id"],
-            title=item["title"],
-            subtitle=parsed["subtitle"],
-            structured_body=parsed["body"],
-            highlights=parsed.get("highlights", []),
-            model_id="omlx",
-        )
-        stats["success"] += 1
-        logger.info("Generated article for: %s", item["title"])
+            if not parsed:
+                logger.warning("Invalid LLM response for item %d (%s)", item_id, title)
+                stats["failed"] += 1
+                continue
+
+            save_article(
+                conn,
+                raw_item_id=item_id,
+                title=title,
+                subtitle=parsed["subtitle"],
+                structured_body=parsed["body"],
+                highlights=parsed.get("highlights", []),
+                model_id="omlx",
+            )
+            stats["success"] += 1
+            logger.info("Generated article for: %s", title)
 
     return stats

@@ -1,12 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<nav class="feed-nav">
-    <a href="/feed">Feed</a>
-    <a href="/feed/following">关注</a>
-    <a href="/feed/saved">收藏</a>
-    <a href="/pairwise/sources" class="active">Sources</a>
-    <a href="/pairwise/profile">画像</a>
-</nav>
+{% set active_nav = 'sources' %}
+{% include 'partials/feed_nav.html' %}
 <div class="sources-page">
     <div class="sources-summary">
         <span class="stat-num">{{ total_sources }}</span> 个来源

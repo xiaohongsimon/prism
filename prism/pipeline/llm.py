@@ -18,6 +18,7 @@ from omlx_sdk import OmlxSyncClient, SdkSettings
 from omlx_sdk.types import OmlxSdkError
 
 from prism.config import settings
+from prism.pipeline.llm_tasks import Scope, Task
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +40,18 @@ def _get_client() -> OmlxSyncClient:
         return _omlx_client
     if not settings.llm_base_url or not settings.llm_api_key:
         raise ValueError("LLM base_url and api_key must be configured")
+    env_defaults = SdkSettings.from_env()
     sdk_settings = SdkSettings(
         endpoint=_strip_v1_suffix(settings.llm_base_url),
         api_key=settings.llm_api_key,
         # Manager ingest URL comes from env (OMLX_MANAGER_INGEST_URL) or
         # defaults to http://127.0.0.1:8003/v1/ingest.
-        manager_ingest_url=SdkSettings.from_env().manager_ingest_url,
-        manager_enabled=SdkSettings.from_env().manager_enabled,
+        manager_ingest_url=env_defaults.manager_ingest_url,
+        manager_enabled=env_defaults.manager_enabled,
+        # HTTP timeout honors OMLX_REQUEST_TIMEOUT_S (default 600s). Dense
+        # reasoning clusters occasionally need 15+ min, so hourly.sh bumps
+        # this to 1800 for the expand stage.
+        request_timeout_s=env_defaults.request_timeout_s,
         ingest_timeout_s=1.0,
     )
     _omlx_client = OmlxSyncClient(caller="prism", settings=sdk_settings)
@@ -76,6 +82,55 @@ INCREMENTAL_USER_TEMPLATE = """请分析以下信息聚类：
 {merged_context}
 
 请输出 JSON 格式的分析结果。"""
+
+# ── Stage 1 (triage): fast, light-weight signal classification ──
+# Run against a cheap model (gemma-4-26b-a4b-it-8bit) for every cluster.
+# Drops `content_zh` and `tl_perspective` — those are the expensive fields
+# that bloat output length on dense papers / long changelogs. The expand
+# stage adds them back for high-strength signals only.
+INCREMENTAL_TRIAGE_SYSTEM = """你是 Prism 信号分诊系统。快速判断信息聚类的信号价值。
+输出必须是 JSON，严格只包含这 5 个字段：
+- summary: 一句话中文摘要（不超过 60 字）
+- signal_layer: actionable | strategic | noise
+- signal_strength: 1-5 整数
+- why_it_matters: 一句话说明（不超过 40 字，如 signal_layer=noise 可填"无"）
+- tags: 相关中文标签列表（最多 5 个）
+
+要求：简短精准，不要长篇推理，不要翻译原文。"""
+
+INCREMENTAL_TRIAGE_USER_TEMPLATE = """请分诊以下信息聚类：
+
+主题：{topic_label}
+包含 {item_count} 条信息
+
+内容摘要：
+{merged_context}
+
+输出 JSON，只包含 5 个字段，避免冗长解释。"""
+
+# ── Stage 2 (expand): deep translation + TL perspective ──
+# Run against the reasoning model (Qwen3.6-35B-A3B-8bit), but only for
+# signals triaged as high-value. Inputs include the triage summary so the
+# model knows "why this one matters" without redoing the judgment.
+INCREMENTAL_EXPAND_SYSTEM = """你是 Prism 信号深度解读系统。对已判定为高价值的信号，补充深度解读。
+输出必须是 JSON，严格只包含这 3 个字段：
+- content_zh: 原文内容的完整中文翻译（保留原结构和语气，忠实翻译而非概括）
+- tl_perspective: 从技术管理者视角的解读（2-3 句，含具体观点和判断）
+- action: 建议行动（一句话，如无可填"无"）
+
+要求：content_zh 忠实翻译，tl_perspective 有判断不空洞。"""
+
+INCREMENTAL_EXPAND_USER_TEMPLATE = """以下信号已经过初步分诊，判定为值得深度解读：
+
+主题：{topic_label}
+初步摘要：{summary}
+为何重要：{why_it_matters}
+强度：{signal_strength}/5
+
+原文内容：
+{merged_context}
+
+请输出 JSON，只包含 content_zh + tl_perspective + action 三个字段。"""
 
 # YouTube / long-form video content: extract key insights from transcript
 VIDEO_SYSTEM = """你是 Prism 视频内容深度分析系统。你的任务是从视频字幕文本中提炼核心精华。
@@ -154,15 +209,24 @@ def call_llm(prompt: str, system: str = "", model: Optional[str] = None,
              base_url: Optional[str] = None, api_key: Optional[str] = None,
              timeout: int = 300, max_tokens: int = 2048,
              *,
+             task: Task,
+             scope: Scope = Scope.ITEM,
+             source_key: Optional[str] = None,
              intent: Optional[str] = None,
-             session_id: Optional[str] = None,
-             project: Optional[str] = None) -> str:
+             session_id: Optional[str] = None) -> str:
     """Call OMLX (OpenAI-compatible), return response text.
 
-    New kwargs (all optional, backward compatible):
+    Mandatory tagging:
+        task:   Task enum — which semantic transformation this call performs
+                (translate / summarize / structurize / extract / ...). Missing
+                task = raise. ``unassigned`` is not a legal value.
+        scope:  Scope enum — input granularity (item/cluster/daily/...).
+                Defaults to Scope.ITEM.
+
+    Optional:
+        source_key: e.g. "x:karpathy" — surfaces in tags for per-source slicing
         intent:     e.g. "fast" — SDK resolves to a model from the intent table
         session_id: e.g. f"job-{job_run_id}" — groups related calls
-        project:    e.g. job_type — labels what pipeline this call belongs to
 
     base_url/api_key kwargs are deprecated at this layer: the SDK client
     is constructed once from prism.config.settings. They are accepted for
@@ -170,6 +234,17 @@ def call_llm(prompt: str, system: str = "", model: Optional[str] = None,
     """
     if base_url or api_key:
         logger.debug("call_llm: base_url/api_key args ignored (SDK uses module client)")
+
+    if not isinstance(task, Task):
+        raise TypeError(
+            f"call_llm requires task: Task (got {type(task).__name__}). "
+            "Use prism.pipeline.llm_tasks.Task — no free-form strings."
+        )
+    if not isinstance(scope, Scope):
+        raise TypeError(
+            f"call_llm requires scope: Scope (got {type(scope).__name__}). "
+            "Use prism.pipeline.llm_tasks.Scope."
+        )
 
     # model resolution: explicit model > intent > settings.llm_model
     resolved_model = model if model else (None if intent else settings.llm_model)
@@ -181,6 +256,12 @@ def call_llm(prompt: str, system: str = "", model: Optional[str] = None,
 
     client = _get_client()
 
+    # Tag dims: `task` and `scope` are contract; `source_key` is optional slice.
+    # `project=task.value` is kept for dashboards that still group by project.
+    tags: dict[str, str] = {"task": task.value, "scope": scope.value}
+    if source_key:
+        tags["source_key"] = source_key
+
     last_exc: Exception | None = None
     for attempt in range(4):
         try:
@@ -191,7 +272,8 @@ def call_llm(prompt: str, system: str = "", model: Optional[str] = None,
                 model=resolved_model,
                 intent=intent,
                 session_id=session_id,
-                project=project,
+                project=task.value,
+                tags=tags,
                 temperature=0.3,
                 max_tokens=max_tokens,
                 repetition_penalty=1.2,
@@ -284,13 +366,16 @@ def call_llm_json(prompt: str, system: str = "", model: Optional[str] = None,
                   base_url: Optional[str] = None, api_key: Optional[str] = None,
                   timeout: int = 300, max_tokens: int = 2048,
                   *,
+                  task: Task,
+                  scope: Scope = Scope.ITEM,
+                  source_key: Optional[str] = None,
                   intent: Optional[str] = None,
-                  session_id: Optional[str] = None,
-                  project: Optional[str] = None) -> dict:
-    """Call LLM and parse JSON from response."""
+                  session_id: Optional[str] = None) -> dict:
+    """Call LLM and parse JSON from response. See ``call_llm`` for tagging contract."""
     text = call_llm(prompt, system, model, base_url, api_key, timeout=timeout,
                     max_tokens=max_tokens,
-                    intent=intent, session_id=session_id, project=project)
+                    task=task, scope=scope, source_key=source_key,
+                    intent=intent, session_id=session_id)
 
     # Extract JSON from response (handle thinking tags, code blocks, extra text)
     text = text.strip()

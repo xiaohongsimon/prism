@@ -25,7 +25,13 @@
             </span>
         </div>
     </header>
-    <div class="tw-body">{{ signal.tweet_text or signal.content_zh or signal.summary }}</div>
+    {# Chinese-first: signal.content_zh is the LLM-polished Chinese version of
+       the tweet body; fall back to the raw English tweet if translation is
+       missing. summary is the one-line signal title (last resort). #}
+    <div class="tw-body">{{ signal.content_zh or signal.tweet_text or signal.summary }}</div>
+    {% if signal.content_zh and signal.tweet_text and signal.tweet_text != signal.content_zh %}
+    <details class="tw-original"><summary>原文</summary><div class="tw-original-body">{{ signal.tweet_text }}</div></details>
+    {% endif %}
     {% if signal.quoted_tweet and signal.quoted_tweet.text %}
     <blockquote class="tw-quoted">
         {% if signal.quoted_tweet.name %}<div class="tw-quoted-author">{{ signal.quoted_tweet.name }} {% if signal.quoted_tweet.handle %}<span>@{{ signal.quoted_tweet.handle }}</span>{% endif %}</div>{% endif %}

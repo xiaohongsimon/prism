@@ -1,0 +1,20 @@
+{# Shared top nav. Caller sets `active_nav` to one of:
+   feed | following | saved | sources | profile | board
+   For anonymous visitors we collapse to a single 精选 tab + 登录,
+   since they can neither follow/unfollow nor interact beyond reading. #}
+{% if is_anonymous %}
+<nav class="feed-nav">
+    <a href="/feed/following" class="active">精选</a>
+    <a href="/showcase">关于</a>
+    <a href="/login" style="margin-left:auto">登录</a>
+</nav>
+{% else %}
+<nav class="feed-nav">
+    <a href="/feed"{% if active_nav == 'feed' %} class="active"{% endif %}>Feed</a>
+    <a href="/feed/following"{% if active_nav == 'following' %} class="active"{% endif %}>关注</a>
+    <a href="/feed/saved"{% if active_nav == 'saved' %} class="active"{% endif %}>收藏</a>
+    <a href="/board#candidates"{% if active_nav == 'candidates' %} class="active"{% endif %}>候选</a>
+    <a href="/pairwise/profile"{% if active_nav == 'profile' %} class="active"{% endif %}>画像</a>
+    <a href="/board"{% if active_nav == 'board' %} class="active"{% endif %}>看板</a>
+</nav>
+{% endif %}

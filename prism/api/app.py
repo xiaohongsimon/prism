@@ -42,7 +42,7 @@ def create_app(conn: Optional[sqlite3.Connection] = None) -> FastAPI:
         # Auth check (skip for public paths, API, and static)
         if auth_enabled:
             path = request.url.path
-            is_public = any(path.startswith(p) for p in _PUBLIC_PATHS) or path.startswith("/api")
+            is_public = path == "/" or any(path.startswith(p) for p in _PUBLIC_PATHS) or path.startswith("/api")
             if not is_public:
                 token = request.cookies.get(COOKIE_NAME)
                 user = validate_session(app.state.db, token) if token else None

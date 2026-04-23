@@ -2,19 +2,8 @@
 {% block title %}Feed · Prism{% endblock %}
 {% block content %}
 <div class="feed-container">
-    <nav class="feed-nav">
-        <a href="/feed" class="active">Feed</a>
-        <a href="/feed/following">关注</a>
-        <a href="/feed/saved">收藏</a>
-        {% if not is_anonymous %}
-        <a href="/pairwise/sources">Sources</a>
-        <a href="/pairwise/profile">画像</a>
-        {% else %}
-        <a href="/showcase">Showcase</a>
-        <a href="/decisions/weekly">Decisions</a>
-        <a href="/login" style="margin-left:auto">登录</a>
-        {% endif %}
-    </nav>
+    {% set active_nav = 'feed' %}
+    {% include 'partials/feed_nav.html' %}
 
     {% if is_anonymous %}
     <div style="background:#14141a;border:1px solid #2a2a33;border-radius:10px;padding:14px 18px;margin:12px 0;color:#b8b8b0;font-size:13px;line-height:1.5">

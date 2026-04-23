@@ -11,6 +11,7 @@ import sqlite3
 from typing import Any
 
 from prism.pipeline.llm import call_llm_json
+from prism.pipeline.llm_tasks import Scope, Task
 
 
 _PERSONA_BIAS_CLIP = 5.0
@@ -87,7 +88,8 @@ def extract_from_snapshot(conn, snapshot_id: int) -> tuple[int, int]:
     prompt = _build_extract_prompt(
         answers, free_text, seed_handles, _fetch_current_top_prefs(conn),
     )
-    result = call_llm_json(prompt, system=PERSONA_PROMPT_SYSTEM, max_tokens=4096, project="画像提取")
+    result = call_llm_json(prompt, system=PERSONA_PROMPT_SYSTEM, max_tokens=4096,
+                           task=Task.EXTRACT, scope=Scope.SOURCE_PROFILE)
     if not isinstance(result, dict):
         raise ValueError(
             f"LLM returned non-dict result for snapshot {snapshot_id}: "

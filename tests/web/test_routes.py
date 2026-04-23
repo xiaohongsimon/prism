@@ -40,19 +40,18 @@ def test_channel_page():
     assert "x:karpathy" in resp.text
 
 
-def test_channel_unfollow():
+def test_channel_unfollow_anonymous_blocked():
+    """Anonymous users must not be able to mutate follow state."""
     client = _test_client()
     resp = client.post("/channel/x:karpathy/unfollow")
-    assert resp.status_code == 200
-    assert "关注" in resp.text
+    assert resp.status_code == 401
 
 
-def test_channel_follow():
+def test_channel_follow_anonymous_blocked():
+    """Anonymous users must not be able to mutate follow state."""
     client = _test_client()
-    client.post("/channel/x:karpathy/unfollow")
     resp = client.post("/channel/x:karpathy/follow")
-    assert resp.status_code == 200
-    assert "取消关注" in resp.text
+    assert resp.status_code == 401
 
 
 def test_static_css():

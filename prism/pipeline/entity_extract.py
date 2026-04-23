@@ -261,10 +261,12 @@ def extract_entities_llm(
         Returns {"entities": []} on any failure.
     """
     from prism.pipeline.llm import call_llm_json  # local import to keep module testable
+    from prism.pipeline.llm_tasks import Scope, Task
 
     prompt = build_extraction_prompt(signal, candidates, known_entities, date)
     try:
-        result = call_llm_json(prompt, system=ENTITY_EXTRACT_SYSTEM, model=model, project="实体抽取")
+        result = call_llm_json(prompt, system=ENTITY_EXTRACT_SYSTEM, model=model,
+                               task=Task.EXTRACT, scope=Scope.ITEM)
         if not isinstance(result, dict) or "entities" not in result:
             logger.warning("LLM returned unexpected structure: %r", result)
             return {"entities": []}

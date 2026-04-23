@@ -38,7 +38,12 @@ def _fetch_via_api(video_id: str) -> str | None:
 
 
 def _fetch_via_ytdlp(video_url: str) -> str | None:
-    """Fallback: yt-dlp subprocess (slower but handles edge cases)."""
+    """Fallback: yt-dlp subprocess (slower but handles edge cases).
+
+    YouTube aggressively throttles consecutive subtitle downloads (HTTP 429).
+    We pass --sleep-subtitles to add jitter between requests and
+    --sleep-requests for the metadata calls.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
         out_template = str(Path(tmpdir) / "sub")
 
@@ -50,12 +55,18 @@ def _fetch_via_ytdlp(video_url: str) -> str | None:
                 "--sub-langs", "zh.*,en.*",
                 "--sub-format", "srt/vtt/best",
                 "--convert-subs", "srt",
+                "--sleep-subtitles", "2",
+                "--sleep-requests", "1",
+                "--retries", "2",
                 "-o", out_template,
                 video_url,
             ]
             try:
-                proc = subprocess.run(cmd, capture_output=True, timeout=60)
+                proc = subprocess.run(cmd, capture_output=True, timeout=90)
                 if proc.returncode != 0:
+                    stderr = proc.stderr.decode("utf-8", errors="replace")
+                    if "429" in stderr:
+                        logger.warning("yt-dlp rate-limited (429) for %s", video_url)
                     continue
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 continue

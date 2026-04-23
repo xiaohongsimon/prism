@@ -13,9 +13,11 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 from prism.pipeline.llm import call_llm
+from prism.pipeline.llm_tasks import Scope, Task
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +74,8 @@ def translate_one(body: str, *, max_tokens: int = 2048) -> str:
             system=TRANSLATE_SYSTEM,
             model=TRANSLATE_MODEL,
             max_tokens=max_tokens,
-            project="翻译",
+            task=Task.TRANSLATE,
+            scope=Scope.ITEM,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("translate_one failed: %s: %s", type(exc).__name__, exc)
@@ -92,6 +95,7 @@ def translate_pending(
     source_types: tuple[str, ...] = ("x", "follow_builders"),
     since_days: int = 7,
     source_key: str = "",
+    max_workers: int = 4,
 ) -> TranslateOutcome:
     """Translate up to `limit` raw_items rows whose body_zh is empty.
 
@@ -136,13 +140,15 @@ def translate_pending(
 
     outcome = TranslateOutcome(scanned=len(rows))
 
+    # Phase 1: fast-path filtering on main thread (no LLM).
+    # "Already Chinese" and "noise-only" rows are handled here so the worker
+    # pool only sees rows that genuinely need LLM translation.
+    needs_llm: list[tuple[int, str]] = []
     for row in rows:
         body = row["body"] if isinstance(row, sqlite3.Row) else row[1]
         item_id = row["id"] if isinstance(row, sqlite3.Row) else row[0]
 
         if _looks_chinese(body):
-            # Mark as "already Chinese" by copying body to body_zh so we don't
-            # re-scan this row next time.
             conn.execute(
                 "UPDATE raw_items SET body_zh = ? WHERE id = ?",
                 (body, item_id),
@@ -150,9 +156,6 @@ def translate_pending(
             outcome.skipped += 1
             continue
 
-        # If the body has no translatable text after stripping URLs/mentions/
-        # hashtags/emoji (e.g. a tweet that is just a bare URL), there is
-        # nothing to send to the LLM — mark it skipped so we stop re-scanning.
         if not _NOISE_RE.sub("", body).strip():
             conn.execute(
                 "UPDATE raw_items SET body_zh = ? WHERE id = ?",
@@ -161,18 +164,37 @@ def translate_pending(
             outcome.skipped += 1
             continue
 
-        zh = translate_one(body)
-        if not zh:
-            outcome.failed += 1
-            continue
-
-        conn.execute(
-            "UPDATE raw_items SET body_zh = ? WHERE id = ?",
-            (zh, item_id),
-        )
-        outcome.translated += 1
-        # Commit per-row so partial runs aren't lost on Ctrl-C
-        conn.commit()
+        needs_llm.append((item_id, body))
 
     conn.commit()
+
+    # Phase 2: parallel LLM translation. DB writes stay on the main thread
+    # (sqlite3 connection is not thread-safe for concurrent writes), workers
+    # only run the LLM call and return the result.
+    if needs_llm:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_id = {
+                executor.submit(translate_one, body): item_id
+                for item_id, body in needs_llm
+            }
+            for future in as_completed(future_to_id):
+                item_id = future_to_id[future]
+                try:
+                    zh = future.result()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("translate worker failed for id=%d: %s", item_id, exc)
+                    zh = ""
+
+                if not zh:
+                    outcome.failed += 1
+                    continue
+
+                conn.execute(
+                    "UPDATE raw_items SET body_zh = ? WHERE id = ?",
+                    (zh, item_id),
+                )
+                outcome.translated += 1
+                # Commit per-row so partial runs aren't lost on Ctrl-C
+                conn.commit()
+
     return outcome

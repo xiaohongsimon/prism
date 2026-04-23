@@ -16,14 +16,15 @@ def cli():
 
 @cli.command()
 @click.option("--source", default=None, help="Sync specific source_key only")
-def sync(source):
+@click.option("--type", "types", multiple=True, help="Sync only these source types (repeatable)")
+def sync(source, types):
     """Sync all enabled sources."""
     import asyncio
     from prism.pipeline.sync import run_sync
     conn = get_connection(settings.db_path)
     from prism.source_manager import reconcile_sources
     reconcile_sources(conn, settings.source_config)
-    stats = asyncio.run(run_sync(conn, source_key=source))
+    stats = asyncio.run(run_sync(conn, source_key=source, types=list(types) or None))
     click.echo(f"Sync complete: {stats['sources_ok']} ok, {stats['sources_failed']} failed, {stats['items_total']} items")
 
 
@@ -164,22 +165,43 @@ def cluster(show_eval):
 
 
 @cli.command()
-@click.option("--incremental", is_flag=True, help="Run incremental analysis on new clusters")
+@click.option("--incremental", is_flag=True, help="Run triage + expand sequentially (backward-compat composite)")
+@click.option("--triage", "triage_only", is_flag=True, help="Stage 1 only: fast classification of new clusters (cheap model)")
+@click.option("--expand", "expand_only", is_flag=True, help="Stage 2 only: deep translate high-strength signals (reasoning model)")
 @click.option("--daily", is_flag=True, help="Run daily batch analysis")
 @click.option("--date", default=None, help="Date for daily analysis (YYYY-MM-DD)")
-@click.option("--workers", default=4, help="Max concurrent LLM calls")
-def analyze(incremental, daily, date, workers):
+@click.option("--workers", default=6, help="Max concurrent LLM calls (OMLX non-linear: 4→2.5x, diminishing above 6).")
+@click.option("--min-strength", default=4, type=int, help="Expand: minimum signal_strength to deep-read (1-5, default 4)")
+@click.option("--limit", default=30, type=int, help="Expand: max signals to deep-read per run (default 30)")
+def analyze(incremental, triage_only, expand_only, daily, date, workers, min_strength, limit):
     """Run LLM signal analysis."""
-    from prism.pipeline.analyze import run_incremental_analysis, run_daily_analysis
+    from prism.pipeline.analyze import (
+        run_incremental_analysis, run_daily_analysis,
+        run_triage, run_expand,
+    )
     conn = get_connection(settings.db_path)
 
-    if not incremental and not daily:
-        click.echo("Specify --incremental or --daily")
+    if not any([incremental, triage_only, expand_only, daily]):
+        click.echo("Specify --incremental, --triage, --expand, or --daily")
         return
 
+    if triage_only:
+        count = run_triage(conn, model=settings.llm_cheap_model, max_workers=workers)
+        click.echo(f"Triage: {count} signals created")
+
+    if expand_only:
+        count = run_expand(conn, model=settings.llm_model,
+                           min_strength=min_strength, limit=limit,
+                           max_workers=min(workers, 4))
+        click.echo(f"Expand: {count} signals deep-read")
+
     if incremental:
-        count = run_incremental_analysis(conn, model=settings.llm_cheap_model, max_workers=workers)
-        click.echo(f"Incremental analysis: {count} signals created")
+        count = run_incremental_analysis(
+            conn, model=settings.llm_cheap_model, max_workers=workers,
+            expand_model=settings.llm_model,
+            min_strength=min_strength, expand_limit=limit,
+        )
+        click.echo(f"Incremental analysis: {count} signals triaged (expand ran on high-strength subset)")
 
     if daily:
         from datetime import date as date_cls, timedelta
@@ -236,10 +258,40 @@ def serve(port):
     uvicorn.run("prism.api.app:create_app", host="0.0.0.0", port=port, factory=True)
 
 
+@cli.command()
+@click.option("--format", "fmt", default="epub",
+              type=click.Choice(["epub"]),
+              help="Export format (only epub for now)")
+@click.option("--days", default=7, show_default=True, type=int,
+              help="Include followed-source items from the last N days")
+@click.option("--out", "out_path", default=None,
+              help="Output path. Defaults to ~/Downloads/prism-YYYYMMDD-Nd.epub")
+def export(fmt, days, out_path):
+    """Export /feed/following to an offline EPUB for phone / flight reading."""
+    from prism.pipeline.export import export_epub_to_file, default_filename
+
+    conn = get_connection(settings.db_path)
+    if out_path is None:
+        out_path = str(Path.home() / "Downloads" / default_filename(days))
+    target = Path(out_path).expanduser()
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    size = export_epub_to_file(conn, days=days, out_path=target)
+    click.echo(f"export: wrote {size:,} bytes → {target}")
+
+
 @cli.command("enrich-youtube")
 @click.option("--limit", default=10, help="Max videos to process")
-def enrich_youtube(limit):
-    """Backfill YouTube items with subtitle transcripts."""
+@click.option("--retry-after-hours", default=168,
+              help="Skip items tried within this window (default: 7 days)")
+@click.option("--max-attempts", default=3,
+              help="Stop trying items that have failed this many times")
+def enrich_youtube(limit, retry_after_hours, max_attempts):
+    """Backfill YouTube items with subtitle transcripts.
+
+    Tracks attempts in youtube_subtitle_attempts so we don't spin forever
+    on videos that genuinely have no captions.
+    """
     from prism.config import settings
     from prism.db import get_connection
     from prism.sources.subtitles import extract_subtitles
@@ -250,13 +302,17 @@ def enrich_youtube(limit):
         SELECT ri.id, ri.url, ri.title, LENGTH(ri.body) as body_len
         FROM raw_items ri
         JOIN sources s ON s.id = ri.source_id
+        LEFT JOIN youtube_subtitle_attempts ysa ON ysa.raw_item_id = ri.id
         WHERE s.type IN ('youtube', 'youtube_home')
           AND ri.url NOT LIKE '%/shorts/%'
           AND LENGTH(ri.body) < 500
+          AND (ysa.raw_item_id IS NULL
+               OR (ysa.attempts < ?
+                   AND ysa.last_attempt_at < datetime('now', ?)))
         ORDER BY ri.id DESC
         LIMIT ?
         """,
-        (limit,),
+        (max_attempts, f'-{retry_after_hours} hours', limit),
     ).fetchall()
 
     click.echo(f"Found {len(rows)} YouTube items with short body")
@@ -269,13 +325,29 @@ def enrich_youtube(limit):
                 "UPDATE raw_items SET body = ? WHERE id = ?",
                 (transcript[:8000], row["id"]),
             )
-            conn.commit()
+            _record_subtitle_attempt(conn, row["id"], "ok")
             enriched += 1
             click.echo(f"    ✓ {len(transcript)} chars")
         else:
+            _record_subtitle_attempt(conn, row["id"], "no_subs")
             click.echo("    ✗ no subtitles")
 
     click.echo(f"\nEnriched {enriched}/{len(rows)} items")
+
+
+def _record_subtitle_attempt(conn, raw_item_id: int, outcome: str) -> None:
+    """Upsert a row into youtube_subtitle_attempts."""
+    conn.execute(
+        """INSERT INTO youtube_subtitle_attempts
+           (raw_item_id, attempts, last_attempt_at, last_outcome)
+           VALUES (?, 1, datetime('now'), ?)
+           ON CONFLICT(raw_item_id) DO UPDATE SET
+             attempts = attempts + 1,
+             last_attempt_at = datetime('now'),
+             last_outcome = excluded.last_outcome""",
+        (raw_item_id, outcome),
+    )
+    conn.commit()
 
 
 @cli.command("expand-links")
@@ -401,6 +473,7 @@ def publish_videos(limit):
 
     from prism.output.notion import NOTION_API_URL, NOTION_VERSION
     from prism.pipeline.llm import call_llm
+    from prism.pipeline.llm_tasks import Scope, Task
     import re as _re
 
     STRUCTURE_PROMPT = (
@@ -421,7 +494,7 @@ def publish_videos(limit):
             result = call_llm(body[:6000], system=STRUCTURE_PROMPT,
                               model="gemma-4-31b-it-8bit",
                               max_tokens=4096, timeout=600,
-                              project="内容结构化")
+                              task=Task.STRUCTURIZE, scope=Scope.ITEM)
             # Strip thinking tags
             result = _re.sub(r"<think>.*?</think>", "", result, flags=_re.DOTALL).strip()
             if "##" in result and len(result) > 200:
@@ -924,18 +997,25 @@ def sync_follows_cmd(do_apply: bool, max_new: int, depth: str, check_orphans: bo
 @cli.command("translate-bodies")
 @click.option("--limit", default=100, show_default=True,
               help="Max raw_items to translate this run.")
-@click.option("--source-type", multiple=True, default=("x", "follow_builders"),
+@click.option("--source-type", multiple=True,
+              default=("x", "follow_builders", "x_home",
+                       "hackernews", "hn_search", "producthunt", "reddit"),
               show_default=True,
-              help="Restrict to these source types (repeatable).")
+              help="Restrict to these source types (repeatable). "
+                   "Default covers all non-Chinese text-only sources — mirrors "
+                   "board.py TRANSLATABLE_TYPES.")
 @click.option("--since-days", default=7, show_default=True,
               help="Only translate items published in the last N days. 0 = no date filter.")
 @click.option("--source-key", default="",
               help="Restrict to a single source_key (e.g. 'x:karpathy').")
+@click.option("--workers", default=4, show_default=True,
+              help="Concurrent LLM calls (OMLX batching: 4→2.5x, diminishing above).")
 def translate_bodies_cmd(
     limit: int,
     source_type: tuple[str, ...],
     since_days: int,
     source_key: str,
+    workers: int,
 ):
     """Pre-translate raw_items.body → body_zh for creator pages.
 
@@ -950,6 +1030,7 @@ def translate_bodies_cmd(
         source_types=source_type,
         since_days=since_days,
         source_key=source_key,
+        max_workers=workers,
     )
     click.echo(
         f"translate-bodies: scanned={outcome.scanned} "
@@ -1145,3 +1226,14 @@ def xyz_queue_status():
     for src, counts in sorted(s["by_source"].items()):
         parts = "  ".join(f"{k}={v}" for k, v in sorted(counts.items()))
         click.echo(f"  {src:30s}  {parts}")
+
+
+@cli.command("xyz-rank")
+@click.option("--limit", type=int, default=50, help="How many top entries to fetch")
+def xyz_rank_cmd(limit):
+    """Pull Apple Podcasts CN top-N and refresh xyz_rank_candidate."""
+    from prism.discovery.xyz_rank import sync_rank
+    conn = get_connection(settings.db_path)
+    stats = sync_rank(conn, limit=limit)
+    click.echo(f"xyz-rank: fetched={stats['fetched']} added={stats['added']} "
+               f"updated={stats['updated']}")

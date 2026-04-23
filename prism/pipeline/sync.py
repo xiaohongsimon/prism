@@ -70,7 +70,11 @@ def _handle_success(conn: sqlite3.Connection, source: sqlite3.Row, result: SyncR
             title=item.title,
             body=item.body,
             author=item.author,
-            published_at=item.published_at.isoformat() if item.published_at else "",
+            # Pass None (→ SQL NULL) when the adapter has no timestamp.
+            # Empty string would break COALESCE(published_at, created_at) used
+            # in the board / feed queries — '' is not NULL, so the fallback
+            # never fires. See board.py.
+            published_at=item.published_at.isoformat() if item.published_at else None,
             raw_json=item.raw_json or "{}",
             thread_partial=item.thread_partial,
         )
@@ -113,32 +117,27 @@ def _handle_failure(conn: sqlite3.Connection, source: sqlite3.Row, result: SyncR
                    result.error, new_failures, threshold)
 
 
-async def run_sync(conn: sqlite3.Connection, source_key: str | None = None) -> dict:
-    """Run sync for all eligible sources (or a single source_key).
+async def _sync_type_queue(
+    conn: sqlite3.Connection,
+    src_type: str,
+    sources: list[sqlite3.Row],
+) -> tuple[int, int, int]:
+    """Run one source-type's queue sequentially, preserving rate-limit between requests.
 
-    Returns stats dict: {sources_ok, sources_failed, items_total}.
+    Returns (sources_ok, sources_failed, items_total) for this type.
     """
-    job_id = insert_job_run(conn, job_type="sync")
-    sources = _get_syncable_sources(conn, source_key)
+    ok = 0
+    failed = 0
+    items = 0
+    base_delay = SOURCE_TYPE_DELAY.get(src_type, 0)
+    cur_delay = base_delay  # escalates on 429
 
-    sources_ok = 0
-    sources_failed = 0
-    items_total = 0
-    last_type: str | None = None
-    type_throttled: dict[str, float] = {}  # escalated delay after 429
-
-    for src in sources:
-        # Rate limit: delay between consecutive requests to the same source type
-        src_type = src["type"]
-        base_delay = SOURCE_TYPE_DELAY.get(src_type, 0)
-        delay = type_throttled.get(src_type, base_delay)
-        if delay and last_type == src_type:
-            await asyncio.sleep(delay)
-        last_type = src_type
+    for idx, src in enumerate(sources):
+        if idx > 0 and cur_delay:
+            await asyncio.sleep(cur_delay)
 
         try:
             adapter = get_adapter(src_type)
-            # Build config from DB fields + parsed config_yaml
             config = {"handle": src["handle"], "source_key": src["source_key"]}
             if src["config_yaml"]:
                 import yaml
@@ -151,16 +150,51 @@ async def run_sync(conn: sqlite3.Connection, source_key: str | None = None) -> d
             )
 
         if result.success:
-            stored = _handle_success(conn, src, result)
-            items_total += stored
-            sources_ok += 1
+            items += _handle_success(conn, src, result)
+            ok += 1
         else:
             _handle_failure(conn, src, result)
-            sources_failed += 1
-            # Escalate delay on 429 to avoid burning remaining sources
+            failed += 1
             if result.error and "429" in result.error:
-                current = type_throttled.get(src_type, base_delay)
-                type_throttled[src_type] = min(current * 2, 30.0)
+                cur_delay = min(max(cur_delay, base_delay or 1.0) * 2, 30.0)
+
+    return ok, failed, items
+
+
+async def run_sync(
+    conn: sqlite3.Connection,
+    source_key: str | None = None,
+    types: list[str] | None = None,
+) -> dict:
+    """Run sync for all eligible sources (or a single source_key, or filter by types).
+
+    Parallelism: different source types run concurrently (X / YouTube / arxiv /
+    xiaoyuzhou each get their own coroutine). Within a single type, sources
+    still run sequentially so per-type rate limits are respected.
+
+    Returns stats dict: {sources_ok, sources_failed, items_total}.
+    """
+    job_id = insert_job_run(conn, job_type="sync")
+    sources = _get_syncable_sources(conn, source_key)
+
+    if types:
+        type_set = set(types)
+        sources = [s for s in sources if s["type"] in type_set]
+
+    # Group sources by type so each type gets its own sequential queue
+    by_type: dict[str, list[sqlite3.Row]] = {}
+    for src in sources:
+        by_type.setdefault(src["type"], []).append(src)
+
+    # Fan out: one coroutine per type, all running concurrently
+    results = await asyncio.gather(
+        *(_sync_type_queue(conn, t, srcs) for t, srcs in by_type.items()),
+        return_exceptions=False,
+    )
+
+    sources_ok = sum(r[0] for r in results)
+    sources_failed = sum(r[1] for r in results)
+    items_total = sum(r[2] for r in results)
 
     status = "ok" if sources_failed == 0 else ("partial" if sources_ok > 0 else "failed")
     stats = {"sources_ok": sources_ok, "sources_failed": sources_failed, "items_total": items_total}

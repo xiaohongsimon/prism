@@ -60,7 +60,7 @@ If you disagree with any of these, I'd genuinely like to hear why — [open an i
 - **External-feed injection.** Paste a URL from *any* other channel (WeChat, Slack, a friend) — it's ingested, translated, structured, and joins your feed.
 - **Auditable autonomy.** Every autonomous decision (a source added, a source auto-disabled, an anomaly flagged) is logged with a reason to [`/decisions/weekly`](https://prism.simon-ai.net/decisions/weekly).
 
-> **On the preference layer.** Earlier iterations of this project included a pairwise + Bradley–Terry recommendation layer as the "last-mile filter." As the system matured the daily usage converged on simple subscription scanning — the translation + structuring value proved to stand on its own. Recommendation is now a **deferred, pluggable** layer (see [`docs/SPEC.md`](docs/SPEC.md) §0). The public repo ships a clean `IdentityReRanker` that sorts by recency; a future personalization layer will live in a pluggable `prism/personalize/` module so forks can plug in their own taste.
+> **On the preference layer.** Earlier iterations of this project included a pairwise + Bradley–Terry recommendation layer as the "last-mile filter." As the system matured the daily usage converged on simple subscription scanning — the translation + structuring value proved to stand on its own. Recommendation is now a **deferred, pluggable** layer (see [`docs/constitution/mission.md`](docs/constitution/mission.md)). The public repo ships a clean `IdentityReRanker` that sorts by recency; a future personalization layer will live in a pluggable `prism/personalize/` module so forks can plug in their own taste.
 
 ## Benchmark
 
@@ -126,7 +126,12 @@ The pipeline is a clean fan-in → normalise → process → fan-out funnel:
 
 The current architecture wasn't my first draft. Earlier versions had a three-layer optimisation loop and a heavy pairwise-comparison UI as the primary interaction. I asked six different LLMs (Claude Opus, GPT-5, Gemini 2.5, DeepSeek, Qwen-Max, local Qwen3) to critique the design. The critique converged on "the structuring pipeline is the actual value; the recommendation layer is over-engineered for a single user" — which, after six months of usage data, turned out to be correct. The full transcript is in [`docs/reviews/synthesis/2026-04-01-prism-v2-debate.md`](docs/reviews/synthesis/2026-04-01-prism-v2-debate.md).
 
-The reverse-engineered spec that captures the current truth is [`docs/SPEC.md`](docs/SPEC.md).
+The project is organised into a small **Constitution** (what it is, for whom, and what's next) plus a **Reality Audit** (what the code actually looks like today):
+
+- [`docs/constitution/mission.md`](docs/constitution/mission.md) — why this exists, current focus, deferred directions
+- [`docs/constitution/tech-stack.md`](docs/constitution/tech-stack.md) — data model, signal sources, pipeline stages, web surface
+- [`docs/constitution/roadmap.md`](docs/constitution/roadmap.md) — phased action list (Wave 1 cleanup → Wave 4 preference layer rebuild)
+- [`docs/SPEC.md`](docs/SPEC.md) — reverse-engineered reality audit: system topology, legacy cruft, tech-debt map
 
 ## Design decisions worth arguing about
 
@@ -135,7 +140,7 @@ Every choice below has a real trade-off. If you think I picked wrong, I'd like t
 - **SQLite, not Postgres.** This is a single-user system. A 4 GB SQLite file on disk is simpler, faster, and backup is `cp`. Not planning to change.
 - **No vector DB — yet.** Embedding similarity is only used for cold-start signal scoring. For 3 k signals/week it doesn't earn its complexity. Will revisit if the corpus grows 10×.
 - **Jinja2 + HTMX, no build step.** The whole frontend is server-rendered, zero npm, one `style.css`. Total frontend code: ~1.2 k lines of CSS + Jinja. Adding React would double the complexity and halve the iteration speed.
-- **Preference layer is pluggable, not built-in.** The public repo ships an identity re-ranker (sort by recency). Recommendation is genuinely a single-user problem — burning it into the shared code would only produce something that fits me. A private fork can implement `ReRanker` and plug it into `prism/personalize/`. See SPEC §0 for the reasoning.
+- **Preference layer is pluggable, not built-in.** The public repo ships an identity re-ranker (sort by recency). Recommendation is genuinely a single-user problem — burning it into the shared code would only produce something that fits me. A private fork can implement `ReRanker` and plug it into `prism/personalize/`. See [`mission.md`](docs/constitution/mission.md) for the reasoning.
 - **Intent-based LLM calls, not model-name hardcoding.** The pipeline calls `omlx.chat(intent="reasoning", ...)` rather than naming a specific model. Swapping models = editing one config; zero pipeline diffs.
 - **No multi-user.** Single-user is a *feature* for the preference layer, and a conscious choice for the project scope. The public (structuring) layer is still usable by anyone who runs their own copy.
 - **YAML as source config, not DB.** `config/sources.yaml` is the source of truth. The DB tracks *runtime state* (last-synced timestamps, health metrics). This split lets me version-control my feed config with git.
@@ -205,7 +210,11 @@ prism/
 └── scheduling/            # launchd plists for 24/7 operation
 
 docs/
-├── SPEC.md                # ← current truth; reverse-engineered from code
+├── constitution/          # ← the project's charter (mission / tech-stack / roadmap)
+│   ├── mission.md
+│   ├── tech-stack.md
+│   └── roadmap.md
+├── SPEC.md                # reality audit: what the code actually looks like today
 ├── RUNTIME.md             # what's alive right now, on-call playbook
 ├── specs/                 # historical design specs (multiple generations; archive)
 └── reviews/synthesis/     # multi-model design critiques
@@ -222,7 +231,7 @@ If you want to contribute, the most valuable things right now:
 - Chinese-community source adapters (即刻, 知乎, 微信公众号)
 - HN comment ingestion (submissions only today)
 - Podcast / long-form article structuring on the hourly cadence (currently YouTube-first)
-- Better "subscription health" UX (the Freshness Warden layer described in SPEC §6.7)
+- Better "subscription health" UX (the Freshness Warden layer in SPEC §6.7 / `roadmap.md` Wave 2)
 
 ## 中文简介
 
@@ -234,7 +243,7 @@ If you want to contribute, the most valuable things right now:
 2. **多渠道 + 多模态 + 多语种是必须的。** 只看 HN 或只看 X 必然错过真正重要的东西；只看文字漏掉播客和视频；只看一种语言漏掉半个世界。只有广撒网（136 源）再靠 LLM 压缩，才能赢过信息过载。
 3. **可分享的公共层 vs 不可分享的个人层，是两件不同的事。** 翻译、转写、结构化是公共产物——Mac Studio 已经为我付过的推理，再给其他读者消费几乎零成本。个性化推荐刚好相反——只拟合一个人，不能分享。所以公共 repo 只发一个干净的结构化阅读器（按时间倒排），未来的偏好层留作可插拔模块（`prism/personalize/`），任何 fork 都能装自己的口味。
 
-[在线实例](https://prism.simon-ai.net/showcase) · [决策日志](https://prism.simon-ai.net/decisions/weekly) · [一个输出样本（播客→文章）](https://prism.simon-ai.net/article/118) · [完整 spec](docs/SPEC.md)
+[在线实例](https://prism.simon-ai.net/showcase) · [决策日志](https://prism.simon-ai.net/decisions/weekly) · [一个输出样本（播客→文章）](https://prism.simon-ai.net/article/118) · [项目章程](docs/constitution/mission.md) · [现实复盘](docs/SPEC.md)
 
 ## License
 

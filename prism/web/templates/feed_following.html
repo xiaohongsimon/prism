@@ -2,19 +2,17 @@
 {% block title %}关注 · Prism{% endblock %}
 {% block content %}
 <div class="feed-container">
-    <nav class="feed-nav">
-        <a href="/feed">Feed</a>
-        <a href="/feed/following" class="active">关注</a>
-        <a href="/feed/saved">收藏</a>
-        {% if not is_anonymous %}
-        <a href="/pairwise/sources">Sources</a>
-        <a href="/pairwise/profile">画像</a>
-        {% else %}
-        <a href="/showcase">Showcase</a>
-        <a href="/decisions/weekly">Decisions</a>
-        <a href="/login" style="margin-left:auto">登录</a>
-        {% endif %}
-    </nav>
+    {% set active_nav = 'following' %}
+    {% include 'partials/feed_nav.html' %}
+
+    {% if not is_anonymous %}
+    <div class="export-bar" style="padding:.4rem .75rem;display:flex;gap:.75rem;align-items:center;font-size:.9rem;flex-wrap:wrap">
+        <span class="muted">离线导出：</span>
+        <a href="/export/epub?days=7">📥 近 7 天 EPUB</a>
+        <a href="/export/epub?days=1" class="muted">· 24 小时</a>
+        <a href="/export/epub?days=30" class="muted">· 30 天</a>
+    </div>
+    {% endif %}
 
     {% macro creator_row(c) %}
     <a class="tl-row" href="/creator/{{ c.source_key }}">
@@ -37,18 +35,14 @@
           </div>
           {% if c.recent_items %}
           {% set ri0 = c.recent_items[0] %}
-          <div class="tl-preview">
-              {{ ri0.article_subtitle
-                 or ri0.title
-                 or (ri0.body_zh[:80] if ri0.body_zh else (ri0.body[:80] if ri0.body else '')) }}
-          </div>
+          <div class="tl-preview">{{ ri0.title or (ri0.body_zh[:80] if ri0.body_zh else (ri0.body[:80] if ri0.body else '')) }}</div>
           {% endif %}
       </div>
       <span class="tl-time muted">{{ c.latest[:10] if c.latest else '' }}</span>
     </a>
     {% endmacro %}
 
-    {% set total = (buckets.youtube|length) + (buckets.podcast|length)
+    {% set total = (buckets.youtube|length) + (buckets.podcast|length) + (buckets.course|length)
                  + (buckets.x_today|length) + (buckets.x_week|length) + (buckets.x_silent|length)
                  + (buckets.other|length) %}
 
@@ -60,59 +54,76 @@
 
     {% if buckets.youtube %}
     <section class="follow-section">
-        <h3 class="follow-section-title">▶ 视频频道 <span class="muted">· {{ buckets.youtube|length }}</span></h3>
-        <div class="follow-list">
-            {% for c in buckets.youtube %}{{ creator_row(c) }}{% endfor %}
-        </div>
+        <details class="follow-section-group" open>
+            <summary class="follow-section-title">📺 YouTube 频道 <span class="muted">· {{ buckets.youtube|length }}</span></summary>
+            <div class="follow-list">
+                {% for c in buckets.youtube %}{{ creator_row(c) }}{% endfor %}
+            </div>
+        </details>
     </section>
     {% endif %}
 
     {% if buckets.podcast %}
     <section class="follow-section">
-        <h3 class="follow-section-title">🎙 播客 <span class="muted">· {{ buckets.podcast|length }}</span></h3>
-        <div class="follow-list">
-            {% for c in buckets.podcast %}{{ creator_row(c) }}{% endfor %}
-        </div>
+        <details class="follow-section-group" open>
+            <summary class="follow-section-title">🎙 小宇宙 <span class="muted">· {{ buckets.podcast|length }}</span></summary>
+            <div class="follow-list">
+                {% for c in buckets.podcast %}{{ creator_row(c) }}{% endfor %}
+            </div>
+        </details>
+    </section>
+    {% endif %}
+
+    {% if buckets.course %}
+    <section class="follow-section">
+        <details class="follow-section-group" open>
+            <summary class="follow-section-title">🎓 课程 <span class="muted">· {{ buckets.course|length }}</span></summary>
+            <div class="follow-list">
+                {% for c in buckets.course %}{{ creator_row(c) }}{% endfor %}
+            </div>
+        </details>
     </section>
     {% endif %}
 
     {% if buckets.x_today or buckets.x_week or buckets.x_silent %}
     <section class="follow-section">
-        <h3 class="follow-section-title">𝕏 X / Builders</h3>
+        <details class="follow-section-group" open>
+            <summary class="follow-section-title">𝕏 X / Builders</summary>
 
-        {% if buckets.x_today %}
-        <details class="follow-bucket" open>
-            <summary>今天 <span class="muted">· {{ buckets.x_today|length }}</span></summary>
-            <div class="follow-list">
-                {% for c in buckets.x_today %}{{ creator_row(c) }}{% endfor %}
-            </div>
-        </details>
-        {% endif %}
+            {% if buckets.x_today %}
+            <details class="follow-bucket" open>
+                <summary>今天 <span class="muted">· {{ buckets.x_today|length }}</span></summary>
+                <div class="follow-list">
+                    {% for c in buckets.x_today %}{{ creator_row(c) }}{% endfor %}
+                </div>
+            </details>
+            {% endif %}
 
-        {% if buckets.x_week %}
-        <details class="follow-bucket">
-            <summary>本周 <span class="muted">· {{ buckets.x_week|length }}</span></summary>
-            <div class="follow-list">
-                {% for c in buckets.x_week %}{{ creator_row(c) }}{% endfor %}
-            </div>
-        </details>
-        {% endif %}
+            {% if buckets.x_week %}
+            <details class="follow-bucket">
+                <summary>本周 <span class="muted">· {{ buckets.x_week|length }}</span></summary>
+                <div class="follow-list">
+                    {% for c in buckets.x_week %}{{ creator_row(c) }}{% endfor %}
+                </div>
+            </details>
+            {% endif %}
 
-        {% if buckets.x_silent %}
-        <details class="follow-bucket">
-            <summary>静默 <span class="muted">· {{ buckets.x_silent|length }}（7 天无更新）</span></summary>
-            <div class="follow-list">
-                {% for c in buckets.x_silent %}{{ creator_row(c) }}{% endfor %}
-            </div>
+            {% if buckets.x_silent %}
+            <details class="follow-bucket">
+                <summary>静默 <span class="muted">· {{ buckets.x_silent|length }}（7 天无更新）</span></summary>
+                <div class="follow-list">
+                    {% for c in buckets.x_silent %}{{ creator_row(c) }}{% endfor %}
+                </div>
+            </details>
+            {% endif %}
         </details>
-        {% endif %}
     </section>
     {% endif %}
 
     {% if buckets.other %}
     <section class="follow-section">
-        <details class="follow-bucket">
-            <summary>🔧 其他渠道 <span class="muted">· {{ buckets.other|length }}</span></summary>
+        <details class="follow-section-group">
+            <summary class="follow-section-title">🔧 其他渠道 <span class="muted">· {{ buckets.other|length }}</span></summary>
             <div class="follow-list">
                 {% for c in buckets.other %}{{ creator_row(c) }}{% endfor %}
             </div>

@@ -153,30 +153,68 @@ sources:
     display_name: 最佳拍档
     key: youtube:bestpartners
     type: youtube
+    avatar: 
+      https://yt3.googleusercontent.com/GpvF9XbD-stx6HR3BySXKvMqm_AySlczqmJKdkdZsloYQ9-rnoaLdCpOn0irmvqi3QYroccHNg=s900-c-k-c0x00ffffff-no-rj
   - channel_id: UCkHrq03gWLLx6vjS2DOJ8aA
     display_name: 孙富贵
     key: youtube:sunriches
     type: youtube
+    avatar: 
+      https://yt3.googleusercontent.com/ADXMtpLvGI9gTp9fgI-rJ7NhMSmqzhnxgHFWzij1DnjDtDCv9HDl8nK72YcwbVmTxDKiR1GlzQ=s900-c-k-c0x00ffffff-no-rj
   - channel_id: UCUGLhcs3-3y_yhZZsgRzrzw
     display_name: 老范讲故事
     key: youtube:storytellerfan
     type: youtube
+    avatar: 
+      https://yt3.googleusercontent.com/gc_1qrMmMseT4FaIeeK_R3DBZbKTdJAdGm53XaW6EW9S8O2TXqfHFcs_Eeu1HSnIB8wS6MZnHg=s900-c-k-c0x00ffffff-no-rj
   - channel_id: UCjJklW6MyT2yjHEOrRu-FOA
     display_name: 蒙面财经MaskFinance
     key: youtube:maskfinance
     type: youtube
+    avatar: 
+      https://yt3.googleusercontent.com/ytc/AIdro_nonQ-0WsZMCcYycLTzK6wO7rP--p74EBicQeWK45KNzw=s900-c-k-c0x00ffffff-no-rj
   - channel_id: UCQ1VQj-37kl2yS_VUhfQHsw
     display_name: a16z Deep Dives
     key: youtube:a16z
     type: youtube
+    avatar: 
+      https://yt3.googleusercontent.com/cbfm3_mkZLi3U5wI65rEHvIWxCOAKogXFtv4dAc9oX44YJQW8ZleBwez8iKDOYIbjgUC6kKL=s900-c-k-c0x00ffffff-no-rj
   - channel_id: UC1Lk6WO-eKuYc6GHYbKVY2g
     display_name: 政經孫老師
     key: youtube:sunlao
     type: youtube
+    avatar: 
+      https://yt3.googleusercontent.com/aoR_Y41PYn6QLZuln8suABT8GGnofz3grUVXTsAOc_MBTLmcPv_KhlaLsvAT6DY-9AcjCg4nP5Y=s900-c-k-c0x00ffffff-no-rj
   - channel_id: UCVThAeUXPZcUfdYBvWGV3UA
     display_name: LT+
     key: youtube:ltshijie
     type: youtube
+    avatar: 
+      https://yt3.googleusercontent.com/3sdWJVZrZP_tXZCc-alBqImKIWb8QRT03_-8uarl4Dlgi4qVewpwXFCpUajJ4UPuNvZqyBEc1X0=s900-c-k-c0x00ffffff-no-rj
+  - channel_id: UCXl4i9dYBrFOabk0xGmbkRA
+    display_name: Dwarkesh Patel
+    key: youtube:dwarkesh
+    type: youtube
+    avatar: 
+      https://yt3.googleusercontent.com/lG-z7sTfhFIW2Ne1oXMHvXMXyZSaA02_I17gUel0GAEj7OypsSHQ7PE91Vp4bTbpm3PTIAWJdko=s900-c-k-c0x00ffffff-no-rj
+  - channel_id: UC6t1O76G0jYXOAoYCm153dA
+    display_name: Lenny's Podcast
+    key: youtube:lennyspodcast
+    type: youtube
+    avatar: 
+      https://yt3.googleusercontent.com/Wk7-4UW17JqDXgVWDiE7s1gJxDkt_UwNa2oNw8OYRwc9deiCv2V2fFAdNgByDi0K9AAF0YMj=s900-c-k-c0x00ffffff-no-rj
+  - channel_id: UCOCahKBCEUuzDJawM7yN1dg
+    display_name: Bijan Bowen
+    key: youtube:bijanbowen
+    type: youtube
+    avatar: 
+      https://yt3.googleusercontent.com/At-1Kn54AljCodKZ7G9jxzd-1cCR3BknxIqpwGiXckFOXATpOjSyL-ivxtZQPE7RRAtWC8abFA=s900-c-k-c0x00ffffff-no-rj
+  - channel_id: UCYO_jab_esuFRV4b17AJtAw
+    display_name: 3Blue1Brown
+    key: youtube:3blue1brown
+    type: youtube
+    avatar: 
+      https://yt3.googleusercontent.com/ytc/AIdro_nFzZFPLxPZRHcE3SSwzdrbuWqfoWYwLAu0_2iO6blQYAU=s900-c-k-c0x00ffffff-no-rj
   - display_name: 知行小酒馆
     key: xyz:zxxjg
     pid: 6013f9f58e2f7ee375cf4216
@@ -204,6 +242,10 @@ sources:
   - display_name: 半拿铁｜商业沉浮录
     key: xyz:bannatie
     pid: 62382c1103bea1ebfffa1c00
+    type: xiaoyuzhou
+  - display_name: 独树不成林
+    key: xyz:dushubuchenglin
+    pid: 64acd33c7a3d479103fbd32d
     type: xiaoyuzhou
   - key: economics:models
     type: model_economics
@@ -267,7 +309,8 @@ sources:
     type: github_trending
   - key: feed:follow-builders
     type: follow_builders
-    url: https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-x.json
+    url: 
+      https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-x.json
   - depth: thread
     display_name: Yuchen Jin
     handle: Yuchenj_UW
@@ -685,6 +728,8 @@ sources:
     channel_id: UCcIXc5mJsHVYTZR1maL5l9w
     display_name: DeepLearning.AI
     handle: deeplearningai
+    avatar: 
+      https://yt3.googleusercontent.com/ytc/AIdro_nS1r8vYA9YVt1AQB355iMbBJNMg0OJn0I4J53_4T9xAes=s900-c-k-c0x00ffffff-no-rj
   - type: x_home
     key: x_home:fyp
     display_name: X For You (home timeline)
@@ -707,3 +752,60 @@ sources:
     display_name: GitHub For You (follows' activity)
     handle: me
     count: 50
+  - type: course
+    key: dlai:spec-driven-development-with-coding-agents
+    provider: dlai
+    display_name: Spec-Driven Development with Coding Agents
+    author: Paul Everitt
+    course_url: 
+      https://learn.deeplearning.ai/courses/spec-driven-development-with-coding-agents
+    published_at: '2026-04-15'
+    partner: JetBrains
+    course_number: 1
+    lesson_count: 14
+    notes_path: docs/notes/2026-04-21-sdd-course-zh.md
+    description: >-
+      DLAI short course (in partnership with JetBrains, taught by Paul Everitt)
+      covering the Spec-Driven Development workflow — writing constitutions,
+      feature specs, plans, and validation loops so coding agents can execute
+      serious work. Bilingual (EN/中文) full transcript is kept under
+      docs/notes/.
+    lessons:
+      - idx: 0
+        title: "Introduction"
+      - idx: 1
+        title: "Why spec-driven development?"
+      - idx: 2
+        title: "Workflow overview"
+      - idx: 3
+        title: "Setup"
+      - idx: 4
+        title: "Creating the constitution"
+      - idx: 5
+        title: "Feature specification"
+      - idx: 6
+        title: "Feature implementation"
+      - idx: 7
+        title: "Feature validation"
+      - idx: 8
+        title: "Project replanning"
+      - idx: 9
+        title: "The second feature phase"
+      - idx: 10
+        title: "The MVP"
+      - idx: 11
+        title: "Legacy support"
+      - idx: 12
+        title: "Build your own workflow"
+      - idx: 13
+        title: "Agent replaceability"
+  - display_name: 自我进化论
+    key: xyz:pa0467beb90
+    pid: 5e5de5cb418a84a0467beb90
+    type: xiaoyuzhou
+    avatar: https://image.xyzcdn.net/FukZeHyG-F0POtf8trVanJ1sSTEQ
+  - display_name: 谭立人
+    key: xyz:pfc1c1df60a
+    pid: 65a2d0f07242f9fc1c1df60a
+    type: xiaoyuzhou
+    avatar: https://image.xyzcdn.net/FqBiPKt8EwouUJ2um8LDZjZ1Dc9g.jpg

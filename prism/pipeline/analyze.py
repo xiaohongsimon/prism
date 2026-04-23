@@ -11,10 +11,19 @@ from prism.db import insert_job_run, finish_job_run
 from prism.pipeline.llm import (
     call_llm, call_llm_json, call_claude_json, PROMPT_VERSION,
     INCREMENTAL_SYSTEM, INCREMENTAL_USER_TEMPLATE,
+    INCREMENTAL_TRIAGE_SYSTEM, INCREMENTAL_TRIAGE_USER_TEMPLATE,
+    INCREMENTAL_EXPAND_SYSTEM, INCREMENTAL_EXPAND_USER_TEMPLATE,
     VIDEO_SYSTEM, VIDEO_USER_TEMPLATE,
     DAILY_BATCH_SYSTEM, DAILY_BATCH_USER_TEMPLATE,
     NARRATIVE_SYSTEM, NARRATIVE_USER_TEMPLATE,
 )
+from prism.pipeline.llm_tasks import Scope, Task
+
+# Default models for the two-stage pipeline. Can be overridden via CLI.
+# Stage 1: cheap model across all clusters. Stage 2: reasoning model on
+# high-strength survivors only.
+TRIAGE_MODEL_DEFAULT = "gemma-4-26b-a4b-it-8bit"
+EXPAND_MODEL_DEFAULT = "Qwen3.6-35B-A3B-8bit"
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +115,9 @@ def _analyze_one_cluster(cluster_data: dict, model: Optional[str] = None,
     try:
         result = call_llm_json(
             prompt, system=system, model=model,
-            max_tokens=6000,
+            max_tokens=16000,
             session_id=f"job-{job_id}" if job_id else None,
-            project="簇级摘要",
+            task=Task.SUMMARIZE, scope=Scope.CLUSTER,
         )
         # LLM sometimes returns a list instead of dict — take first element
         if isinstance(result, list):
@@ -131,17 +140,111 @@ def _analyze_one_cluster(cluster_data: dict, model: Optional[str] = None,
         return None
 
 
-def run_incremental_analysis(conn: sqlite3.Connection, model: Optional[str] = None,
-                             max_workers: int = 8) -> int:
-    """Analyze clusters without signals. Returns count of signals created."""
+def _triage_one_cluster(cluster_data: dict, model: str, job_id: Optional[int]) -> Optional[dict]:
+    """Stage 1 worker: fast 5-field signal classification. No DB access.
+
+    Uses the cheap model across every cluster. Video clusters still use
+    VIDEO_SYSTEM since their transcripts need different handling — those
+    don't benefit from the expand split either (they already produce
+    content_zh via key_insights fusion).
+    """
+    is_video = cluster_data.get("is_video", False)
+    if is_video and len(cluster_data.get("merged_context", "")) > 500:
+        # Video path: same as before, produces rich output in one shot
+        system = VIDEO_SYSTEM
+        user_template = VIDEO_USER_TEMPLATE
+        # Video uses the reasoning model because transcripts need deep comprehension
+        call_model = EXPAND_MODEL_DEFAULT
+        max_tokens = 16000
+    else:
+        system = INCREMENTAL_TRIAGE_SYSTEM
+        user_template = INCREMENTAL_TRIAGE_USER_TEMPLATE
+        call_model = model
+        max_tokens = 2048
+
+    prompt = user_template.format(
+        topic_label=cluster_data["topic_label"],
+        item_count=cluster_data.get("item_count", 1),
+        merged_context=cluster_data["merged_context"],
+    )
+    try:
+        result = call_llm_json(
+            prompt, system=system, model=call_model,
+            max_tokens=max_tokens,
+            session_id=f"job-{job_id}" if job_id else None,
+            task=Task.SUMMARIZE if is_video else Task.CLASSIFY,
+            scope=Scope.CLUSTER,
+        )
+        if isinstance(result, list):
+            result = result[0] if result else {}
+        if not isinstance(result, dict):
+            logger.error("Triage returned non-dict for cluster %d: %s",
+                         cluster_data["id"], type(result))
+            return None
+        # Video path merges key_insights into summary/content_zh like before
+        if is_video and "key_insights" in result:
+            insights = result.get("key_insights", [])
+            if insights:
+                insights_text = "\n".join(f"• {ins}" for ins in insights)
+                result["summary"] = result.get("summary", "") + "\n\n💡 核心洞察：\n" + insights_text
+                if not result.get("content_zh"):
+                    result["content_zh"] = result.get("summary", "")
+        return result
+    except Exception as exc:
+        logger.error("Triage failed for cluster %d: %s", cluster_data["id"], exc)
+        return None
+
+
+def _expand_one_signal(signal_data: dict, model: str, job_id: Optional[int]) -> Optional[dict]:
+    """Stage 2 worker: deep translation + TL perspective. No DB access.
+
+    Input carries the triage summary so the expand model has context about
+    why this signal earned deep treatment.
+    """
+    prompt = INCREMENTAL_EXPAND_USER_TEMPLATE.format(
+        topic_label=signal_data["topic_label"],
+        summary=signal_data["summary"],
+        why_it_matters=signal_data["why_it_matters"],
+        signal_strength=signal_data["signal_strength"],
+        merged_context=signal_data["merged_context"],
+    )
+    try:
+        result = call_llm_json(
+            prompt, system=INCREMENTAL_EXPAND_SYSTEM, model=model,
+            max_tokens=16000,
+            session_id=f"job-{job_id}" if job_id else None,
+            task=Task.SUMMARIZE, scope=Scope.CLUSTER,
+        )
+        if isinstance(result, list):
+            result = result[0] if result else {}
+        if not isinstance(result, dict):
+            logger.error("Expand returned non-dict for signal %d: %s",
+                         signal_data["id"], type(result))
+            return None
+        return result
+    except Exception as exc:
+        logger.error("Expand failed for signal %d: %s", signal_data["id"], exc)
+        return None
+
+
+def run_triage(conn: sqlite3.Connection, model: Optional[str] = None,
+               max_workers: int = 8) -> int:
+    """Stage 1: triage all unanalyzed clusters with the cheap model.
+
+    Produces signal rows with summary/layer/strength/why/tags populated but
+    content_zh and tl_perspective left empty — those are the expand stage's
+    job, run only for high-strength survivors.
+
+    Returns count of signals created.
+    """
     clusters = _get_unanalyzed_clusters(conn)
     if not clusters:
         return 0
 
-    job_id = insert_job_run(conn, job_type="analyze_incremental")
+    triage_model = model or TRIAGE_MODEL_DEFAULT
+    job_id = insert_job_run(conn, job_type="analyze_triage")
     count = 0
 
-    # Detect which clusters are from YouTube (for video-specific analysis)
     youtube_cluster_ids = set()
     yt_rows = conn.execute(
         """
@@ -154,7 +257,6 @@ def run_incremental_analysis(conn: sqlite3.Connection, model: Optional[str] = No
     for r in yt_rows:
         youtube_cluster_ids.add(r["cluster_id"])
 
-    # Prepare cluster data dicts for thread-safe access
     cluster_dicts = [
         {"id": c["id"], "topic_label": c["topic_label"],
          "item_count": c["item_count"], "merged_context": c["merged_context"],
@@ -164,10 +266,7 @@ def run_incremental_analysis(conn: sqlite3.Connection, model: Optional[str] = No
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_cluster = {
-            executor.submit(
-                _analyze_one_cluster, cd, model,
-                job_id, "analyze_incremental",
-            ): cd
+            executor.submit(_triage_one_cluster, cd, triage_model, job_id): cd
             for cd in cluster_dicts
         }
         for future in as_completed(future_to_cluster):
@@ -191,7 +290,7 @@ def run_incremental_analysis(conn: sqlite3.Connection, model: Optional[str] = No
                     _to_str(result.get("tl_perspective", "")),
                     json.dumps(result.get("tags", []), ensure_ascii=False),
                     _to_str(result.get("content_zh", "")),
-                    model or "",
+                    triage_model,
                     PROMPT_VERSION,
                     job_id,
                 ),
@@ -202,6 +301,104 @@ def run_incremental_analysis(conn: sqlite3.Connection, model: Optional[str] = No
     finish_job_run(conn, job_id, status="ok" if count > 0 else "failed",
                    stats_json=json.dumps({"signals_created": count}))
     return count
+
+
+def run_expand(conn: sqlite3.Connection, model: Optional[str] = None,
+               min_strength: int = 4, limit: int = 30,
+               max_workers: int = 4) -> int:
+    """Stage 2: deep-read top-N highest-strength signals that still lack
+    content_zh. Populates content_zh + tl_perspective + action in place.
+
+    Why the strict filter: only ~20% of triaged signals are worth the
+    reasoning-model pass. Bounding by `limit` keeps hourly runtime predictable
+    even when sync ingests a huge backlog.
+
+    Returns count of signals expanded.
+    """
+    expand_model = model or EXPAND_MODEL_DEFAULT
+
+    # Find signals that need expansion: high strength, currently-active,
+    # no content_zh yet, not from video path (video already fills content_zh).
+    rows = conn.execute(
+        """
+        SELECT s.id AS signal_id, s.cluster_id, s.summary, s.why_it_matters,
+               s.signal_strength, c.topic_label, c.merged_context
+        FROM signals s
+        JOIN clusters c ON s.cluster_id = c.id
+        WHERE s.is_current = 1
+          AND s.analysis_type = 'incremental'
+          AND s.signal_strength >= ?
+          AND COALESCE(s.content_zh, '') = ''
+          AND s.signal_layer != 'noise'
+        ORDER BY s.signal_strength DESC, s.created_at DESC
+        LIMIT ?
+        """,
+        (min_strength, limit),
+    ).fetchall()
+
+    if not rows:
+        return 0
+
+    job_id = insert_job_run(conn, job_type="analyze_expand")
+    count = 0
+
+    signal_dicts = [
+        {"id": r["signal_id"], "cluster_id": r["cluster_id"],
+         "summary": r["summary"], "why_it_matters": r["why_it_matters"],
+         "signal_strength": r["signal_strength"],
+         "topic_label": r["topic_label"],
+         "merged_context": r["merged_context"]}
+        for r in rows
+    ]
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_signal = {
+            executor.submit(_expand_one_signal, sd, expand_model, job_id): sd
+            for sd in signal_dicts
+        }
+        for future in as_completed(future_to_signal):
+            sd = future_to_signal[future]
+            result = future.result()
+            if result is None:
+                continue
+
+            conn.execute(
+                "UPDATE signals SET content_zh = ?, tl_perspective = ?, action = ?, "
+                "model_id = ? WHERE id = ?",
+                (
+                    _to_str(result.get("content_zh", "")),
+                    _to_str(result.get("tl_perspective", "")),
+                    _to_str(result.get("action", "")),
+                    expand_model,
+                    sd["id"],
+                ),
+            )
+            conn.commit()
+            count += 1
+
+    finish_job_run(conn, job_id, status="ok" if count > 0 else "failed",
+                   stats_json=json.dumps({"signals_expanded": count}))
+    return count
+
+
+def run_incremental_analysis(conn: sqlite3.Connection, model: Optional[str] = None,
+                             max_workers: int = 8,
+                             *,
+                             expand_model: Optional[str] = None,
+                             min_strength: int = 4,
+                             expand_limit: int = 30) -> int:
+    """Backward-compat entry point: run triage then expand sequentially.
+
+    `model` now controls the triage (stage 1) model for backward compat;
+    `expand_model` controls stage 2. Both default to their stage's default.
+
+    Returns count of signals triaged (stage 1 output; stage 2 updates in place).
+    """
+    triaged = run_triage(conn, model=model, max_workers=max_workers)
+    if triaged > 0:
+        run_expand(conn, model=expand_model, min_strength=min_strength,
+                   limit=expand_limit, max_workers=min(max_workers, 4))
+    return triaged
 
 
 def run_daily_analysis(conn: sqlite3.Connection, dt: Optional[str] = None,
@@ -258,7 +455,7 @@ def run_daily_analysis(conn: sqlite3.Connection, dt: Optional[str] = None,
             narrative = call_llm(narrative_prompt, system=NARRATIVE_SYSTEM,
                                 model=daily_model, max_tokens=2048,
                                 session_id=f"job-{job_id}",
-                                project="日级综述")
+                                task=Task.SUMMARIZE, scope=Scope.DAILY)
             # Strip thinking tags if present
             import re
             narrative = re.sub(r"<think>.*?</think>", "", narrative, flags=re.DOTALL).strip()
@@ -268,7 +465,7 @@ def run_daily_analysis(conn: sqlite3.Connection, dt: Optional[str] = None,
                 retry = call_llm(narrative_prompt, system=NARRATIVE_SYSTEM,
                                 model=daily_model, max_tokens=2048,
                                 session_id=f"job-{job_id}",
-                                project="日级综述")
+                                task=Task.SUMMARIZE, scope=Scope.DAILY)
                 retry = re.sub(r"<think>.*?</think>", "", retry, flags=re.DOTALL).strip()
                 if not re.search(r'(.{2,})\1{2,}', retry):
                     narrative = retry
