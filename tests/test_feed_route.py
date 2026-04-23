@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 from prism.db import init_db
 from prism.api.app import create_app
+from prism.web.auth import COOKIE_NAME, create_admin, login
 
 
 def _mkconn():
@@ -10,6 +11,15 @@ def _mkconn():
     conn.row_factory = sqlite3.Row
     init_db(conn)
     return conn
+
+
+def _authed_client(conn):
+    """TestClient with a valid admin session cookie (anon-gate bypass)."""
+    create_admin(conn, "tester", "pw")
+    token = login(conn, "tester", "pw")
+    client = TestClient(create_app(conn=conn))
+    client.cookies.set(COOKIE_NAME, token)
+    return client
 
 
 def _seed(conn, n=3):
@@ -57,8 +67,8 @@ def test_feed_route_returns_200_and_renders_signals():
 def test_feed_action_save_writes_event():
     conn = _mkconn()
     _seed(conn, 1)
-    app = create_app(conn=conn)
-    r = TestClient(app).post(
+    client = _authed_client(conn)
+    r = client.post(
         "/feed/action",
         data={"signal_id": "1", "action": "save", "target_key": "", "response_time_ms": "0"},
     )

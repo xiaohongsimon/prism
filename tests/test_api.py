@@ -1,10 +1,17 @@
+from datetime import date
+
 from fastapi.testclient import TestClient
 from prism.api.app import create_app
 
 
 def test_get_signals(db):
-    # Seed data
-    db.execute("INSERT INTO clusters (id, date, topic_label, item_count) VALUES (1, '2026-04-10', 'test', 1)")
+    # Seed data — /api/signals filters `c.date >= date('now', '-7 days')`, so
+    # stamp today's date rather than a hardcoded literal that drifts out of
+    # the window over time.
+    db.execute(
+        "INSERT INTO clusters (id, date, topic_label, item_count) VALUES (1, ?, 'test', 1)",
+        (date.today().isoformat(),),
+    )
     db.execute("INSERT INTO signals (cluster_id, summary, signal_layer, signal_strength, analysis_type, is_current) VALUES (1, 'summary', 'actionable', 4, 'daily', 1)")
     db.commit()
     app = create_app(db)
