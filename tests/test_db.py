@@ -82,8 +82,11 @@ def test_articles_unique_raw_item_id(db):
         db.execute("INSERT INTO articles (raw_item_id, title) VALUES (1, 'Article 1 duplicate')")
 
 
-def test_pairwise_tables_exist():
-    """All v2 pairwise tables should be created by init_db."""
+def test_post_wave1_tables_exist():
+    """After Wave 1 cleanup (2026-04-23), pairwise/BT tables are gone but
+    the surviving auxiliary tables (decision_log, external_feeds) and
+    UNIQUE constraint on external_feeds.url must stick around.
+    """
     import sqlite3
     from prism.db import init_db
     conn = sqlite3.connect(":memory:")
@@ -92,10 +95,12 @@ def test_pairwise_tables_exist():
     tables = {r[0] for r in conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table'"
     ).fetchall()}
-    for t in ["pairwise_comparisons", "signal_scores", "source_weights",
-              "decision_log", "external_feeds"]:
+    for t in ["decision_log", "external_feeds"]:
         assert t in tables, f"Missing table: {t}"
-    # Verify external_feeds has UNIQUE url
+    for t in ["pairwise_comparisons", "signal_scores", "source_weights",
+              "ctr_samples", "feed_impressions"]:
+        assert t not in tables, f"Dead Wave 1 table should be dropped: {t}"
+    # external_feeds still enforces UNIQUE on url
     conn.execute("INSERT INTO external_feeds (url, topic) VALUES ('http://a', 'test')")
     try:
         conn.execute("INSERT INTO external_feeds (url, topic) VALUES ('http://a', 'dupe')")

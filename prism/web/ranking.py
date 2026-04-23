@@ -1,4 +1,10 @@
-"""Feed ranking engine: heat + preference + time decay + Bradley-Terry."""
+"""Feed ranking engine: heat + preference + time decay.
+
+Wave 1 (2026-04-23) removed the Bradley-Terry dimension — the
+`signal_scores` table is gone and pairwise is no longer the product. What
+was the `hot` tab's BT weight has been redistributed to heat and decay,
+since 'hot' means "raw freshness + engagement" without personal bias.
+"""
 
 import json
 import math
@@ -6,11 +12,11 @@ import sqlite3
 from datetime import datetime, timezone
 
 
-# Score weights per tab: (heat, preference, decay, bt)
+# Score weights per tab: (heat, preference, decay)
 TAB_WEIGHTS = {
-    "recommend": (0.4, 0.4, 0.2, 0.0),
-    "follow":    (0.2, 0.5, 0.3, 0.0),
-    "hot":       (0.3, 0.0, 0.3, 0.4),
+    "recommend": (0.4, 0.4, 0.2),
+    "follow":    (0.2, 0.5, 0.3),
+    "hot":       (0.5, 0.0, 0.5),
 }
 
 HALF_LIFE_HOURS = 24.0
@@ -76,7 +82,7 @@ def compute_feed(
     channel: str = "",
 ) -> list[dict]:
     """Compute ranked feed items for a tab."""
-    w_heat, w_pref, w_decay, w_bt = TAB_WEIGHTS.get(tab, TAB_WEIGHTS["recommend"])
+    w_heat, w_pref, w_decay = TAB_WEIGHTS.get(tab, TAB_WEIGHTS["recommend"])
 
     # Load signals joined with cluster info
     rows = conn.execute(
@@ -154,14 +160,6 @@ def compute_feed(
         if body_text and len(body_text) > len(cluster_bodies.get(cid, "")):
             cluster_bodies[cid] = body_text
 
-    # Load Bradley-Terry scores
-    bt_scores = {}
-    if w_bt > 0:
-        bt_rows = conn.execute("SELECT signal_id, bt_score FROM signal_scores").fetchall()
-        for br in bt_rows:
-            bt_scores[br["signal_id"]] = br["bt_score"]
-    max_bt = max(bt_scores.values(), default=1500.0) or 1500.0
-
     # Build scored items
     items = []
     for r in rows:
@@ -214,11 +212,9 @@ def compute_feed(
         pref = _preference_score(pref_map, item) if w_pref > 0 else 0.0
         decay = _time_decay(r["created_at"])
 
-        bt = bt_scores.get(r["signal_id"], 1500.0)
-        bt_norm = bt / max_bt
         # pref is a raw sum of weights (unbounded) — allows strong explicit
         # preferences to dominate heat when w_pref > 0.
-        item["score"] = w_heat * heat_norm + w_pref * pref + w_decay * decay + w_bt * bt_norm
+        item["score"] = w_heat * heat_norm + w_pref * pref + w_decay * decay
         items.append(item)
 
     items.sort(key=lambda x: x["score"], reverse=True)

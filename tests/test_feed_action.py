@@ -21,7 +21,7 @@ def _seed(conn):
     conn.commit()
 
 
-def test_save_writes_event_and_updates_bt_and_weights():
+def test_save_writes_event_and_updates_preference_weights():
     from prism.web.feed import record_feed_action
 
     conn = sqlite3.connect(":memory:")
@@ -36,12 +36,9 @@ def test_save_writes_event_and_updates_bt_and_weights():
     ).fetchone()
     assert ev["signal_id"] == 1 and ev["action"] == "save"
 
-    bt = conn.execute(
-        "SELECT bt_score FROM signal_scores WHERE signal_id = 1"
-    ).fetchone()
-    assert bt["bt_score"] > 0  # nudged up from initial
-
-    # save bumps all dimensions by +2.0
+    # save bumps all dimensions by +2.0. Post Wave 1 there is no
+    # signal_scores / bt_score update — preference_weights is the only
+    # learning signal.
     author_w = conn.execute(
         "SELECT weight FROM preference_weights WHERE dimension='author' AND key='karpathy'"
     ).fetchone()

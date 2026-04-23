@@ -1,9 +1,10 @@
 """Feed-first interaction: save / dismiss / follow / mute.
 
-Explicit multi-dimensional feedback — the successor to pairwise as the
-default interaction. Updates preference_weights and signal_scores in the
-same code paths the pairwise pipeline uses, so downstream ranking and
-source-weight logic see feed signals transparently.
+Explicit multi-dimensional feedback over the subscription stream. Writes
+to `feed_interactions` (raw event log) and `preference_weights` (the
+ranking-visible dimension weights). As of Wave 1 (2026-04-23) this module
+no longer touches `signal_scores` or `source_weights` — BT/pairwise
+scoring has been removed.
 """
 from __future__ import annotations
 
@@ -36,18 +37,6 @@ def compress_headline(text: str, max_len: int = 50) -> str:
         return head
     return head[:max_len].rstrip() + '…'
 
-# Reuse existing pairwise helpers so feed feedback hits the same learning path.
-from prism.web.pairwise import (
-    _update_preference_weights,
-    _ensure_signal_score,
-    _update_source_weights,
-)
-
-# BT nudges for feed actions — deliberately smaller than a full pairwise win
-# so frequent feed clicks don't dominate the slow-thinking pairwise signal.
-BT_SAVE_BONUS = 0.2
-BT_DISMISS_PENALTY = 0.1
-
 # Preference-weights deltas by feed action.
 ACTION_WEIGHT_DELTA = {
     "save": 2.0,
@@ -57,6 +46,70 @@ ACTION_WEIGHT_DELTA = {
 # Author/tag deltas for dedicated follow / mute actions (only that one dimension).
 FOLLOW_AUTHOR_WEIGHT = 3.0
 MUTE_TOPIC_WEIGHT = -2.0
+
+
+def _get_signal_dimensions(conn: sqlite3.Connection, signal_id: int) -> list[tuple[str, str]]:
+    """Collect (dimension, key) pairs for every preference-bearing facet of
+    a signal: its layer, tags, source_keys, authors. Returned as a flat
+    list suitable for bulk upsert into `preference_weights`.
+    """
+    row = conn.execute(
+        "SELECT signal_layer, tags_json FROM signals WHERE id = ?", (signal_id,)
+    ).fetchone()
+    if not row:
+        return []
+    tags: list[str] = []
+    try:
+        tags = json.loads(row["tags_json"]) if row["tags_json"] else []
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    source_keys = [
+        r["source_key"] for r in conn.execute(
+            """SELECT DISTINCT src.source_key
+               FROM signals s
+               JOIN cluster_items ci ON ci.cluster_id = s.cluster_id
+               JOIN raw_items ri ON ri.id = ci.raw_item_id
+               JOIN sources src ON src.id = ri.source_id
+               WHERE s.id = ?""",
+            (signal_id,),
+        ).fetchall()
+    ]
+    authors = [
+        r["author"] for r in conn.execute(
+            """SELECT DISTINCT ri.author FROM signals s
+               JOIN cluster_items ci ON ci.cluster_id = s.cluster_id
+               JOIN raw_items ri ON ri.id = ci.raw_item_id
+               WHERE s.id = ? AND ri.author != ''""",
+            (signal_id,),
+        ).fetchall()
+    ]
+
+    pairs: list[tuple[str, str]] = []
+    if row["signal_layer"]:
+        pairs.append(("layer", row["signal_layer"]))
+    pairs.extend(("tag", t) for t in tags)
+    pairs.extend(("source", sk) for sk in source_keys)
+    pairs.extend(("author", a) for a in authors)
+    return pairs
+
+
+def _bump_preference_weights(
+    conn: sqlite3.Connection, signal_id: int, delta: float,
+) -> None:
+    """Add `delta` to every preference dimension belonging to `signal_id`."""
+    for dimension, key in _get_signal_dimensions(conn, signal_id):
+        existing = conn.execute(
+            "SELECT weight FROM preference_weights WHERE dimension = ? AND key = ?",
+            (dimension, key),
+        ).fetchone()
+        new_weight = (existing["weight"] if existing else 0.0) + delta
+        conn.execute(
+            "INSERT OR REPLACE INTO preference_weights "
+            "(dimension, key, weight, updated_at) "
+            "VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%S', 'now'))",
+            (dimension, key, new_weight),
+        )
 
 
 def record_feed_action(
@@ -70,13 +123,11 @@ def record_feed_action(
 ) -> int:
     """Record a feed interaction and update learning state.
 
-    - save / dismiss → BT nudge on signal_scores + delta across all
-      preference dimensions of the signal.
+    - save / dismiss → delta across all preference dimensions of the signal.
     - follow_author / unfollow_author → single author-dimension weight.
     - mute_topic / unmute_topic → single tag-dimension weight.
 
-    Returns the feed_interactions.id of the row just inserted — callers
-    use this as the group_id when materializing CTR training samples.
+    Returns the `feed_interactions.id` of the row just inserted.
     """
     cur = conn.execute(
         "INSERT INTO feed_interactions "
@@ -88,16 +139,7 @@ def record_feed_action(
     interaction_id = cur.lastrowid
 
     if action in ("save", "dismiss"):
-        _ensure_signal_score(conn, signal_id)
-        bonus = BT_SAVE_BONUS if action == "save" else -BT_DISMISS_PENALTY
-        conn.execute(
-            "UPDATE signal_scores SET bt_score = bt_score + ?, "
-            "updated_at = datetime('now') WHERE signal_id = ?",
-            (bonus, signal_id),
-        )
-        _update_preference_weights(conn, signal_id, ACTION_WEIGHT_DELTA[action])
-        _update_source_weights(conn, signal_id, won=(action == "save"))
-
+        _bump_preference_weights(conn, signal_id, ACTION_WEIGHT_DELTA[action])
     elif action == "follow_author" and target_key:
         _set_weight(conn, "author", target_key, FOLLOW_AUTHOR_WEIGHT)
     elif action == "unfollow_author" and target_key:
@@ -121,7 +163,7 @@ def _set_weight(conn: sqlite3.Connection, dimension: str, key: str, weight: floa
     )
 
 
-from prism.web.pairwise import _get_candidate_pool, _load_pref_weights
+from prism.web.feed_pool import _get_candidate_pool, _load_pref_weights
 
 
 _DIMENSION_WEIGHT = {
@@ -133,7 +175,10 @@ _DIMENSION_WEIGHT = {
 
 
 def _score_signal(signal: dict, pref_map: dict[tuple[str, str], float]) -> float:
-    score = signal.get("bt_score", 0.0) + signal.get("signal_strength", 0) * 10.0
+    # signal_strength is the LLM-emitted quality integer (1..5). Post-Wave 1
+    # there's no BT component — pure heuristic over preference dimensions
+    # keyed off the signal's own metadata.
+    score = signal.get("signal_strength", 0) * 10.0
 
     # author
     for author in signal.get("authors", []) or []:
@@ -195,17 +240,14 @@ def _recent_feed_excludes(conn: sqlite3.Connection, days: int = 7) -> set[int]:
 def _feed_pool(conn: sqlite3.Connection) -> list[dict]:
     """Candidate pool for feed ranking.
 
-    Feed should NOT inherit pairwise's 'recently compared' blacklist —
-    that list shadows almost every X signal once the user has done
-    meaningful pairwise rounds. Feed also skips the diversity cap, since
-    the feed's own scoring (author/tag/source prefs) is the right way to
-    rebalance — not a hard cap.
+    Skips the default diversity cap — the feed does its own channel
+    interleave below (`_diversify_by_channel`), which is the right place
+    to rebalance.
     """
     excl = _recent_feed_excludes(conn)
     return _get_candidate_pool(
         conn,
         extra_exclude_ids=excl,
-        apply_pairwise_recent_filter=False,
         apply_diversity_cap=False,
     )
 

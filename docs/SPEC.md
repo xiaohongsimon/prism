@@ -19,6 +19,18 @@
 
 ---
 
+> **Wave 1 更新（2026-04-23）** — §6 / §11 里列出的"上一代实现残留"已经落地清理：
+> - 砍表：`signal_scores` / `pairwise_comparisons` / `source_weights` / `ctr_samples` / `feed_impressions`
+> - 砍码：`prism/web/pairwise.py`、`prism/ctr/`、`tests/ctr/`、`tests/web/test_pairwise.py`、`tests/test_pair_strategy.py`
+> - 砍路径：`/feed/action` 背景任务里的 CTR 物化、`/feed/more` 里的 impression 记录、`daily.sh` 里的 `adjust_source_weights`
+> - 重写：`/pairwise/liked` / `/pairwise/profile` 的后端查询从 `pairwise_comparisons` 切到 `feed_interactions`（URL 路径保留，避免动模板）
+> - 新增：`prism/personalize/` ReRanker 接口（默认 IdentityReRanker 直通），`/feed/more` 现在把候选行通过 Protocol 走一遍 — 未来换实验变体零改动
+> - 历史数据：pairwise_comparisons (133) + signal_scores (260) CSV 归档到 `data/archive/wave1/MANIFEST.json`
+>
+> 下面的 §6 / §11 文本保留了清理前的描述，仅作为"曾经长这样"的考古。
+
+---
+
 ## 1. System Topology
 
 ```
@@ -53,18 +65,21 @@
    │ briefings   │    │   /feed        │      │ publish-videos   │
    └─────────────┘    │   /article     │      └──────────────────┘
                       │   /board (ops) │
-                      │   /pairwise/*  │ ← 档案/只读
+                      │   /pairwise/*  │ ← legacy URL 前缀，后端重写到 feed_interactions
                       └────────┬───────┘
                                │ feedback → feed_interactions
                                ▼                ↓
                      ┌─────────────────────────────────┐
                      │ preference_weights (author/tag/source/layer)
-                     │ source_weights     (pairwise win rate)
-                     │ signal_scores      (BT, 僵尸中)
-                     │ ctr_samples        (skip-above 训练数据)
+                     │ decision_log (recall / ranking 自动决策)
+                     │ external_feeds (外部 URL 投喂队列)
                      └─────────────────────────────────┘
-                               ↓
-                     日终 adjust_source_weights()
+
+        （Wave 1 清理 2026-04-23: signal_scores / source_weights /
+         pairwise_comparisons / ctr_samples / feed_impressions 已随
+         prism/web/pairwise.py 和 prism/ctr/ 一同删除；历史数据归档到
+         data/archive/wave1/。ReRanker 接口见 prism/personalize/，默认
+         IdentityReRanker 直通。）
 
        Cloudflare Tunnel → prism.simon-ai.net → :8080 (prism serve)
 ```

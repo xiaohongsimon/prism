@@ -264,9 +264,15 @@ def serve(port):
               help="Export format (only epub for now)")
 @click.option("--days", default=7, show_default=True, type=int,
               help="Include followed-source items from the last N days")
+@click.option("--per-source", "per_source_cap", default=15, show_default=True,
+              type=int,
+              help="Max items per source (newest first). 0 to disable.")
+@click.option("--max-chars", "max_chars", default=40000, show_default=True,
+              type=int,
+              help="Truncate chapter body over N chars. 0 to disable.")
 @click.option("--out", "out_path", default=None,
               help="Output path. Defaults to ~/Downloads/prism-YYYYMMDD-Nd.epub")
-def export(fmt, days, out_path):
+def export(fmt, days, per_source_cap, max_chars, out_path):
     """Export /feed/following to an offline EPUB for phone / flight reading."""
     from prism.pipeline.export import export_epub_to_file, default_filename
 
@@ -276,7 +282,13 @@ def export(fmt, days, out_path):
     target = Path(out_path).expanduser()
     target.parent.mkdir(parents=True, exist_ok=True)
 
-    size = export_epub_to_file(conn, days=days, out_path=target)
+    size = export_epub_to_file(
+        conn,
+        days=days,
+        out_path=target,
+        per_source_cap=per_source_cap,
+        max_chars=max_chars,
+    )
     click.echo(f"export: wrote {size:,} bytes → {target}")
 
 
@@ -1058,128 +1070,6 @@ def quality_scan():
         click.echo(f"Open anomalies ({len(open_anomalies)}):")
         for a in open_anomalies:
             click.echo(f"  [{a['severity']}] {a['title']} — {a['detail']}")
-    finally:
-        conn.close()
-
-
-@cli.group()
-def ctr():
-    """CTR ranker — skip-above training on feed impressions."""
-    pass
-
-
-@ctr.command("samples")
-def ctr_samples():
-    """Summarize the training samples that would be built right now."""
-    from prism.ctr.samples import build_samples, summarize
-    conn = get_connection(settings.db_path)
-    try:
-        samples = build_samples(conn)
-        s = summarize(samples)
-        click.echo(
-            f"groups={s['groups']}  positives={s['positives']}  "
-            f"negatives={s['negatives']}  avg_group_size={s['avg_group_size']:.2f}  "
-            f"max_group_size={s['max_group_size']}"
-        )
-        if not samples:
-            click.echo(
-                "No samples yet — save a few signals from the feed; "
-                "impressions are logged per /feed/more call."
-            )
-    finally:
-        conn.close()
-
-
-@ctr.command("backfill")
-def ctr_backfill():
-    """Replay every historical save → ctr_samples (positives + skip-above)."""
-    from prism.ctr.collect import backfill
-    conn = get_connection(settings.db_path)
-    try:
-        stats = backfill(conn)
-        click.echo(
-            f"scanned={stats['scanned']}  "
-            f"groups_written={stats['groups_written']}  "
-            f"positives={stats['positives']}  "
-            f"negatives={stats['negatives']}"
-        )
-        if stats["skipped"]:
-            click.echo("skipped:")
-            for reason, n in stats["skipped"].items():
-                click.echo(f"  {reason}: {n}")
-    finally:
-        conn.close()
-
-
-@ctr.command("stats")
-@click.option("--days", default=30, type=int, help="Trailing window in days.")
-def ctr_stats(days):
-    """Bucket every recent signal: unseen / impressed / clicked / saved."""
-    from prism.ctr.stats import classify, format_report
-    conn = get_connection(settings.db_path)
-    try:
-        report = classify(conn, days=days)
-        click.echo(format_report(report))
-    finally:
-        conn.close()
-
-
-@ctr.command("train")
-@click.option("--model-path", default=None, help="Destination for the booster JSON.")
-def ctr_train(model_path):
-    """Train the XGBoost ranker and persist it under data/ctr/."""
-    from prism.ctr.train import DEFAULT_MODEL_PATH, train
-    dest = model_path or str(DEFAULT_MODEL_PATH)
-    report = train(settings.db_path, model_path=dest)
-    click.echo(
-        f"trained on {report.train_groups} groups ({report.total_samples} samples); "
-        f"test={report.test_groups}  ndcg@5={report.ndcg_at_5:.4f}  "
-        f"ndcg@10={report.ndcg_at_10:.4f}"
-    )
-    click.echo(f"model → {report.model_path}")
-    top = sorted(report.feature_importance.items(), key=lambda kv: -kv[1])[:10]
-    if top:
-        click.echo("top features by gain:")
-        for name, val in top:
-            click.echo(f"  {name:24s} {val:.3f}")
-
-
-@ctr.command("eval")
-def ctr_eval():
-    """Re-evaluate the persisted model on the current sample set."""
-    from prism.ctr.model import CTRRanker, DEFAULT_MODEL_PATH
-    from prism.ctr.samples import build_samples
-    from prism.ctr.train import _build_frame, _mean_ndcg
-
-    ranker = CTRRanker.load(DEFAULT_MODEL_PATH)
-    if ranker is None:
-        click.echo("No model on disk — run `prism ctr train` first.")
-        return
-    conn = get_connection(settings.db_path)
-    try:
-        samples = build_samples(conn)
-        if not samples:
-            click.echo("No samples — nothing to evaluate.")
-            return
-        df = _build_frame(conn, samples)
-
-        # Adapt CTRRanker (which wraps a Booster) to the predict-shape
-        # _mean_ndcg expects. A tiny shim object with .predict works.
-        import numpy as np
-
-        class _Shim:
-            def __init__(self, ranker):
-                self.ranker = ranker
-
-            def predict(self, X):
-                import xgboost as xgb
-                dmat = xgb.DMatrix(np.asarray(X, dtype=float))
-                return self.ranker._booster.predict(dmat)
-
-        ndcg5 = _mean_ndcg(_Shim(ranker), df, 5)
-        ndcg10 = _mean_ndcg(_Shim(ranker), df, 10)
-        click.echo(f"ndcg@5={ndcg5:.4f}  ndcg@10={ndcg10:.4f}  "
-                   f"(over {len(samples)} samples)")
     finally:
         conn.close()
 

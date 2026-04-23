@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Form, Request
+from fastapi import APIRouter, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from jinja2 import Environment, FileSystemLoader
 
@@ -17,7 +17,7 @@ from prism.web.auth import (
     COOKIE_NAME, validate_session, login, create_admin,
     create_invite, register_with_invite,
 )
-from prism.web.pairwise import process_external_feed
+from prism.web.feed_pool import process_external_feed
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 _jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
@@ -374,6 +374,19 @@ from prism.web.feed import (
     get_followed_authors,
     compress_headline,
 )
+from prism.personalize import (
+    FeedCandidate,
+    IdentityReRanker,
+    ReRanker,
+    UserContext,
+)
+
+
+# Personalization seam. The route holds a Protocol-typed reference so a
+# future ranker (embedding re-rank, LLM judge, experiment variant) can be
+# swapped in here — or injected by tests — without touching the route
+# body. Default is the pass-through IdentityReRanker per tech-stack v7 §5.
+_RERANKER: ReRanker = IdentityReRanker()
 
 
 @web_router.get("/feed", response_class=HTMLResponse)
@@ -404,20 +417,32 @@ def feed_following_index(request: Request):
 
 
 @web_router.get("/export/epub")
-def export_following_epub(request: Request, days: int = 7):
+def export_following_epub(
+    request: Request,
+    days: int = 7,
+    cap: int = 15,
+    max_chars: int = 40000,
+):
     """Download followed-source content from the last N days as an EPUB.
 
     Login-gated — anonymous visitors have no 'following' context and the
     owner's full feed is not meant to be publicly downloadable.
+
+    `cap` / `max_chars` guard against reader freezes on huge payloads
+    (微信读书 chokes on thousand-chapter books / >100KB chapters).
     """
     if _get_user(request) is None:
         return RedirectResponse(url="/login", status_code=307)
     days = max(1, min(int(days or 7), 90))  # clamp defensively
+    cap = max(0, min(int(cap or 0), 200))
+    max_chars = max(0, min(int(max_chars or 0), 200000))
 
     from prism.pipeline.export import build_epub, default_filename
 
     conn = _db(request)
-    data = build_epub(conn, days=days)
+    data = build_epub(
+        conn, days=days, per_source_cap=cap, max_chars=max_chars
+    )
     filename = default_filename(days)
     return Response(
         content=data,
@@ -436,19 +461,31 @@ def feed_more(request: Request, offset: int = 0, limit: int = 10):
     if not rows:
         tpl = _jinja_env.get_template("partials/feed_empty.html")
         return HTMLResponse(tpl.render(view="all"))
-    # Log impressions — one row per served signal, bound to a session so
-    # skip-above sample construction can reason across multi-page scrolls.
-    # Anonymous visitors (public /feed) must NOT pollute the owner's CTR
-    # training data, so skip the log entirely when no session is present.
-    if _get_user(request):
-        try:
-            from prism.ctr.impressions import log_impressions
-            log_impressions(conn, rows)
-        except Exception:
-            pass  # logging failure must never break the feed
+
+    # Personalization seam: wrap rows as FeedCandidate → delegate to the
+    # ReRanker Protocol → unwrap payloads. With IdentityReRanker this is
+    # a no-op, but the shape is what a real ranker will consume.
+    user = _get_user(request)
+    is_anon = user is None
+    ctx = UserContext(
+        user_id=getattr(user, "id", None),
+        is_anonymous=is_anon,
+        tab="feed",
+    )
+    candidates = [
+        FeedCandidate(
+            signal_id=r["signal_id"],
+            source_key=(r.get("source_keys") or [None])[0],
+            heat=float(r.get("score", 0.0) or 0.0),
+            published_at=r.get("created_at"),
+            payload=r,
+        )
+        for r in rows
+    ]
+    rows = [c.payload for c in _RERANKER.rank(candidates, ctx)]
+
     followed = get_followed_authors(conn)
     card_tpl = _jinja_env.get_template("partials/feed_card.html")
-    is_anon = _get_user(request) is None
     # Card template auto-dispatches by source_type (tweet / video / article).
     html = "".join(
         card_tpl.render(signal=r, followed_authors=followed, is_anonymous=is_anon)
@@ -460,7 +497,6 @@ def feed_more(request: Request, offset: int = 0, limit: int = 10):
 @web_router.post("/feed/action", response_class=HTMLResponse)
 def feed_action(
     request: Request,
-    background_tasks: BackgroundTasks,
     signal_id: int = Form(...),
     action: str = Form(...),
     target_key: str = Form(""),
@@ -476,18 +512,6 @@ def feed_action(
         target_key=target_key,
         response_time_ms=response_time_ms,
     )
-
-    # On save, materialize the CTR training group (1 positive + N
-    # skip-above negatives) off the request path. BackgroundTasks runs
-    # after the HTTP response is sent, so the user sees "已保存 ✓" with
-    # zero added latency. The task opens its own SQLite connection
-    # because the request connection is recycled by then.
-    if action == "save" and interaction_id:
-        from prism.config import settings as _cfg
-        from prism.ctr.collect import materialize_from_db
-        background_tasks.add_task(
-            materialize_from_db, str(_cfg.db_path), int(interaction_id)
-        )
 
     if action in ("save", "dismiss"):
         label = "已保存" if action == "save" else "已隐藏"
@@ -930,10 +954,9 @@ def creator_profile(request: Request, source_key: str):
     # Feed-style signal cards for this creator. Pull the full signal pool
     # (no age cutoff, no pairwise-recent filter, no diversity cap) and
     # keep only signals whose cluster includes a raw_item from this source.
-    from prism.web.pairwise import _get_candidate_pool
+    from prism.web.feed_pool import _get_candidate_pool
     pool = _get_candidate_pool(
         conn,
-        apply_pairwise_recent_filter=False,
         apply_diversity_cap=False,
         max_age_days=None,
     )
@@ -1466,20 +1489,22 @@ def pairwise_feed(
 
 @web_router.get("/pairwise/liked", response_class=HTMLResponse)
 def pairwise_liked(request: Request, page: int = 1):
-    """Render liked/saved signals page."""
+    """Render saved signals page.
+
+    URL path still carries the legacy `/pairwise/` prefix (templates link
+    to it from multiple places); the data source has moved from
+    `pairwise_comparisons.winner` to `feed_interactions.action='save'`
+    following Wave 1 pairwise removal (2026-04-23).
+    """
     conn = _db(request)
     per_page = 20
     offset = (page - 1) * per_page
 
-    # Get signal IDs the user chose as winners, most recent first
     rows = conn.execute(
-        """SELECT DISTINCT
-                  CASE WHEN pc.winner = 'a' THEN pc.signal_a_id
-                       WHEN pc.winner = 'b' THEN pc.signal_b_id END AS signal_id,
-                  MAX(pc.created_at) AS liked_at
-           FROM pairwise_comparisons pc
-           WHERE pc.winner IN ('a', 'b')
-           GROUP BY signal_id
+        """SELECT fi.signal_id, MAX(fi.created_at) AS liked_at
+           FROM feed_interactions fi
+           WHERE fi.action = 'save'
+           GROUP BY fi.signal_id
            ORDER BY liked_at DESC
            LIMIT ? OFFSET ?""",
         (per_page, offset),
@@ -1665,10 +1690,14 @@ def pairwise_profile(request: Request):
         "ORDER BY weight DESC LIMIT 10"
     ).fetchall()
 
-    # Stats
-    total_votes = conn.execute("SELECT COUNT(*) FROM pairwise_comparisons").fetchone()[0]
+    # Stats — now sourced from feed_interactions (pairwise_comparisons
+    # dropped in Wave 1). `total_votes` = total feed events across all
+    # actions; `total_liked` = saves specifically.
+    total_votes = conn.execute(
+        "SELECT COUNT(*) FROM feed_interactions"
+    ).fetchone()[0]
     total_liked = conn.execute(
-        "SELECT COUNT(*) FROM pairwise_comparisons WHERE winner IN ('a', 'b')"
+        "SELECT COUNT(*) FROM feed_interactions WHERE action = 'save'"
     ).fetchone()[0]
 
     tpl = _jinja_env.get_template("profile.html")

@@ -32,12 +32,7 @@ prism publish --notion >> "$LOG" 2>&1
 prism publish-videos --limit 10 >> "$LOG" 2>&1
 prism cleanup >> "$LOG" 2>&1
 
-# Adjust source weights based on pairwise win rates
-.venv/bin/python -c "
-from prism.config import settings
-from prism.db import get_connection
-from prism.web.pairwise import adjust_source_weights
-conn = get_connection(settings.db_path)
-adjust_source_weights(conn)
-print('Source weights adjusted')
-" >> "$LOG" 2>&1
+# Pairwise source-weight adjustment removed in Wave 1 cleanup (2026-04-23).
+# Source ranking now lives entirely in prism/web/ranking.py
+# (heat + preference + decay) with preference_weights learned from
+# feed actions (save/dismiss/follow/mute).

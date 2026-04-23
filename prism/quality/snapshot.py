@@ -60,16 +60,18 @@ def _source_type_composition(conn: sqlite3.Connection) -> Iterable[tuple[str, in
 
 
 def _user_activity(conn: sqlite3.Connection) -> dict[str, int]:
-    """User engagement in the last 24h."""
+    """User engagement in the last 24h.
+
+    After Wave 1 (2026-04-23) `pairwise_comparisons` is gone; feed
+    interactions are the only engagement channel. `pairwise_24h` is kept
+    in the returned shape (hard-coded 0) so downstream dashboards that
+    still read the key don't blow up during the transition.
+    """
     feed_actions = conn.execute(
         "SELECT COUNT(*) FROM feed_interactions "
         "WHERE created_at >= datetime('now','-1 day')"
     ).fetchone()[0]
-    pairwise = conn.execute(
-        "SELECT COUNT(*) FROM pairwise_comparisons "
-        "WHERE created_at >= datetime('now','-1 day')"
-    ).fetchone()[0]
-    return {"feed_actions_24h": feed_actions, "pairwise_24h": pairwise}
+    return {"feed_actions_24h": feed_actions, "pairwise_24h": 0}
 
 
 def _analyze_throughput(conn: sqlite3.Connection) -> dict[str, int]:

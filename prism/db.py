@@ -240,34 +240,12 @@ def init_db(conn: sqlite3.Connection) -> None:
             expires_at TEXT NOT NULL
         );
 
-        -- Pairwise recommendation system (v2)
-        CREATE TABLE IF NOT EXISTS pairwise_comparisons (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            signal_a_id INTEGER NOT NULL REFERENCES signals(id),
-            signal_b_id INTEGER NOT NULL REFERENCES signals(id),
-            winner TEXT NOT NULL CHECK(winner IN ('a', 'b', 'both', 'neither', 'skip')),
-            user_comment TEXT DEFAULT '',
-            pair_strategy TEXT DEFAULT 'exploit',
-            response_time_ms INTEGER,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS signal_scores (
-            signal_id INTEGER PRIMARY KEY REFERENCES signals(id),
-            bt_score REAL NOT NULL DEFAULT 1500.0,
-            comparison_count INTEGER NOT NULL DEFAULT 0,
-            win_count INTEGER NOT NULL DEFAULT 0,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS source_weights (
-            source_key TEXT PRIMARY KEY,
-            weight REAL NOT NULL DEFAULT 1.0,
-            win_rate REAL NOT NULL DEFAULT 0.5,
-            total_comparisons INTEGER NOT NULL DEFAULT 0,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
+        -- Wave 1 cleanup (2026-04-23): pairwise_comparisons (133 rows),
+        -- signal_scores (260 rows), source_weights tables were dropped.
+        -- Historical CSV archive lives in data/archive/wave1/ with
+        -- MANIFEST.json. `decision_log` and `external_feeds` remain — the
+        -- former is still written by the sync/cluster pipelines, the latter
+        -- is the live queue for externally-submitted URLs.
         CREATE TABLE IF NOT EXISTS decision_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT NOT NULL DEFAULT (datetime('now')),
@@ -357,47 +335,10 @@ def init_db(conn: sqlite3.Connection) -> None:
             PRIMARY KEY (item_id, action)
         );
 
-        -- Impression log: every signal served in /feed/more, grouped by
-        -- session (rolling 30-min window of scrolls). Powers skip-above
-        -- negative sampling for the CTR ranking model.
-        CREATE TABLE IF NOT EXISTS feed_impressions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            trace_id TEXT NOT NULL,
-            session_id TEXT NOT NULL,
-            signal_id INTEGER NOT NULL,
-            rank_in_trace INTEGER NOT NULL,
-            rank_in_session INTEGER NOT NULL,
-            feed_score REAL NOT NULL DEFAULT 0,
-            served_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE INDEX IF NOT EXISTS idx_impr_session
-            ON feed_impressions(session_id, rank_in_session);
-        CREATE INDEX IF NOT EXISTS idx_impr_signal_time
-            ON feed_impressions(signal_id, served_at);
-        CREATE INDEX IF NOT EXISTS idx_impr_served
-            ON feed_impressions(served_at);
-
-        -- CTR training samples — materialized after every save event.
-        -- group_id == save_event_id (feed_interactions.id for the save).
-        -- One row per (group_id, signal_id). Incremental: a background
-        -- task writes the positive + skip-above negatives right after
-        -- the save happens, so we never need an offline rebuild step.
-        CREATE TABLE IF NOT EXISTS ctr_samples (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            group_id INTEGER NOT NULL,
-            signal_id INTEGER NOT NULL,
-            label INTEGER NOT NULL,              -- 1 = save, 0 = skip-above
-            session_id TEXT NOT NULL,
-            rank_in_session INTEGER NOT NULL,
-            feed_score REAL NOT NULL DEFAULT 0,
-            served_at TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            UNIQUE(group_id, signal_id)
-        );
-        CREATE INDEX IF NOT EXISTS idx_ctr_samples_group
-            ON ctr_samples(group_id);
-        CREATE INDEX IF NOT EXISTS idx_ctr_samples_signal
-            ON ctr_samples(signal_id);
+        -- Wave 1 cleanup (2026-04-23): feed_impressions + ctr_samples
+        -- tables removed alongside prism/ctr/. The skip-above CTR model
+        -- did not ship; personalization now routes through the
+        -- prism/personalize/ ReRanker seam instead.
 
         -- Quality Watchdog: periodic pipeline health snapshots & detected anomalies.
         CREATE TABLE IF NOT EXISTS quality_snapshots (

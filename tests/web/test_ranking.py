@@ -102,17 +102,17 @@ def test_update_preferences_dislike():
     assert row["weight"] == -1.0
 
 
-def test_hot_tab_bt_integration():
-    """Hot tab should incorporate BT scores into ranking."""
+def test_hot_tab_uses_heat_and_decay_only():
+    """Post Wave 1 cleanup the `hot` tab weights are (heat, 0, decay).
+    The BT dimension was removed, so for identical decay the signal with
+    higher heat (strength * item_count) should lead.
+    """
     conn = _fresh_db()
     _seed(conn)
-    # Give signal 2 (vLLM, strength=3) a much higher BT score
-    conn.execute("INSERT INTO signal_scores (signal_id, bt_score) VALUES (2, 3000.0)")
-    conn.execute("INSERT INTO signal_scores (signal_id, bt_score) VALUES (1, 1000.0)")
-    conn.commit()
     items = compute_feed(conn, tab="hot", page=1, per_page=10)
-    # With BT boost, vLLM (signal 2) should rank higher despite lower signal_strength
-    assert items[0]["topic_label"] == "vLLM"
+    # Seed gives signal 1 ("GPT-5") strength=5 vs signal 2 ("vLLM") strength=3
+    # — with heat dominating, GPT-5 must come out on top.
+    assert items[0]["topic_label"] == "GPT-5"
 
 
 def test_update_preferences_save():
