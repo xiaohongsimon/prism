@@ -1,6 +1,7 @@
 """Web frontend routes — HTMX-powered feed, feedback, and channel management."""
 
 import json as _json
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -193,6 +194,44 @@ def _build_creator_list(conn) -> dict:
         else:
             pref_by_author[row["key"]] = row["weight"]
 
+    # Batch the per-source lookups into two aggregate queries. The old N+1 loop
+    # ran 2 * len(sources) executes while holding the shared app.state.db
+    # connection, which raced with other requests and surfaced as
+    # `sqlite3.InterfaceError: bad parameter or other API misuse` → 500 → CF 502.
+    source_ids = [s["id"] for s in sources]
+    items_info_by_src: dict[int, dict] = {}
+    recent_by_src: dict[int, list[dict]] = {sid: [] for sid in source_ids}
+    if source_ids:
+        placeholders = ",".join("?" * len(source_ids))
+        for r in conn.execute(
+            f"""SELECT source_id, count(*) as cnt, max(created_at) as latest
+                FROM raw_items WHERE source_id IN ({placeholders})
+                GROUP BY source_id""",
+            source_ids,
+        ).fetchall():
+            items_info_by_src[r["source_id"]] = {"cnt": r["cnt"], "latest": r["latest"]}
+
+        for r in conn.execute(
+            f"""SELECT * FROM (
+                    SELECT ri.id as item_id, ri.title, ri.body, ri.body_zh,
+                           ri.url, ri.created_at,
+                           a.id as article_id, a.subtitle as article_subtitle,
+                           ri.source_id as _src_id,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY ri.source_id
+                               ORDER BY ri.created_at DESC
+                           ) as rn
+                    FROM raw_items ri
+                    LEFT JOIN articles a ON a.raw_item_id = ri.id
+                    WHERE ri.source_id IN ({placeholders})
+                ) WHERE rn <= 3""",
+            source_ids,
+        ).fetchall():
+            row = dict(r)
+            sid = row.pop("_src_id")
+            row.pop("rn", None)
+            recent_by_src.setdefault(sid, []).append(row)
+
     all_creators = []
 
     for src in sources:
@@ -207,19 +246,8 @@ def _build_creator_list(conn) -> dict:
         display_name = config.get("display_name", src["handle"] or src["source_key"])
         handle = src["handle"] or src["source_key"].split(":")[-1]
 
-        items_info = conn.execute(
-            "SELECT count(*) as cnt, max(created_at) as latest FROM raw_items WHERE source_id = ?",
-            (src["id"],),
-        ).fetchone()
-
-        recent = conn.execute(
-            """SELECT ri.id as item_id, ri.title, ri.body, ri.body_zh, ri.url, ri.created_at,
-                      a.id as article_id, a.subtitle as article_subtitle
-               FROM raw_items ri LEFT JOIN articles a ON a.raw_item_id = ri.id
-               WHERE ri.source_id = ?
-               ORDER BY ri.created_at DESC LIMIT 3""",
-            (src["id"],),
-        ).fetchall()
+        items_info = items_info_by_src.get(src["id"])
+        recent = recent_by_src.get(src["id"], [])
 
         if src_type == "youtube":
             avatar = config.get("avatar", "")
@@ -406,6 +434,96 @@ def board_page(request: Request):
     return _render("board.html", request=request, **data)
 
 
+def _latest_brief(conn, date: str | None = None) -> dict | None:
+    """Build a compact headline-list summary for a given briefing date.
+
+    Returns {"date": "YYYY-MM-DD",
+             "headlines": [{"label", "layer", "url", "cluster_id"}, …]}
+    or None if no briefing exists on that date. When `date` is None,
+    uses the latest briefing.
+    """
+    if date:
+        row = conn.execute(
+            "SELECT date FROM briefings WHERE date = ?", (date,)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT date FROM briefings ORDER BY date DESC LIMIT 1"
+        ).fetchone()
+    if not row:
+        return None
+    brief_date = row["date"]
+
+    # Pull top signals produced within a day of that briefing. Layer
+    # filter drops 'noise'; we preserve original ordering so the brief
+    # matches what the full page would show. Over-fetch so we can drop
+    # low-quality labels below and still land 5 headlines.
+    sig_rows = conn.execute(
+        """SELECT s.cluster_id, s.signal_layer, s.signal_strength,
+                  c.topic_label
+           FROM signals s
+           JOIN clusters c ON c.id = s.cluster_id
+           WHERE s.created_at >= date(?, '-1 day')
+             AND s.created_at <  date(?, '+1 day')
+             AND s.signal_layer IN ('strategic', 'actionable')
+             AND c.topic_label != ''
+           ORDER BY s.signal_strength DESC, s.created_at DESC
+           LIMIT 20""",
+        (brief_date, brief_date),
+    ).fetchall()
+
+    # Skip clusters whose topic_label is a keyword dump like
+    # "reasoning, pro, total, active, flash" — those are raw TF-IDF /
+    # c-TF-IDF terms from clusters that never got an LLM label. Detect
+    # via: 3+ comma-separated short lowercase tokens with no spaces
+    # inside each token. A proper title either has spaces or CJK chars.
+    _keyword_dump_re = re.compile(
+        r"^\s*[a-z0-9_-]+(\s*,\s*[a-z0-9_-]+){2,}\s*$", re.IGNORECASE
+    )
+
+    def _looks_like_keyword_dump(label: str) -> bool:
+        return bool(_keyword_dump_re.match(label))
+
+    sig_rows = [r for r in sig_rows
+                if not _looks_like_keyword_dump(r["topic_label"] or "")][:5]
+
+    cluster_ids = [r["cluster_id"] for r in sig_rows]
+    cluster_urls: dict[int, str] = {}
+    if cluster_ids:
+        ph = ",".join("?" * len(cluster_ids))
+        _agg = ("news.ycombinator.com", "reddit.com")
+        url_rows = conn.execute(
+            f"""SELECT ci.cluster_id, ri.url
+                FROM cluster_items ci
+                JOIN raw_items ri ON ri.id = ci.raw_item_id
+                WHERE ci.cluster_id IN ({ph})
+                  AND ri.url LIKE 'http%'""",
+            cluster_ids,
+        ).fetchall()
+        for r in url_rows:
+            cid = r["cluster_id"]
+            url = r["url"]
+            is_agg = any(a in url for a in _agg)
+            if cid not in cluster_urls or (
+                not is_agg and any(a in cluster_urls[cid] for a in _agg)
+            ):
+                cluster_urls[cid] = url
+
+    headlines = []
+    for r in sig_rows:
+        label = (r["topic_label"] or "").strip()
+        if not label:
+            continue
+        headlines.append({
+            "label": label[:70],
+            "layer": r["signal_layer"],  # 'strategic' | 'actionable'
+            "cluster_id": r["cluster_id"],
+            "url": cluster_urls.get(r["cluster_id"], ""),
+        })
+
+    return {"date": brief_date, "headlines": headlines}
+
+
 @web_router.get("/feed/following", response_class=HTMLResponse)
 def feed_following_index(request: Request):
     """Creator-level list sorted by preference score → each row links to
@@ -414,6 +532,73 @@ def feed_following_index(request: Request):
     conn = _db(request)
     buckets = _build_creator_list(conn)
     return _render("feed_following.html", request=request, buckets=buckets)
+
+
+@web_router.get("/brief", response_class=HTMLResponse)
+@web_router.get("/brief/{date}", response_class=HTMLResponse)
+def brief_page(request: Request, date: str | None = None):
+    """Render a saved briefing as a standalone tab page.
+
+    Layout: headline list (top strategic/actionable signals) + narrative
+    prose (rendered from stored markdown). Gated — anon visitors have no
+    personalized context and the owner's internal analysis isn't meant
+    to be a public surface.
+    """
+    if _get_user(request) is None:
+        return RedirectResponse(url="/login", status_code=307)
+    conn = _db(request)
+    if date:
+        row = conn.execute(
+            "SELECT date, markdown, generated_at FROM briefings WHERE date = ?",
+            (date,),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT date, markdown, generated_at FROM briefings "
+            "ORDER BY date DESC LIMIT 1"
+        ).fetchone()
+    if not row:
+        return _render(
+            "brief.html",
+            request=request,
+            date=None,
+            generated_at=None,
+            body_html="",
+            headlines=[],
+            dates=[],
+        )
+    md_text = row["markdown"] or ""
+    # Strip the leading H1 — the page already has its own header.
+    md_text = re.sub(r"^# [^\n]*\n+", "", md_text, count=1)
+    # Source-health section is mostly operational noise — tuck it into
+    # a <details> so the brief stays focused on signal.
+    md_text = re.sub(
+        r"(##\s*源健康\s*\n)",
+        r"\n---\n### 源健康 <small>（点击展开）</small>\n",
+        md_text,
+        count=1,
+    )
+    body_html = _md.markdown(md_text, extensions=["extra", "nl2br"])
+
+    # Top headlines — same extraction path previously used for the
+    # feed/following card; now it's the lead of the tab page instead.
+    brief_teaser = _latest_brief(conn, date=row["date"])
+    headlines = brief_teaser["headlines"] if brief_teaser else []
+
+    # Neighbor dates for prev/next navigation.
+    neighbors = conn.execute(
+        "SELECT date FROM briefings ORDER BY date DESC LIMIT 30"
+    ).fetchall()
+    dates = [r["date"] for r in neighbors]
+    return _render(
+        "brief.html",
+        request=request,
+        date=row["date"],
+        generated_at=row["generated_at"],
+        body_html=body_html,
+        headlines=headlines,
+        dates=dates,
+    )
 
 
 @web_router.get("/export/epub")
